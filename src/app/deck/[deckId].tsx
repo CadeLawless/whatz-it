@@ -1,13 +1,29 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { TimerPicker } from '@/components/timer-picker';
 import { getDeckById } from '@/data/decks';
+import { useRound } from '@/game/round-context';
+import {
+  clampRoundDuration,
+  DEFAULT_ROUND_DURATION,
+  loadRoundDuration,
+  saveRoundDuration,
+} from '@/storage/preferences';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function DeckDetailsScreen() {
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
   const deck = getDeckById(deckId);
+  const router = useRouter();
+  const { configureRound } = useRound();
+  const [duration, setDuration] = useState(DEFAULT_ROUND_DURATION);
+
+  useEffect(() => {
+    loadRoundDuration().then(setDuration);
+  }, []);
 
   if (!deck) {
     return (
@@ -17,6 +33,13 @@ export default function DeckDetailsScreen() {
       </SafeAreaView>
     );
   }
+
+  const handleStart = () => {
+    const safeDuration = clampRoundDuration(duration);
+    if (!configureRound(deck.id, safeDuration)) return;
+    saveRoundDuration(safeDuration).catch(() => undefined);
+    router.push('/ready' as Href);
+  };
 
   return (
     <>
@@ -32,6 +55,9 @@ export default function DeckDetailsScreen() {
           <Text style={styles.cardCount}>{deck.cards.length} cards</Text>
         </View>
 
+        <Text style={styles.sectionLabel}>ROUND LENGTH</Text>
+        <TimerPicker value={duration} onChange={(value) => setDuration(clampRoundDuration(value))} />
+
         <Text style={styles.sectionLabel}>QUICK PREVIEW</Text>
         <View style={styles.previewList}>
           {deck.cards.slice(0, 3).map((card, index) => (
@@ -42,15 +68,13 @@ export default function DeckDetailsScreen() {
           ))}
         </View>
 
-        <View style={styles.comingSoon}>
-          <Text style={styles.comingSoonTitle}>Round setup is next</Text>
-          <Text style={styles.comingSoonText}>
-            Timer selection, countdown, and the playable game loop arrive in Milestone 2.
-          </Text>
-        </View>
-
-        <Pressable accessibilityRole="button" disabled style={styles.startButton}>
-          <Text style={styles.startButtonText}>COMING NEXT: START ROUND</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleStart}
+          style={({ pressed }) => [styles.startButton, pressed && styles.startButtonPressed]}
+        >
+          <Text style={styles.startButtonText}>GET READY</Text>
+          <Text style={styles.startArrow}>→</Text>
         </Pressable>
       </ScrollView>
     </>
@@ -68,14 +92,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   notFoundTitle: { ...typography.title, color: colors.ink },
-  notFoundText: {
-    ...typography.body,
-    color: colors.muted,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-  },
+  notFoundText: { ...typography.body, color: colors.muted, textAlign: 'center', marginTop: spacing.sm },
   heroCard: {
-    minHeight: 320,
+    minHeight: 300,
     borderRadius: radius.xl,
     padding: spacing.xl,
     justifyContent: 'flex-end',
@@ -98,12 +117,7 @@ const styles = StyleSheet.create({
   },
   freeText: { color: colors.ink, fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
   deckTitle: { ...typography.hero, color: colors.ink },
-  deckDescription: {
-    ...typography.body,
-    color: colors.ink,
-    marginTop: spacing.sm,
-    maxWidth: 360,
-  },
+  deckDescription: { ...typography.body, color: colors.ink, marginTop: spacing.sm, maxWidth: 360 },
   cardCount: {
     color: colors.ink,
     fontSize: 13,
@@ -137,32 +151,17 @@ const styles = StyleSheet.create({
   },
   previewNumber: { color: colors.muted, fontSize: 12, fontWeight: '800' },
   previewText: { color: colors.ink, fontSize: 17, fontWeight: '700' },
-  comingSoon: {
-    marginTop: spacing.lg,
-    padding: spacing.lg,
-    backgroundColor: colors.accentSoft,
-    borderRadius: radius.lg,
-  },
-  comingSoonTitle: { color: colors.ink, fontSize: 17, fontWeight: '800' },
-  comingSoonText: {
-    color: colors.muted,
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: spacing.xs,
-  },
   startButton: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
     backgroundColor: colors.ink,
     borderRadius: radius.lg,
-    minHeight: 58,
+    minHeight: 62,
+    paddingHorizontal: spacing.lg,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.58,
+    justifyContent: 'space-between',
   },
-  startButtonText: {
-    color: colors.white,
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
+  startButtonPressed: { transform: [{ scale: 0.99 }], opacity: 0.9 },
+  startButtonText: { color: colors.white, fontSize: 15, fontWeight: '900', letterSpacing: 1.1 },
+  startArrow: { color: colors.white, fontSize: 25, fontWeight: '700' },
 });

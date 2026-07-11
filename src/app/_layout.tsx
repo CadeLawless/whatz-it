@@ -2,10 +2,11 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { colors } from '@/theme';
+import { RoundProvider } from '@/game/round-context';
 
 export default function RootLayout() {
   return (
-    <>
+    <RoundProvider>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -18,7 +19,10 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="deck/[deckId]" options={{ title: 'Choose your round' }} />
+        <Stack.Screen name="ready" options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="game" options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="results" options={{ headerShown: false, gestureEnabled: false }} />
       </Stack>
-    </>
+    </RoundProvider>
   );
 }
