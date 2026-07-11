@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
+import { formatRoundClock } from '@/game/round-duration';
 import { useRoundTimer } from '@/hooks/use-round-timer';
 import { colors, radius, spacing } from '@/theme';
 
@@ -55,8 +56,8 @@ export default function GameScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: deck.color }]}>
       <View style={styles.topRow}>
         <View style={styles.timerPill}>
-          <Text style={styles.timer}>{remainingSeconds}</Text>
-          <Text style={styles.timerLabel}>SEC</Text>
+          <Text style={styles.timer}>{formatRoundClock(remainingSeconds)}</Text>
+          <Text style={styles.timerLabel}>TIME</Text>
         </View>
         <Text style={styles.progress}>
           {round.currentCardIndex + 1} / {round.cardOrder.length}

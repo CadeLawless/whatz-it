@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { initialRoundState, roundReducer } from './game-reducer';
-import { clampRoundDuration } from './round-duration';
+import { clampRoundDuration, formatRoundClock } from './round-duration';
 import { shuffle } from './shuffle';
 
 describe('roundReducer', () => {
@@ -77,5 +77,12 @@ describe('round duration', () => {
 
   it('never allows a duration below 30 seconds', () => {
     assert.equal(clampRoundDuration(29), 30);
+  });
+
+  it('formats gameplay time as minutes and seconds', () => {
+    assert.equal(formatRoundClock(300), '5:00');
+    assert.equal(formatRoundClock(90), '1:30');
+    assert.equal(formatRoundClock(9), '0:09');
+    assert.equal(formatRoundClock(0), '0:00');
   });
 });
