@@ -30,13 +30,15 @@ export default function ReadyScreen() {
       return;
     }
 
-    if (count === 0 && !launched.current) {
-      launched.current = true;
-      startRound();
-      return;
-    }
+    const timeout = setTimeout(() => {
+      if (count === 1 && !launched.current) {
+        launched.current = true;
+        startRound();
+        return;
+      }
 
-    const timeout = setTimeout(() => setCount((value) => Math.max(0, value - 1)), 1000);
+      setCount((value) => Math.max(1, value - 1));
+    }, 1000);
     return () => clearTimeout(timeout);
   }, [count, deck, round.status, router, startRound]);
 
@@ -56,7 +58,7 @@ export default function ReadyScreen() {
 
       <View style={styles.center}>
         <Text style={styles.kicker}>HOLD THE PHONE TO YOUR FOREHEAD</Text>
-        <Text style={styles.count}>{count || 'GO!'}</Text>
+        <Text style={styles.count}>{count}</Text>
         <Text style={styles.instructions}>Use the buttons for now.{`\n`}Motion controls arrive next.</Text>
       </View>
 
