@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { initialRoundState, roundReducer } from './game-reducer';
+import { clampRoundDuration } from './round-duration';
 import { shuffle } from './shuffle';
 
 describe('roundReducer', () => {
@@ -65,5 +66,16 @@ describe('shuffle', () => {
     assert.deepEqual(source, ['one', 'two', 'three']);
     assert.deepEqual([...shuffled].sort(), [...source].sort());
     assert.notStrictEqual(shuffled, source);
+  });
+});
+
+describe('round duration', () => {
+  it('never allows a duration above five minutes', () => {
+    assert.equal(clampRoundDuration(301), 300);
+    assert.equal(clampRoundDuration(9_999), 300);
+  });
+
+  it('never allows a duration below 30 seconds', () => {
+    assert.equal(clampRoundDuration(29), 30);
   });
 });

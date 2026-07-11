@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { MAX_ROUND_DURATION, MIN_ROUND_DURATION } from '@/game/round-duration';
 import { colors, radius, spacing } from '@/theme';
 
 const PRESETS = [30, 60, 90, 120, 180];
@@ -10,6 +11,9 @@ type TimerPickerProps = {
 };
 
 export function TimerPicker({ value, onChange }: TimerPickerProps) {
+  const atMinimum = value <= MIN_ROUND_DURATION;
+  const atMaximum = value >= MAX_ROUND_DURATION;
+
   return (
     <View>
       <View style={styles.presets}>
@@ -40,21 +44,27 @@ export function TimerPicker({ value, onChange }: TimerPickerProps) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Decrease timer by 15 seconds"
-            onPress={() => onChange(value - 15)}
-            style={styles.stepButton}
+            accessibilityState={{ disabled: atMinimum }}
+            disabled={atMinimum}
+            onPress={() => onChange(Math.max(MIN_ROUND_DURATION, value - 15))}
+            style={[styles.stepButton, atMinimum && styles.stepButtonDisabled]}
           >
             <Text style={styles.stepText}>−</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Increase timer by 15 seconds"
-            onPress={() => onChange(value + 15)}
-            style={styles.stepButton}
+            accessibilityHint="Maximum round length is five minutes"
+            accessibilityState={{ disabled: atMaximum }}
+            disabled={atMaximum}
+            onPress={() => onChange(Math.min(MAX_ROUND_DURATION, value + 15))}
+            style={[styles.stepButton, atMaximum && styles.stepButtonDisabled]}
           >
             <Text style={styles.stepText}>+</Text>
           </Pressable>
         </View>
       </View>
+      <Text style={styles.limitText}>Maximum round length: 5 minutes</Text>
     </View>
   );
 }
@@ -103,5 +113,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  stepButtonDisabled: { opacity: 0.3 },
   stepText: { color: colors.ink, fontSize: 26, fontWeight: '700', marginTop: -2 },
+  limitText: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: spacing.sm },
 });

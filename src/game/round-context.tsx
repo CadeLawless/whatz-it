@@ -3,6 +3,7 @@ import { createContext, type PropsWithChildren, useContext, useMemo, useReducer 
 import { getDeckById } from '@/data/decks';
 import { initialRoundState, roundReducer } from '@/game/game-reducer';
 import type { CardOutcome, RoundState } from '@/game/game-types';
+import { clampRoundDuration } from '@/game/round-duration';
 import { shuffle } from '@/game/shuffle';
 
 type RoundContextValue = {
@@ -29,7 +30,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
         dispatch({
           type: 'CONFIGURE',
           deckId,
-          durationSeconds,
+          durationSeconds: clampRoundDuration(durationSeconds),
           cardOrder: shuffle(deck.cards.map((card) => card.id)),
         });
         return true;

@@ -6,9 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimerPicker } from '@/components/timer-picker';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
+import { clampRoundDuration, DEFAULT_ROUND_DURATION } from '@/game/round-duration';
 import {
-  clampRoundDuration,
-  DEFAULT_ROUND_DURATION,
   loadRoundDuration,
   saveRoundDuration,
 } from '@/storage/preferences';
