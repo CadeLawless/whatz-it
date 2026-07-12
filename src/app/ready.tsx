@@ -1,19 +1,28 @@
-import { formatRoundClock } from '@/game/round-duration';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
+import { formatRoundClock } from '@/game/round-duration';
 import { useRound } from '@/game/round-context';
+import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function ReadyScreen() {
   const router = useRouter();
-  const { round, startRound, resetRound } = useRound();
+  const { round, resetRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
   const [count, setCount] = useState(3);
+  const [manualReady, setManualReady] = useState(false);
   const launched = useRef(false);
+  const foreheadStatus = useForeheadPosition(round.status === 'ready');
+  const positionReady = foreheadStatus === 'ready' || manualReady;
+
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!deck || round.status === 'idle') {
@@ -31,22 +40,25 @@ export default function ReadyScreen() {
       return;
     }
 
+    if (!positionReady) return;
+
     const timeout = setTimeout(() => {
       if (count === 1 && !launched.current) {
         launched.current = true;
-        startRound();
+        router.replace('/game' as Href);
         return;
       }
 
       setCount((value) => Math.max(1, value - 1));
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [count, deck, round.status, router, startRound]);
+  }, [count, deck, positionReady, round.status, router]);
 
   if (!deck) return null;
 
   const handleCancel = () => {
     resetRound();
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
     router.replace(`/deck/${deck.id}`);
   };
 
@@ -59,10 +71,29 @@ export default function ReadyScreen() {
 
       <View style={styles.center}>
         <Text style={styles.kicker}>HOLD THE PHONE TO YOUR FOREHEAD</Text>
-        <Text style={styles.count}>{count}</Text>
-        <Text style={styles.instructions}>
-          Hold steady after the countdown.{`\n`}Tilt down for correct · tilt up to pass.
-        </Text>
+        {positionReady ? (
+          <>
+            <Text style={styles.count}>{count}</Text>
+            <Text style={styles.instructions}>Hold steady - your round is about to begin.</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.phoneIcon}>▭</Text>
+            <Text style={styles.positionTitle}>{getPositionMessage(foreheadStatus)}</Text>
+            <Text style={styles.instructions}>
+              Keep the phone sideways with the screen facing away from you.
+            </Text>
+            {(foreheadStatus === 'unavailable' || foreheadStatus === 'denied') && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setManualReady(true)}
+                style={styles.manualButton}
+              >
+                <Text style={styles.manualButtonText}>START COUNTDOWN</Text>
+              </Pressable>
+            )}
+          </>
+        )}
       </View>
 
       <Pressable accessibilityRole="button" onPress={handleCancel} style={styles.cancelButton}>
@@ -70,6 +101,21 @@ export default function ReadyScreen() {
       </Pressable>
     </SafeAreaView>
   );
+}
+
+function getPositionMessage(status: ReturnType<typeof useForeheadPosition>) {
+  switch (status) {
+    case 'checking':
+      return 'Checking device motion...';
+    case 'waiting':
+      return 'Place the phone on your forehead';
+    case 'ready':
+      return 'Ready';
+    case 'denied':
+      return 'Motion access is off';
+    case 'unavailable':
+      return 'Motion detection is unavailable';
+  }
 }
 
 const styles = StyleSheet.create({
@@ -87,7 +133,29 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   kicker: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 1.8, textAlign: 'center' },
   count: { color: colors.ink, fontSize: 150, lineHeight: 170, fontWeight: '900', letterSpacing: -8 },
-  instructions: { ...typography.body, color: colors.ink, textAlign: 'center', opacity: 0.72 },
+  phoneIcon: {
+    color: colors.ink,
+    fontSize: 120,
+    lineHeight: 130,
+    fontWeight: '300',
+    transform: [{ rotate: '90deg' }],
+  },
+  positionTitle: { ...typography.title, color: colors.ink, textAlign: 'center', marginBottom: spacing.sm },
+  instructions: {
+    ...typography.body,
+    color: colors.ink,
+    textAlign: 'center',
+    opacity: 0.72,
+    maxWidth: 460,
+  },
+  manualButton: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.ink,
+  },
+  manualButtonText: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
   cancelButton: {
     alignSelf: 'center',
     paddingHorizontal: spacing.xl,

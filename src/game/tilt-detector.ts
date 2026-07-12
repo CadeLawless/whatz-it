@@ -1,5 +1,11 @@
 export type TiltAction = 'correct' | 'passed';
 
+export type GravityVector = {
+  x: number;
+  y: number;
+  z: number;
+};
+
 export type TiltDetectorConfig = {
   calibrationSamples: number;
   smoothingFactor: number;
@@ -97,4 +103,11 @@ export function updateTiltDetector(
 
 export function normalizeLandscapeTilt(gamma: number, orientation: number) {
   return orientation === -90 ? -gamma : gamma;
+}
+
+export function isForeheadPosition(gravity: GravityVector, orientation: number) {
+  const isLandscape = orientation === 90 || orientation === -90;
+  const hasVerticalShortAxis = Math.abs(gravity.x) >= 6.5;
+  const screenIsNotFlat = Math.abs(gravity.z) <= 6.5;
+  return isLandscape && hasVerticalShortAxis && screenIsNotFlat;
 }

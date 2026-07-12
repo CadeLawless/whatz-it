@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -15,7 +16,7 @@ import { colors, radius, spacing, typography } from '@/theme';
 export default function GameScreen() {
   useKeepAwake();
   const router = useRouter();
-  const { round, answerCard, advanceCard, finishRound } = useRound();
+  const { round, answerCard, advanceCard, finishRound, startRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
   const currentCardId = round.cardOrder[round.currentCardIndex];
   const currentCard = deck?.cards.find((card) => card.id === currentCardId);
@@ -37,16 +38,28 @@ export default function GameScreen() {
     [answerCard],
   );
   const tiltStatus = useTiltControls({
-    enabled: round.status === 'playing' || round.status === 'feedback',
+    enabled:
+      round.status === 'ready' || round.status === 'playing' || round.status === 'feedback',
     acceptingInput: round.status === 'playing',
     onAction: handleAnswer,
   });
 
   useEffect(() => {
-    if (!deck || !currentCard || round.status === 'ready' || round.status === 'idle') {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!deck || !currentCard || round.status === 'idle') {
       router.replace('/');
     }
   }, [currentCard, deck, round.status, router]);
+
+  useEffect(() => {
+    if (round.status !== 'ready') return;
+    if (tiltStatus === 'ready' || tiltStatus === 'unavailable' || tiltStatus === 'denied') {
+      startRound();
+    }
+  }, [round.status, startRound, tiltStatus]);
 
   useEffect(() => {
     if (round.status !== 'feedback') return;
@@ -76,7 +89,9 @@ export default function GameScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: deck.color }]}>
       <View style={styles.topRow}>
         <View style={styles.timerPill}>
-          <Text style={styles.timer}>{formatRoundClock(remainingSeconds)}</Text>
+          <Text style={styles.timer}>
+            {formatRoundClock(round.status === 'ready' ? round.durationSeconds : remainingSeconds)}
+          </Text>
           <Text style={styles.timerLabel}>TIME</Text>
         </View>
         <Text style={[typography.deckName]}>{deck.icon} {deck.title}</Text>
@@ -124,6 +139,14 @@ export default function GameScreen() {
           <Text style={styles.feedbackText}>
             {round.latestOutcome === 'correct' ? 'CORRECT!' : 'PASSED'}
           </Text>
+        </View>
+      )}
+
+      {round.status === 'ready' && (
+        <View style={styles.setupOverlay}>
+          <Text style={styles.setupIcon}>◎</Text>
+          <Text style={styles.setupTitle}>Hold steady</Text>
+          <Text style={styles.setupText}>{getTiltStatusLabel(tiltStatus)}</Text>
         </View>
       )}
     </SafeAreaView>
@@ -204,4 +227,19 @@ const styles = StyleSheet.create({
   },
   feedbackIcon: { color: colors.ink, fontSize: 110, fontWeight: '900', lineHeight: 120 },
   feedbackText: { color: colors.ink, fontSize: 34, fontWeight: '900', letterSpacing: 1 },
+  setupOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(247,245,239,0.96)',
+  },
+  setupIcon: { color: colors.ink, fontSize: 72, lineHeight: 80, fontWeight: '700' },
+  setupTitle: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
+  setupText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.3,
+    marginTop: spacing.sm,
+  },
 });

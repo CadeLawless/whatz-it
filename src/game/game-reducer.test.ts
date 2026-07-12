@@ -6,6 +6,7 @@ import { clampRoundDuration, formatRoundClock } from './round-duration';
 import { shuffle } from './shuffle';
 import {
   createTiltDetectorState,
+  isForeheadPosition,
   normalizeLandscapeTilt,
   updateTiltDetector,
 } from './tilt-detector';
@@ -128,5 +129,12 @@ describe('tilt detector', () => {
   it('normalizes left-landscape readings', () => {
     assert.equal(normalizeLandscapeTilt(0.5, 90), 0.5);
     assert.equal(normalizeLandscapeTilt(0.5, -90), -0.5);
+  });
+
+  it('recognizes a landscape phone held vertically against the forehead', () => {
+    assert.equal(isForeheadPosition({ x: 9.2, y: 0.4, z: 1.1 }, 90), true);
+    assert.equal(isForeheadPosition({ x: -9.2, y: 0.4, z: 1.1 }, -90), true);
+    assert.equal(isForeheadPosition({ x: 0.2, y: 9.2, z: 1.1 }, 0), false);
+    assert.equal(isForeheadPosition({ x: 1.0, y: 0.3, z: 9.4 }, 90), false);
   });
 });

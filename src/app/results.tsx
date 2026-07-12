@@ -1,4 +1,6 @@
 import { type Href, useRouter } from 'expo-router';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { useEffect } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,6 +14,10 @@ export default function ResultsScreen() {
   const deck = getDeckById(round.deckId ?? undefined);
   const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
   const passedCount = round.results.length - correctCount;
+
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+  }, []);
 
   if (!deck || round.status !== 'finished') {
     return (
