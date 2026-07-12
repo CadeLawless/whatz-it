@@ -1,40 +1,19 @@
-import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import * as ScreenOrientation from 'expo-screen-orientation';
-import { useCallback } from 'react';
+import { type Href, useRouter } from 'expo-router';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
+import { usePortraitOrientation } from '@/hooks/use-portrait-orientation';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function ResultsScreen() {
+  usePortraitOrientation();
   const router = useRouter();
   const { round, configureRound, resetRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
   const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
   const passedCount = round.results.length - correctCount;
-
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      const lockPortrait = async () => {
-        await ScreenOrientation.unlockAsync().catch(() => undefined);
-        if (active) {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
-            () => undefined,
-          );
-        }
-      };
-
-      lockPortrait();
-      const retry = setTimeout(lockPortrait, 250);
-      return () => {
-        active = false;
-        clearTimeout(retry);
-      };
-    }, []),
-  );
 
   if (!deck || round.status !== 'finished') {
     return (

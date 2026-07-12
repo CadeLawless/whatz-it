@@ -7,6 +7,7 @@ import { TimerPicker } from '@/components/timer-picker';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { clampRoundDuration, DEFAULT_ROUND_DURATION } from '@/game/round-duration';
+import { usePortraitOrientation } from '@/hooks/use-portrait-orientation';
 import {
   loadRoundDuration,
   saveRoundDuration,
@@ -14,6 +15,7 @@ import {
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function DeckDetailsScreen() {
+  usePortraitOrientation();
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
   const deck = getDeckById(deckId);
   const router = useRouter();

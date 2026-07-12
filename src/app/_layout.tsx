@@ -17,14 +17,21 @@ export default function RootLayout() {
           headerTitleStyle: { fontWeight: '800' },
         }}
       >
-        <Stack.Screen name="index" options={{ headerShown: false, orientation: 'portrait' }} />
+        <Stack.Screen
+          name="index"
+          options={{ headerShown: false, orientation: 'portrait', title: 'Back to Decks' }}
+        />
         <Stack.Screen
           name="deck/[deckId]"
-          options={{ title: 'Choose your round', orientation: 'portrait' }}
+          options={{
+            title: 'Choose your round',
+            orientation: 'portrait',
+            headerBackTitle: 'Back to Decks',
+          }}
         />
         <Stack.Screen
           name="ready"
-          options={{ headerShown: false, gestureEnabled: false, orientation: 'landscape' }}
+          options={{ headerShown: false, gestureEnabled: false, orientation: 'portrait' }}
         />
         <Stack.Screen
           name="game"

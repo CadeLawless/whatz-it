@@ -105,9 +105,8 @@ export function normalizeLandscapeTilt(gamma: number, orientation: number) {
   return orientation === -90 ? -gamma : gamma;
 }
 
-export function isForeheadPosition(gravity: GravityVector, orientation: number) {
-  const isLandscape = orientation === 90 || orientation === -90;
+export function isForeheadPosition(gravity: GravityVector) {
   const hasVerticalShortAxis = Math.abs(gravity.x) >= 6.5;
   const screenIsNotFlat = Math.abs(gravity.z) <= 6.5;
-  return isLandscape && hasVerticalShortAxis && screenIsNotFlat;
+  return hasVerticalShortAxis && screenIsNotFlat;
 }
