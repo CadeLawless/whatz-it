@@ -57,7 +57,7 @@ export default function DeckDetailsScreen() {
         <Text style={styles.sectionLabel}>ROUND LENGTH</Text>
         <TimerPicker value={duration} onChange={(value) => setDuration(clampRoundDuration(value))} />
 
-        <Text style={styles.sectionLabel}>QUICK PREVIEW</Text>
+        {/* <Text style={styles.sectionLabel}>QUICK PREVIEW</Text>
         <View style={styles.previewList}>
           {deck.cards.slice(0, 3).map((card, index) => (
             <View key={card.id} style={styles.previewRow}>
@@ -65,7 +65,7 @@ export default function DeckDetailsScreen() {
               <Text style={styles.previewText}>{card.text}</Text>
             </View>
           ))}
-        </View>
+        </View> */}
 
         <Pressable
           accessibilityRole="button"
