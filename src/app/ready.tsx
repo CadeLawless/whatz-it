@@ -1,3 +1,4 @@
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -7,11 +8,9 @@ import { getDeckById } from '@/data/decks';
 import { formatRoundClock } from '@/game/round-duration';
 import { useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
-import { usePortraitOrientation } from '@/hooks/use-portrait-orientation';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function ReadyScreen() {
-  usePortraitOrientation();
   const router = useRouter();
   const { round, resetRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
@@ -20,6 +19,10 @@ export default function ReadyScreen() {
   const launched = useRef(false);
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady = foreheadStatus === 'ready' || manualReady;
+
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!deck || round.status === 'idle') {
@@ -55,6 +58,7 @@ export default function ReadyScreen() {
 
   const handleCancel = () => {
     resetRound();
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
     router.replace(`/deck/${deck.id}`);
   };
 

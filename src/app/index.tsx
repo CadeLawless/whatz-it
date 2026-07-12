@@ -3,12 +3,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DeckCard } from '@/components/deck-card';
 import { decks } from '@/data/decks';
-import { usePortraitOrientation } from '@/hooks/use-portrait-orientation';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function DeckLibraryScreen() {
-  usePortraitOrientation();
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <FlatList

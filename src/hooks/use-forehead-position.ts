@@ -53,7 +53,7 @@ export function useForeheadPosition(enabled: boolean) {
       setStatus('waiting');
       try {
         subscription = DeviceMotion.addListener((measurement) => {
-          if (isForeheadPosition(measurement.accelerationIncludingGravity)) {
+          if (isForeheadPosition(measurement.accelerationIncludingGravity, measurement.orientation)) {
             stableSamples += 1;
             if (stableSamples >= REQUIRED_STABLE_SAMPLES) setStatus('ready');
           } else {

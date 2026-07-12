@@ -132,9 +132,9 @@ describe('tilt detector', () => {
   });
 
   it('recognizes a landscape phone held vertically against the forehead', () => {
-    assert.equal(isForeheadPosition({ x: 9.2, y: 0.4, z: 1.1 }), true);
-    assert.equal(isForeheadPosition({ x: -9.2, y: 0.4, z: 1.1 }), true);
-    assert.equal(isForeheadPosition({ x: 0.2, y: 9.2, z: 1.1 }), false);
-    assert.equal(isForeheadPosition({ x: 1.0, y: 0.3, z: 9.4 }), false);
+    assert.equal(isForeheadPosition({ x: 9.2, y: 0.4, z: 1.1 }, 90), true);
+    assert.equal(isForeheadPosition({ x: -9.2, y: 0.4, z: 1.1 }, -90), true);
+    assert.equal(isForeheadPosition({ x: 0.2, y: 9.2, z: 1.1 }, 0), false);
+    assert.equal(isForeheadPosition({ x: 1.0, y: 0.3, z: 9.4 }, 90), false);
   });
 });
