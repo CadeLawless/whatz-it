@@ -2,7 +2,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useAudioPlayer } from 'expo-audio';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
@@ -17,7 +17,8 @@ import { replaySound } from '@/utils/sound';
 const GET_READY_SOUND_MS = 1050;
 
 export default function ReadyScreen() {
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const hasLandscapeLayout = Platform.OS === 'web' || width > height;
   const router = useRouter();
   const { round, resetRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
@@ -55,7 +56,7 @@ export default function ReadyScreen() {
       active = false;
       if (retry) clearTimeout(retry);
     };
-  }, []);
+  }, [hasLandscapeLayout]);
 
   useEffect(() => {
     if (!positionReady || !orientationSettled || isLeaving || introStarted.current) return;
@@ -102,7 +103,7 @@ export default function ReadyScreen() {
 
   if (!deck) return null;
 
-  if (!orientationSettled) {
+  if (!orientationSettled || !hasLandscapeLayout) {
     return <OrientationTransition style={styles.rotationShell} />;
   }
 

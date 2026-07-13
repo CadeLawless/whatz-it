@@ -7,6 +7,7 @@ import { TimerPicker } from '@/components/timer-picker';
 import { OrientationTransition } from '@/components/orientation-transition';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
+import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { clampRoundDuration, DEFAULT_ROUND_DURATION } from '@/game/round-duration';
 import {
   loadRoundDuration,
@@ -21,10 +22,13 @@ export default function DeckDetailsScreen() {
   const { configureRound } = useRound();
   const [duration, setDuration] = useState(DEFAULT_ROUND_DURATION);
   const [isStarting, setIsStarting] = useState(false);
+  const isPortrait = usePortraitScreen();
 
   useEffect(() => {
     loadRoundDuration().then(setDuration);
   }, []);
+
+  if (!isPortrait) return <OrientationTransition style={styles.orientationGate} />;
 
   if (!deck) {
     return (
@@ -90,6 +94,7 @@ export default function DeckDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
+  orientationGate: { flex: 1 },
   screen: { flex: 1, backgroundColor: colors.background },
   startingOverlay: {
     ...StyleSheet.absoluteFill,

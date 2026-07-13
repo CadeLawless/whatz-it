@@ -57,7 +57,12 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="results"
-          options={{ headerShown: false, gestureEnabled: false, orientation: 'portrait' }}
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+            animation: 'none',
+            orientation: 'portrait',
+          }}
         />
         </Stack>
       </RoundProvider>

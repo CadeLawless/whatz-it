@@ -2,14 +2,19 @@ import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DeckCard } from '@/components/deck-card';
+import { OrientationTransition } from '@/components/orientation-transition';
 import { decks } from '@/data/decks';
+import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function DeckLibraryScreen() {
   const { width } = useWindowDimensions();
+  const isPortrait = usePortraitScreen();
   const gridWidth = Math.min(width, 720);
   const deckWidth = Math.floor((gridWidth - spacing.lg * 2 - spacing.sm * 2) / 3);
   const deckHeight = Math.round(deckWidth / 0.72);
+
+  if (!isPortrait) return <OrientationTransition style={styles.orientationGate} />;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -51,6 +56,7 @@ export default function DeckLibraryScreen() {
 }
 
 const styles = StyleSheet.create({
+  orientationGate: { flex: 1 },
   safeArea: { flex: 1, backgroundColor: colors.background },
   content: {
     alignSelf: 'center',

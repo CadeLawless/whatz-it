@@ -28,6 +28,7 @@ export default function GameScreen() {
   useKeepAwake();
   const { width, height } = useWindowDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
+  const [resultsTransitionReady, setResultsTransitionReady] = useState(false);
   const roundStarted = useRef(false);
   const startSoundPlayed = useRef(false);
   const lastTickSecond = useRef<number | null>(null);
@@ -124,13 +125,31 @@ export default function GameScreen() {
     const showResults = async () => {
       await new Promise((resolve) => setTimeout(resolve, 1600));
       await lockPortraitOrientation();
-      if (active) router.replace('/results' as Href);
+      if (active) setResultsTransitionReady(true);
     };
     showResults();
     return () => {
       active = false;
     };
   }, [round.status, roundEndPlayer, router]);
+
+  useEffect(() => {
+    if (round.status !== 'finished' || !resultsTransitionReady) return;
+    if (Platform.OS !== 'web' && width > height) {
+      let active = true;
+      let retry: ReturnType<typeof setTimeout> | undefined;
+      const enforcePortrait = async () => {
+        await lockPortraitOrientation();
+        if (active) retry = setTimeout(enforcePortrait, 100);
+      };
+      enforcePortrait();
+      return () => {
+        active = false;
+        if (retry) clearTimeout(retry);
+      };
+    }
+    router.replace('/results' as Href);
+  }, [height, resultsTransitionReady, round.status, router, width]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {

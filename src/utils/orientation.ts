@@ -32,8 +32,24 @@ export async function lockLandscapeOrientation() {
 }
 
 export async function lockPortraitOrientation() {
-  await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
-    () => undefined,
+  const applied = await ScreenOrientation.lockAsync(
+    ScreenOrientation.OrientationLock.PORTRAIT_UP,
+  ).then(
+    () => true,
+    () => false,
   );
-  await waitForLayout();
+  if (!applied) return false;
+
+  for (let attempt = 0; attempt < ORIENTATION_CHECK_ATTEMPTS; attempt += 1) {
+    const orientation = await ScreenOrientation.getOrientationAsync().catch(
+      () => ScreenOrientation.Orientation.UNKNOWN,
+    );
+    if (orientation === ScreenOrientation.Orientation.PORTRAIT_UP) {
+      await waitForLayout();
+      return true;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, ORIENTATION_CHECK_MS));
+  }
+
+  return false;
 }
