@@ -7,8 +7,9 @@ export const colors = {
   muted: '#667069',
   border: '#E4E1D8',
   accentSoft: '#E8E3FF',
-  correct: '#75E6A4',
-  pass: '#FF9F8F',
+  play: '#256B73',
+  correct: '#46C878',
+  pass: '#F5A623',
   white: '#FFFFFF',
 } as const;
 

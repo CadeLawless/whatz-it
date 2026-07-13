@@ -91,7 +91,7 @@ export default function ReadyScreen() {
 
   if (!orientationSettled) {
     return (
-      <View style={[styles.rotationShell, { backgroundColor: deck.color }]}>
+      <View style={[styles.rotationShell, { backgroundColor: colors.play }]}>
       </View>
     );
   }
@@ -108,11 +108,11 @@ export default function ReadyScreen() {
   return (
     <SafeAreaView
       edges={['left', 'right', 'bottom']}
-      style={[styles.safeArea, { backgroundColor: deck.color }]}
+      style={[styles.safeArea, { backgroundColor: colors.play }]}
     >
       <View style={styles.topRow}>
         <Text style={styles.duration}>{formatRoundClock(round.durationSeconds)}</Text>
-        <Text style={typography.deckName}>{deck.icon} {deck.title}</Text>
+        <Text style={[typography.deckName, styles.deckName]}>{deck.icon} {deck.title}</Text>
       </View>
 
       <View style={styles.center}>
@@ -202,20 +202,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing.sm,
   },
-  kicker: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 1.8, textAlign: 'center' },
-  count: { color: colors.ink, fontWeight: '900', letterSpacing: -8 },
-  getReady: { color: colors.ink, fontSize: 42, lineHeight: 54, fontWeight: '900', letterSpacing: 2 },
+  deckName: { color: colors.white },
+  kicker: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 1.8, textAlign: 'center' },
+  count: { color: colors.white, fontWeight: '900', letterSpacing: -8 },
+  getReady: { color: colors.white, fontSize: 42, lineHeight: 54, fontWeight: '900', letterSpacing: 2 },
   phoneIcon: {
-    color: colors.ink,
+    color: colors.white,
     fontSize: 120,
     lineHeight: 130,
     fontWeight: '300',
     transform: [{ rotate: '90deg' }],
   },
-  positionTitle: { ...typography.title, color: colors.ink, textAlign: 'center', marginBottom: spacing.sm },
+  positionTitle: { ...typography.title, color: colors.white, textAlign: 'center', marginBottom: spacing.sm },
   instructions: {
     ...typography.body,
-    color: colors.ink,
+    color: colors.white,
     textAlign: 'center',
     opacity: 0.72,
     maxWidth: 460,
@@ -225,9 +226,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: radius.pill,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.background,
   },
-  manualButtonText: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
+  manualButtonText: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
   footer: { flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingTop: spacing.sm },
   cancelButton: {
     paddingHorizontal: spacing.xl,

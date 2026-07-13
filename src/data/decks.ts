@@ -5,7 +5,6 @@ export const decks: Deck[] = [
     id: 'animal-antics',
     title: 'Animal Antics',
     description: 'Wild, woolly, tiny, and enormous creatures from around the world.',
-    color: '#B8E986',
     icon: '🦊',
     version: 1,
     cards: [
@@ -25,7 +24,6 @@ export const decks: Deck[] = [
     id: 'snack-attack',
     title: 'Snack Attack',
     description: 'Favorite foods, questionable cravings, and treats worth fighting over.',
-    color: '#FFCB69',
     icon: '🍕',
     version: 1,
     cards: [
@@ -45,7 +43,6 @@ export const decks: Deck[] = [
     id: 'star-studded',
     title: 'Star Studded',
     description: 'Famous faces from blockbuster movies, beloved classics, and must-watch television.',
-    color: '#B9A7FF',
     icon: '🎬',
     version: 1,
     cards: [
@@ -105,7 +102,6 @@ export const decks: Deck[] = [
     id: 'movie-night',
     title: 'Movie Night',
     description: 'Blockbusters, animated favorites, iconic comedies, and unforgettable classics.',
-    color: '#7ED6DF',
     icon: '🍿',
     version: 1,
     cards: [

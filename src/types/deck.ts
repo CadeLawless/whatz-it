@@ -7,7 +7,6 @@ export type Deck = {
   id: string;
   title: string;
   description: string;
-  color: string;
   icon: string;
   coverImage?: number;
   version: number;

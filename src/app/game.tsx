@@ -147,7 +147,7 @@ export default function GameScreen() {
   return (
     <SafeAreaView
       edges={['left', 'right', 'bottom']}
-      style={[styles.safeArea, { backgroundColor: deck.color }]}
+      style={[styles.safeArea, { backgroundColor: colors.play }]}
     >
       <View style={styles.topRow}>
         <Pressable
@@ -230,7 +230,7 @@ export default function GameScreen() {
       )}
 
       {round.status === 'finished' && (
-        <View style={[styles.transitionOverlay, { backgroundColor: deck.color }]}>
+        <View style={[styles.transitionOverlay, { backgroundColor: colors.play }]}>
           <Text style={styles.finishKicker}>ROUND COMPLETE</Text>
           <Text style={styles.finishTitle}>TIME&apos;S UP!</Text>
         </View>
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
   },
   finishButtonPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   finishButtonText: { color: colors.ink, fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
-  deckName: { position: 'absolute', right: 0 },
+  deckName: { position: 'absolute', right: 0, color: colors.white },
   timerPill: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -336,9 +336,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
   },
-  cardLabel: { color: colors.ink, fontSize: 11, fontWeight: '900', letterSpacing: 2, opacity: 0.55 },
+  cardLabel: { color: colors.white, fontSize: 11, fontWeight: '900', letterSpacing: 2, opacity: 0.72 },
   cardText: {
-    color: colors.ink,
+    color: colors.white,
     fontWeight: '900',
     letterSpacing: -2.4,
     textAlign: 'center',
@@ -387,8 +387,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  finishKicker: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 2.2, opacity: 0.6 },
-  finishTitle: { color: colors.ink, fontSize: 56, lineHeight: 66, fontWeight: '900', letterSpacing: -2 },
+  finishKicker: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 2.2, opacity: 0.72 },
+  finishTitle: { color: colors.white, fontSize: 56, lineHeight: 66, fontWeight: '900', letterSpacing: -2 },
   promptOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 20,

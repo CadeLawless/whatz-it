@@ -17,7 +17,7 @@ export function DeckCard({ deck }: DeckCardProps) {
       onPress={() => router.push({ pathname: '/deck/[deckId]', params: { deckId: deck.id } })}
       style={({ pressed }) => [
         styles.card,
-        { backgroundColor: deck.color },
+        { backgroundColor: colors.play },
         pressed && styles.cardPressed,
       ]}
     >
@@ -58,7 +58,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.14)',
   },
   fallbackTitle: {
-    color: colors.ink,
+    color: colors.white,
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '900',

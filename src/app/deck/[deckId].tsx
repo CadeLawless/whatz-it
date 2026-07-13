@@ -44,7 +44,7 @@ export default function DeckDetailsScreen() {
     <>
       <Stack.Screen options={{ title: deck.title }} />
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <View style={[styles.heroCard, { backgroundColor: deck.color }]}>
+        <View style={[styles.heroCard, { backgroundColor: colors.play }]}>
           <Text style={styles.deckIcon}>{deck.icon}</Text>
           <View style={styles.freePill}>
             <Text style={styles.freeText}>FREE DECK</Text>
@@ -115,10 +115,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   freeText: { color: colors.ink, fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
-  deckTitle: { ...typography.hero, color: colors.ink },
-  deckDescription: { ...typography.body, color: colors.ink, marginTop: spacing.sm, maxWidth: 360 },
+  deckTitle: { ...typography.hero, color: colors.white },
+  deckDescription: { ...typography.body, color: colors.white, marginTop: spacing.sm, maxWidth: 360 },
   cardCount: {
-    color: colors.ink,
+    color: colors.white,
     fontSize: 13,
     fontWeight: '800',
     marginTop: spacing.md,
