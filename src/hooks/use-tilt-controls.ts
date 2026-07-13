@@ -5,8 +5,6 @@ import { DeviceMotion } from 'expo-sensors';
 import type { TiltAction } from '@/game/tilt-detector';
 import {
   createTiltDetectorState,
-  isLandscapeOrientation,
-  normalizeLandscapeTilt,
   updateTiltDetector,
 } from '@/game/tilt-detector';
 
@@ -22,7 +20,6 @@ type UseTiltControlsOptions = {
 export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }: UseTiltControlsOptions) {
   const [status, setStatus] = useState<TiltControlStatus>('checking');
   const detector = useRef(createTiltDetectorState());
-  const landscapeOrientation = useRef<90 | -90 | null>(null);
   const acceptingInputRef = useRef(acceptingInput);
   const onActionRef = useRef(onAction);
   const onRearmedRef = useRef(onRearmed);
@@ -48,7 +45,6 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
     const connect = async () => {
       setStatus('checking');
       detector.current = createTiltDetectorState();
-      landscapeOrientation.current = null;
 
       // Browser support varies widely and some Expo web implementations report
       // availability without exposing the listener API. The web MVP therefore
@@ -81,14 +77,11 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
       setStatus('calibrating');
       try {
         subscription = DeviceMotion.addListener((measurement) => {
-          if (!isLandscapeOrientation(measurement.orientation)) return;
-          if (landscapeOrientation.current === null) {
-            landscapeOrientation.current = measurement.orientation;
-          }
-          if (measurement.orientation !== landscapeOrientation.current) return;
-
-          const angle = normalizeLandscapeTilt(measurement.rotation.gamma, measurement.orientation);
-          if (angle === null) return;
+          // Ready/Game use a portrait-locked native window with a right-landscape
+          // canvas. Gamma remains physical sensor data even though the screen's
+          // orientation field stays portrait, so use the fixed right-landscape
+          // convention instead of the screen-rotation value.
+          const angle = measurement.rotation.gamma;
           const result = updateTiltDetector(
             detector.current,
             angle,

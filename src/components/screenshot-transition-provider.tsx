@@ -2,7 +2,6 @@ import { StatusBar } from 'expo-status-bar';
 import {
   Animated,
   Easing,
-  type ImageStyle,
   StyleSheet,
   useWindowDimensions,
   View,
@@ -34,7 +33,7 @@ type ScreenshotTransitionContextValue = {
 const ScreenshotTransitionContext = createContext<ScreenshotTransitionContextValue | null>(null);
 
 export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const [transition, setTransition] = useState<ScreenshotTransition | null>(null);
   const transitionRef = useRef<ScreenshotTransition | null>(null);
   const imageReady = useRef<(() => void) | null>(null);
@@ -89,16 +88,6 @@ export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
     [translateX, width],
   );
 
-  const isPortrait = height >= width;
-  const snapshotStyle: ImageStyle = {
-    position: 'absolute',
-    width: isPortrait ? height : width,
-    height: isPortrait ? width : height,
-    left: isPortrait ? (width - height) / 2 : 0,
-    top: isPortrait ? (height - width) / 2 : 0,
-    transform: isPortrait ? [{ rotate: '90deg' }] : undefined,
-  };
-
   return (
     <ScreenshotTransitionContext.Provider value={{ beginTransition, revealTransition }}>
       <View style={styles.root}>
@@ -114,7 +103,7 @@ export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
               onLoad={() => imageReady.current?.()}
               resizeMode="cover"
               source={{ uri: transition.uri }}
-              style={snapshotStyle}
+              style={styles.snapshot}
             />
           </Animated.View>
         )}
@@ -137,4 +126,5 @@ const styles = StyleSheet.create({
     elevation: 10_000,
     overflow: 'hidden',
   },
+  snapshot: { ...StyleSheet.absoluteFill },
 });

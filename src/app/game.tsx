@@ -10,13 +10,13 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
+import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { formatRoundClock } from '@/game/round-duration';
@@ -29,7 +29,7 @@ const ROUND_END_SCREEN_MS = 1000;
 
 export default function GameScreen() {
   useKeepAwake();
-  const { width, height } = useWindowDimensions();
+  const { width, height } = useLandscapeDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const roundStarted = useRef(false);
   const startSoundPlayed = useRef(false);
@@ -166,13 +166,13 @@ export default function GameScreen() {
   const cardFontSize = getCardFontSize(currentCard.text, width, height);
 
   return (
-    <SafeAreaView
-      ref={screenRef}
-      collapsable={false}
-      edges={['left', 'right', 'bottom']}
-      style={[styles.safeArea, { backgroundColor: colors.play }]}
-    >
-      <StatusBar hidden animated={false} />
+    <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
+      <LandscapeViewport>
+        <SafeAreaView
+          edges={['top', 'bottom']}
+          style={[styles.safeArea, { backgroundColor: colors.play }]}
+        >
+          <StatusBar hidden animated={false} />
       <View style={styles.topRow}>
         <Pressable
           accessibilityRole="button"
@@ -286,7 +286,9 @@ export default function GameScreen() {
           </View>
         </View>
       )}
-    </SafeAreaView>
+        </SafeAreaView>
+      </LandscapeViewport>
+    </View>
   );
 }
 
@@ -312,6 +314,7 @@ function getTiltStatusLabel(status: ReturnType<typeof useTiltControls>) {
 }
 
 const styles = StyleSheet.create({
+  captureRoot: { flex: 1, backgroundColor: colors.play },
   safeArea: { flex: 1, padding: spacing.lg, overflow: 'hidden' },
   topRow: { height: 52, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   finishButton: {

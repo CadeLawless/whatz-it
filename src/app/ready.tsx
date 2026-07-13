@@ -2,25 +2,25 @@ import { type Href, useRouter } from 'expo-router';
 import { useAudioPlayer } from 'expo-audio';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
 import { getDeckById } from '@/data/decks';
 import { OrientationTransition } from '@/components/orientation-transition';
+import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { formatRoundClock } from '@/game/round-duration';
 import { useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { colors, radius, spacing, typography } from '@/theme';
-import { lockLandscapeOrientation } from '@/utils/orientation';
 import { replaySound } from '@/utils/sound';
 
 const GET_READY_SOUND_MS = 1050;
+const READY_TRANSITION_MS = 450;
 
 export default function ReadyScreen() {
-  const { width, height } = useWindowDimensions();
-  const hasLandscapeLayout = Platform.OS === 'web' || width > height;
+  const { height } = useLandscapeDimensions();
   const router = useRouter();
   const { round, resetRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
@@ -41,28 +41,9 @@ export default function ReadyScreen() {
   const positionReady = foreheadStatus === 'ready' || manualReady;
 
   useEffect(() => {
-    if (isLeaving) return;
-
-    let active = true;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-
-    const enforceLandscape = async () => {
-      const locked = await lockLandscapeOrientation();
-      if (!active) return;
-      if (locked) {
-        setOrientationSettled(true);
-        return;
-      }
-      retry = setTimeout(enforceLandscape, 100);
-    };
-
-    enforceLandscape();
-
-    return () => {
-      active = false;
-      if (retry) clearTimeout(retry);
-    };
-  }, [hasLandscapeLayout, isLeaving]);
+    const timeout = setTimeout(() => setOrientationSettled(true), READY_TRANSITION_MS);
+    return () => clearTimeout(timeout);
+  }, []);
 
   useEffect(() => {
     if (!positionReady || !orientationSettled || isLeaving || introStarted.current) return;
@@ -111,8 +92,12 @@ export default function ReadyScreen() {
 
   if (!deck) return null;
 
-  if (!orientationSettled || !hasLandscapeLayout) {
-    return <OrientationTransition style={styles.rotationShell} />;
+  if (!orientationSettled) {
+    return (
+      <LandscapeViewport>
+        <OrientationTransition style={styles.rotationShell} />
+      </LandscapeViewport>
+    );
   }
 
   const countSize = Math.max(92, Math.min(138, height * 0.34));
@@ -134,13 +119,13 @@ export default function ReadyScreen() {
   };
 
   return (
-    <SafeAreaView
-      ref={screenRef}
-      collapsable={false}
-      edges={['left', 'right', 'bottom']}
-      style={[styles.safeArea, { backgroundColor: colors.play }]}
-    >
-      <StatusBar hidden animated={false} />
+    <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
+      <LandscapeViewport>
+        <SafeAreaView
+          edges={['top', 'bottom']}
+          style={[styles.safeArea, { backgroundColor: colors.play }]}
+        >
+          <StatusBar hidden animated={false} />
       <View style={styles.topRow}>
         <Text style={styles.duration}>{formatRoundClock(round.durationSeconds)}</Text>
         <Text style={[typography.deckName, styles.deckName]}>{deck.title}</Text>
@@ -189,7 +174,9 @@ export default function ReadyScreen() {
           <Text style={styles.cancelText}>CANCEL</Text>
         </Pressable>
       </View>
-    </SafeAreaView>
+        </SafeAreaView>
+      </LandscapeViewport>
+    </View>
   );
 }
 
@@ -209,6 +196,7 @@ function getPositionMessage(status: ReturnType<typeof useForeheadPosition>) {
 }
 
 const styles = StyleSheet.create({
+  captureRoot: { flex: 1, backgroundColor: colors.play },
   rotationShell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   safeArea: { flex: 1, padding: spacing.lg, overflow: 'hidden' },
   topRow: {
