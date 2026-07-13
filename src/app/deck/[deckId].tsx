@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TimerPicker } from '@/components/timer-picker';
-import { OrientationTransition } from '@/components/orientation-transition';
+import { OrientationTransition, PortraitTransition } from '@/components/orientation-transition';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
@@ -28,7 +28,7 @@ export default function DeckDetailsScreen() {
     loadRoundDuration().then(setDuration);
   }, []);
 
-  if (!isPortrait) return <OrientationTransition style={styles.orientationGate} />;
+  if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
 
   if (!deck) {
     return (

@@ -4,7 +4,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
-import { OrientationTransition } from '@/components/orientation-transition';
+import { OrientationTransition, PortraitTransition } from '@/components/orientation-transition';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -19,7 +19,7 @@ export default function ResultsScreen() {
   const passedCount = round.results.length - correctCount;
 
   if (!isPortrait) {
-    return <OrientationTransition style={styles.orientationGate} />;
+    return <PortraitTransition style={styles.orientationGate} />;
   }
 
   if (!deck || round.status !== 'finished') {

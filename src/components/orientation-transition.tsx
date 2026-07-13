@@ -23,11 +23,20 @@ export function OrientationTransition({ style }: OrientationTransitionProps) {
   );
 }
 
+export function PortraitTransition({ style }: OrientationTransitionProps) {
+  return (
+    <View accessibilityLabel="Returning to portrait" style={[styles.portraitContainer, style]}>
+      <StatusBar hidden animated={false} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.play,
   },
+  portraitContainer: { backgroundColor: colors.background },
   animation: { width: 230, height: 230 },
 });
