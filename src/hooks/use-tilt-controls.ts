@@ -77,11 +77,9 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
       setStatus('calibrating');
       try {
         subscription = DeviceMotion.addListener((measurement) => {
-          // Ready/Game use a portrait-locked native window with a right-landscape
-          // canvas. Gamma remains physical sensor data even though the screen's
-          // orientation field stays portrait, so use the fixed right-landscape
-          // convention instead of the screen-rotation value.
-          const angle = measurement.rotation.gamma;
+          // The portrait-locked landscape canvas reverses the visual direction
+          // of gamma: toward the floor is Correct, toward the ceiling is Pass.
+          const angle = -measurement.rotation.gamma;
           const result = updateTiltDetector(
             detector.current,
             angle,
