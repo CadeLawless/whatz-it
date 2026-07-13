@@ -9,7 +9,7 @@ import { RoundProvider } from '@/game/round-context';
 
 export default function RootLayout() {
   useEffect(() => {
-    setAudioModeAsync({ playsInSilentMode: true }).catch(() => undefined);
+    setAudioModeAsync({ playsInSilentMode: false }).catch(() => undefined);
   }, []);
 
   return (

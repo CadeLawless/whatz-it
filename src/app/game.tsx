@@ -28,6 +28,7 @@ export default function GameScreen() {
   const { width, height } = useWindowDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const roundStarted = useRef(false);
+  const startSoundPlayed = useRef(false);
   const lastTickSecond = useRef<number | null>(null);
   const finishSoundPlayed = useRef(false);
   const roundStartPlayer = useAudioPlayer(require('../../assets/sounds/round-start.wav'));
@@ -80,13 +81,18 @@ export default function GameScreen() {
   }, [currentCard, deck, round.status, router]);
 
   useEffect(() => {
+    if (round.status !== 'ready' || startSoundPlayed.current) return;
+    startSoundPlayed.current = true;
+    replaySound(roundStartPlayer);
+  }, [round.status, roundStartPlayer]);
+
+  useEffect(() => {
     if (round.status !== 'ready') return;
     if (!roundStarted.current && (tiltStatus === 'ready' || tiltStatus === 'unavailable' || tiltStatus === 'denied')) {
       roundStarted.current = true;
-      replaySound(roundStartPlayer);
       startRound();
     }
-  }, [round.status, roundStartPlayer, startRound, tiltStatus]);
+  }, [round.status, startRound, tiltStatus]);
 
   useEffect(() => {
     if (round.status !== 'playing' && round.status !== 'feedback') return;
