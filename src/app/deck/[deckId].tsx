@@ -13,7 +13,6 @@ import {
   saveRoundDuration,
 } from '@/storage/preferences';
 import { colors, radius, spacing, typography } from '@/theme';
-import { lockLandscapeOrientation } from '@/utils/orientation';
 
 export default function DeckDetailsScreen() {
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
@@ -36,13 +35,12 @@ export default function DeckDetailsScreen() {
     );
   }
 
-  const handleStart = async () => {
+  const handleStart = () => {
     if (isStarting) return;
     const safeDuration = clampRoundDuration(duration);
     if (!configureRound(deck.id, safeDuration)) return;
     setIsStarting(true);
     saveRoundDuration(safeDuration).catch(() => undefined);
-    await lockLandscapeOrientation();
     router.push('/ready' as Href);
   };
 

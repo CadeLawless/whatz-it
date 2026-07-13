@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { colors, radius, spacing, typography } from '@/theme';
-import { lockLandscapeOrientation, lockPortraitOrientation } from '@/utils/orientation';
+import { lockPortraitOrientation } from '@/utils/orientation';
 
 export default function ResultsScreen() {
   const router = useRouter();
@@ -43,11 +43,10 @@ export default function ResultsScreen() {
     );
   }
 
-  const handleReplay = async () => {
+  const handleReplay = () => {
     if (isStarting) return;
     configureRound(deck.id, round.durationSeconds);
     setIsStarting(true);
-    await lockLandscapeOrientation();
     router.replace('/ready' as Href);
   };
 

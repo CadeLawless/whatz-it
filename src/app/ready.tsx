@@ -36,12 +36,23 @@ export default function ReadyScreen() {
 
   useEffect(() => {
     let active = true;
-    lockLandscapeOrientation().finally(() => {
-      if (active) setOrientationSettled(true);
-    });
+    let retry: ReturnType<typeof setTimeout> | undefined;
+
+    const enforceLandscape = async () => {
+      const locked = await lockLandscapeOrientation();
+      if (!active) return;
+      if (locked) {
+        setOrientationSettled(true);
+        return;
+      }
+      retry = setTimeout(enforceLandscape, 100);
+    };
+
+    enforceLandscape();
 
     return () => {
       active = false;
+      if (retry) clearTimeout(retry);
     };
   }, []);
 
