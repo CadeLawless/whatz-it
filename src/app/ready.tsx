@@ -1,5 +1,6 @@
 import { type Href, useRouter } from 'expo-router';
 import { useAudioPlayer } from 'expo-audio';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -92,6 +93,7 @@ export default function ReadyScreen() {
   if (!orientationSettled) {
     return (
       <View style={[styles.rotationShell, { backgroundColor: colors.play }]}>
+        <StatusBar hidden animated={false} />
       </View>
     );
   }
@@ -110,6 +112,7 @@ export default function ReadyScreen() {
       edges={['left', 'right', 'bottom']}
       style={[styles.safeArea, { backgroundColor: colors.play }]}
     >
+      <StatusBar hidden animated={false} />
       <View style={styles.topRow}>
         <Text style={styles.duration}>{formatRoundClock(round.durationSeconds)}</Text>
         <Text style={[typography.deckName, styles.deckName]}>{deck.title}</Text>

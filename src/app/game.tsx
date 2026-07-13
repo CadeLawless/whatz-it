@@ -2,6 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { useAudioPlayer } from 'expo-audio';
 import { useKeepAwake } from 'expo-keep-awake';
 import { type Href, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
@@ -149,6 +150,7 @@ export default function GameScreen() {
       edges={['left', 'right', 'bottom']}
       style={[styles.safeArea, { backgroundColor: colors.play }]}
     >
+      <StatusBar hidden animated={false} />
       <View style={styles.topRow}>
         <Pressable
           accessibilityRole="button"
