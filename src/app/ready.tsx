@@ -1,7 +1,7 @@
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
@@ -11,6 +11,7 @@ import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function ReadyScreen() {
+  const { width, height } = useWindowDimensions();
   const router = useRouter();
   const { round, resetRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
@@ -19,6 +20,7 @@ export default function ReadyScreen() {
   const launched = useRef(false);
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady = foreheadStatus === 'ready' || manualReady;
+  const isLandscapeLayout = width > height;
 
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
@@ -40,7 +42,7 @@ export default function ReadyScreen() {
       return;
     }
 
-    if (!positionReady) return;
+    if (!positionReady || !isLandscapeLayout) return;
 
     const timeout = setTimeout(() => {
       if (count === 1 && !launched.current) {
@@ -52,9 +54,19 @@ export default function ReadyScreen() {
       setCount((value) => Math.max(1, value - 1));
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [count, deck, positionReady, round.status, router]);
+  }, [count, deck, isLandscapeLayout, positionReady, round.status, router]);
 
   if (!deck) return null;
+
+  if (!isLandscapeLayout) {
+    return (
+      <View style={[styles.rotationShell, { backgroundColor: deck.color }]}>
+        <Text style={styles.rotationText}>Turning sideways...</Text>
+      </View>
+    );
+  }
+
+  const countSize = Math.max(92, Math.min(138, height * 0.34));
 
   const handleCancel = () => {
     resetRound();
@@ -73,7 +85,9 @@ export default function ReadyScreen() {
         <Text style={styles.kicker}>HOLD THE PHONE TO YOUR FOREHEAD</Text>
         {positionReady ? (
           <>
-            <Text style={styles.count}>{count}</Text>
+            <Text style={[styles.count, { fontSize: countSize, lineHeight: countSize * 1.05 }]}>
+              {count}
+            </Text>
             <Text style={styles.instructions}>Hold steady - your round is about to begin.</Text>
           </>
         ) : (
@@ -96,9 +110,11 @@ export default function ReadyScreen() {
         )}
       </View>
 
-      <Pressable accessibilityRole="button" onPress={handleCancel} style={styles.cancelButton}>
-        <Text style={styles.cancelText}>CANCEL</Text>
-      </Pressable>
+      <View style={styles.footer}>
+        <Pressable accessibilityRole="button" onPress={handleCancel} style={styles.cancelButton}>
+          <Text style={styles.cancelText}>CANCEL</Text>
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
@@ -119,8 +135,15 @@ function getPositionMessage(status: ReturnType<typeof useForeheadPosition>) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, padding: spacing.lg },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rotationShell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  rotationText: { color: colors.ink, fontSize: 16, fontWeight: '800' },
+  safeArea: { flex: 1, padding: spacing.lg, overflow: 'hidden' },
+  topRow: {
+    flexDirection: 'row',
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   duration: {
     color: colors.ink,
     fontSize: 14,
@@ -130,9 +153,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
   },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  center: {
+    flex: 1,
+    minHeight: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+  },
   kicker: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 1.8, textAlign: 'center' },
-  count: { color: colors.ink, fontSize: 150, lineHeight: 170, fontWeight: '900', letterSpacing: -8 },
+  count: { color: colors.ink, fontWeight: '900', letterSpacing: -8 },
   phoneIcon: {
     color: colors.ink,
     fontSize: 120,
@@ -156,8 +185,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.ink,
   },
   manualButtonText: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
+  footer: { flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingTop: spacing.sm },
   cancelButton: {
-    alignSelf: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: radius.pill,

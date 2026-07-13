@@ -3,7 +3,16 @@ import { useKeepAwake } from 'expo-keep-awake';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect } from 'react';
-import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  AppState,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
@@ -15,6 +24,7 @@ import { colors, radius, spacing, typography } from '@/theme';
 
 export default function GameScreen() {
   useKeepAwake();
+  const { width, height } = useWindowDimensions();
   const router = useRouter();
   const { round, answerCard, advanceCard, finishRound, startRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
@@ -99,6 +109,7 @@ export default function GameScreen() {
 
   const locked = round.status !== 'playing';
   const feedbackColor = round.latestOutcome === 'correct' ? colors.correct : colors.pass;
+  const cardFontSize = getCardFontSize(currentCard.text, width, height);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: deck.color }]}>
@@ -131,7 +142,13 @@ export default function GameScreen() {
 
       <View style={styles.cardArea}>
         <Text style={styles.cardLabel}>YOUR CARD</Text>
-        <Text adjustsFontSizeToFit numberOfLines={3} minimumFontScale={0.55} style={styles.cardText}>
+        <Text
+          maxFontSizeMultiplier={1.1}
+          style={[
+            styles.cardText,
+            { fontSize: cardFontSize, lineHeight: Math.round(cardFontSize * 1.1) },
+          ]}
+        >
           {currentCard.text}
         </Text>
       </View>
@@ -179,6 +196,12 @@ export default function GameScreen() {
   );
 }
 
+function getCardFontSize(text: string, width: number, height: number) {
+  const lengthSize = text.length <= 16 ? 68 : text.length <= 28 ? 56 : text.length <= 44 ? 46 : 38;
+  const viewportSize = Math.max(36, Math.min(68, height * 0.18, width * 0.09));
+  return Math.round(Math.min(lengthSize, viewportSize));
+}
+
 function getTiltStatusLabel(status: ReturnType<typeof useTiltControls>) {
   switch (status) {
     case 'checking':
@@ -195,8 +218,8 @@ function getTiltStatusLabel(status: ReturnType<typeof useTiltControls>) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, padding: spacing.lg },
-  topRow: { height: 52, alignItems: 'center', justifyContent: 'center' },
+  safeArea: { flex: 1, padding: spacing.lg, overflow: 'hidden' },
+  topRow: { height: 52, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   finishButton: {
     position: 'absolute',
     left: 0,
@@ -234,18 +257,26 @@ const styles = StyleSheet.create({
   sensorDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted },
   sensorDotReady: { backgroundColor: colors.correct },
   sensorText: { color: colors.ink, fontSize: 9, fontWeight: '900', letterSpacing: 1.2, opacity: 0.62 },
-  cardArea: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md },
+  cardArea: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
   cardLabel: { color: colors.ink, fontSize: 11, fontWeight: '900', letterSpacing: 2, opacity: 0.55 },
   cardText: {
     color: colors.ink,
-    fontSize: 64,
-    lineHeight: 70,
     fontWeight: '900',
     letterSpacing: -2.4,
     textAlign: 'center',
     marginTop: spacing.sm,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
-  controls: { flexDirection: 'row', gap: spacing.md },
+  controls: { flexDirection: 'row', flexShrink: 0, gap: spacing.md },
   control: {
     flex: 1,
     minHeight: 92,

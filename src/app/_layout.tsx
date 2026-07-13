@@ -31,11 +31,21 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="ready"
-          options={{ headerShown: false, gestureEnabled: false, orientation: 'landscape' }}
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+            orientation: 'landscape',
+            animation: 'none',
+          }}
         />
         <Stack.Screen
           name="game"
-          options={{ headerShown: false, gestureEnabled: false, orientation: 'landscape' }}
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+            orientation: 'landscape',
+            animation: 'none',
+          }}
         />
         <Stack.Screen
           name="results"
