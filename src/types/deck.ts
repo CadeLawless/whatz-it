@@ -9,6 +9,7 @@ export type Deck = {
   description: string;
   color: string;
   icon: string;
+  coverImage?: number;
   version: number;
   cards: Card[];
 };
