@@ -198,7 +198,12 @@ function getPositionMessage(status: ReturnType<typeof useForeheadPosition>) {
 const styles = StyleSheet.create({
   captureRoot: { flex: 1, backgroundColor: colors.play },
   rotationShell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  safeArea: { flex: 1, padding: spacing.lg, overflow: 'hidden' },
+  safeArea: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    overflow: 'hidden',
+  },
   topRow: {
     flexDirection: 'row',
     flexShrink: 0,
@@ -227,12 +232,19 @@ const styles = StyleSheet.create({
   getReady: { color: colors.white, fontSize: 42, lineHeight: 54, fontWeight: '900', letterSpacing: 2 },
   phoneIcon: {
     color: colors.white,
-    fontSize: 120,
-    lineHeight: 130,
+    fontSize: 84,
+    lineHeight: 92,
     fontWeight: '300',
     transform: [{ rotate: '90deg' }],
   },
-  positionTitle: { ...typography.title, color: colors.white, textAlign: 'center', marginBottom: spacing.sm },
+  positionTitle: {
+    color: colors.white,
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
   instructions: {
     ...typography.body,
     color: colors.white,
@@ -248,7 +260,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   manualButtonText: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
-  footer: { flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingTop: spacing.sm },
+  footer: { flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingTop: spacing.xs },
   cancelButton: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,

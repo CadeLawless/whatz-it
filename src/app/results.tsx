@@ -55,6 +55,7 @@ export default function ResultsScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <FlatList
         data={round.results}
+        style={styles.list}
         keyExtractor={(item) => item.cardId}
         contentContainerStyle={styles.content}
         ListHeaderComponent={
@@ -89,21 +90,22 @@ export default function ResultsScreen() {
         }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={<Text style={styles.noCards}>Time ran out before a card was answered.</Text>}
-        ListFooterComponent={
-          <View style={styles.actions}>
-            <Pressable
-              disabled={isStarting}
-              onPress={handleReplay}
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.primaryButtonText}>PLAY AGAIN</Text>
-            </Pressable>
-            <Pressable onPress={handleHome} style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}>
-              <Text style={styles.secondaryButtonText}>BACK TO DECKS</Text>
-            </Pressable>
-          </View>
-        }
       />
+      <View style={styles.actions}>
+        <Pressable
+          disabled={isStarting}
+          onPress={handleReplay}
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.primaryButtonText}>PLAY AGAIN</Text>
+        </Pressable>
+        <Pressable
+          onPress={handleHome}
+          style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.secondaryButtonText}>BACK TO DECKS</Text>
+        </Pressable>
+      </View>
       {isStarting && (
         <OrientationTransition style={styles.startingOverlay} />
       )}
@@ -118,7 +120,8 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   orientationGate: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  list: { flex: 1 },
+  content: { padding: spacing.lg, paddingBottom: spacing.lg },
   empty: {
     flex: 1,
     alignItems: 'center',
@@ -150,7 +153,16 @@ const styles = StyleSheet.create({
   outcomeText: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   separator: { height: spacing.sm },
   noCards: { ...typography.body, color: colors.muted, textAlign: 'center', padding: spacing.xl },
-  actions: { gap: spacing.sm, marginTop: spacing.xl },
+  actions: {
+    flexShrink: 0,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
   primaryButton: {
     minHeight: 58,
     borderRadius: radius.lg,
