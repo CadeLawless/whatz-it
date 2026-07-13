@@ -1,11 +1,17 @@
 import { Stack } from 'expo-router';
+import { setAudioModeAsync } from 'expo-audio';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
 import { RoundProvider } from '@/game/round-context';
 
 export default function RootLayout() {
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => undefined);
+  }, []);
+
   return (
     <SafeAreaProvider>
       <RoundProvider>

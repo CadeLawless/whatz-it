@@ -1,4 +1,5 @@
 import { type Href, useRouter } from 'expo-router';
+import { useAudioPlayer } from 'expo-audio';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +10,9 @@ import { useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { colors, radius, spacing, typography } from '@/theme';
 import { lockLandscapeOrientation, lockPortraitOrientation } from '@/utils/orientation';
+import { replaySound } from '@/utils/sound';
+
+const GET_READY_SOUND_MS = 1350;
 
 export default function ReadyScreen() {
   const { height } = useWindowDimensions();
@@ -18,8 +22,14 @@ export default function ReadyScreen() {
   const [count, setCount] = useState(3);
   const [manualReady, setManualReady] = useState(false);
   const [orientationSettled, setOrientationSettled] = useState(false);
+  const [introComplete, setIntroComplete] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
+  const introStarted = useRef(false);
+  const getReadyPlayer = useAudioPlayer(require('../../assets/sounds/get-ready.wav'));
+  const count3Player = useAudioPlayer(require('../../assets/sounds/count-3.wav'));
+  const count2Player = useAudioPlayer(require('../../assets/sounds/count-2.wav'));
+  const count1Player = useAudioPlayer(require('../../assets/sounds/count-1.wav'));
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady = foreheadStatus === 'ready' || manualReady;
 
@@ -33,6 +43,19 @@ export default function ReadyScreen() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!positionReady || !orientationSettled || isLeaving || introStarted.current) return;
+    introStarted.current = true;
+    replaySound(getReadyPlayer);
+    const timeout = setTimeout(() => setIntroComplete(true), GET_READY_SOUND_MS);
+    return () => clearTimeout(timeout);
+  }, [getReadyPlayer, isLeaving, orientationSettled, positionReady]);
+
+  useEffect(() => {
+    if (!introComplete || isLeaving) return;
+    replaySound(count === 3 ? count3Player : count === 2 ? count2Player : count1Player);
+  }, [count, count1Player, count2Player, count3Player, introComplete, isLeaving]);
 
   useEffect(() => {
     if (!deck || round.status === 'idle') {
@@ -50,7 +73,7 @@ export default function ReadyScreen() {
       return;
     }
 
-    if (!positionReady || !orientationSettled || isLeaving) return;
+    if (!positionReady || !orientationSettled || !introComplete || isLeaving) return;
 
     const timeout = setTimeout(() => {
       if (count === 1 && !launched.current) {
@@ -62,7 +85,7 @@ export default function ReadyScreen() {
       setCount((value) => Math.max(1, value - 1));
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [count, deck, isLeaving, orientationSettled, positionReady, round.status, router]);
+  }, [count, deck, introComplete, isLeaving, orientationSettled, positionReady, round.status, router]);
 
   if (!deck) return null;
 
@@ -96,9 +119,13 @@ export default function ReadyScreen() {
         <Text style={styles.kicker}>HOLD THE PHONE TO YOUR FOREHEAD</Text>
         {positionReady ? (
           <>
-            <Text style={[styles.count, { fontSize: countSize, lineHeight: countSize * 1.05 }]}>
-              {count}
-            </Text>
+            {introComplete ? (
+              <Text style={[styles.count, { fontSize: countSize, lineHeight: countSize * 1.05 }]}>
+                {count}
+              </Text>
+            ) : (
+              <Text style={styles.getReady}>GET READY</Text>
+            )}
             <Text style={styles.instructions}>Hold steady - your round is about to begin.</Text>
           </>
         ) : (
@@ -177,6 +204,7 @@ const styles = StyleSheet.create({
   },
   kicker: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 1.8, textAlign: 'center' },
   count: { color: colors.ink, fontWeight: '900', letterSpacing: -8 },
+  getReady: { color: colors.ink, fontSize: 42, lineHeight: 54, fontWeight: '900', letterSpacing: 2 },
   phoneIcon: {
     color: colors.ink,
     fontSize: 120,

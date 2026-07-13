@@ -1,7 +1,8 @@
 import * as Haptics from 'expo-haptics';
+import { useAudioPlayer } from 'expo-audio';
 import { useKeepAwake } from 'expo-keep-awake';
 import { type Href, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   Platform,
@@ -20,11 +21,16 @@ import { useRoundTimer } from '@/hooks/use-round-timer';
 import { useTiltControls } from '@/hooks/use-tilt-controls';
 import { colors, radius, spacing, typography } from '@/theme';
 import { lockPortraitOrientation } from '@/utils/orientation';
+import { replaySound } from '@/utils/sound';
 
 export default function GameScreen() {
   useKeepAwake();
   const { width, height } = useWindowDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
+  const roundStarted = useRef(false);
+  const lastTickSecond = useRef<number | null>(null);
+  const roundStartPlayer = useAudioPlayer(require('../../assets/sounds/round-start.wav'));
+  const finalTickPlayer = useAudioPlayer(require('../../assets/sounds/final-tick.wav'));
   const router = useRouter();
   const { round, answerCard, advanceCard, finishRound, startRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
@@ -69,10 +75,23 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (round.status !== 'ready') return;
-    if (tiltStatus === 'ready' || tiltStatus === 'unavailable' || tiltStatus === 'denied') {
+    if (!roundStarted.current && (tiltStatus === 'ready' || tiltStatus === 'unavailable' || tiltStatus === 'denied')) {
+      roundStarted.current = true;
+      replaySound(roundStartPlayer);
       startRound();
     }
-  }, [round.status, startRound, tiltStatus]);
+  }, [round.status, roundStartPlayer, startRound, tiltStatus]);
+
+  useEffect(() => {
+    if (round.status !== 'playing') return;
+    if (remainingSeconds < 1 || remainingSeconds > 10) {
+      lastTickSecond.current = null;
+      return;
+    }
+    if (lastTickSecond.current === remainingSeconds) return;
+    lastTickSecond.current = remainingSeconds;
+    replaySound(finalTickPlayer);
+  }, [finalTickPlayer, remainingSeconds, round.status]);
 
   useEffect(() => {
     if (round.status !== 'feedback') return;

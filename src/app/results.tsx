@@ -1,5 +1,6 @@
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { useAudioPlayer } from 'expo-audio';
+import { useCallback, useEffect, useRef } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,6 +8,7 @@ import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { colors, radius, spacing, typography } from '@/theme';
 import { lockPortraitOrientation } from '@/utils/orientation';
+import { replaySound } from '@/utils/sound';
 
 export default function ResultsScreen() {
   const router = useRouter();
@@ -14,6 +16,14 @@ export default function ResultsScreen() {
   const deck = getDeckById(round.deckId ?? undefined);
   const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
   const passedCount = round.results.length - correctCount;
+  const endSoundPlayed = useRef(false);
+  const roundEndPlayer = useAudioPlayer(require('../../assets/sounds/round-end.wav'));
+
+  useEffect(() => {
+    if (round.status !== 'finished' || endSoundPlayed.current) return;
+    endSoundPlayed.current = true;
+    replaySound(roundEndPlayer);
+  }, [round.status, roundEndPlayer]);
 
   useFocusEffect(
     useCallback(() => {
