@@ -16,14 +16,16 @@ type UseTiltControlsOptions = {
   enabled: boolean;
   acceptingInput: boolean;
   onAction: (action: TiltAction) => void;
+  onRearmed: () => void;
 };
 
-export function useTiltControls({ enabled, acceptingInput, onAction }: UseTiltControlsOptions) {
+export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }: UseTiltControlsOptions) {
   const [status, setStatus] = useState<TiltControlStatus>('checking');
   const detector = useRef(createTiltDetectorState());
   const landscapeOrientation = useRef<90 | -90 | null>(null);
   const acceptingInputRef = useRef(acceptingInput);
   const onActionRef = useRef(onAction);
+  const onRearmedRef = useRef(onRearmed);
 
   useEffect(() => {
     acceptingInputRef.current = acceptingInput;
@@ -32,6 +34,10 @@ export function useTiltControls({ enabled, acceptingInput, onAction }: UseTiltCo
   useEffect(() => {
     onActionRef.current = onAction;
   }, [onAction]);
+
+  useEffect(() => {
+    onRearmedRef.current = onRearmed;
+  }, [onRearmed]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -93,6 +99,7 @@ export function useTiltControls({ enabled, acceptingInput, onAction }: UseTiltCo
 
           if (result.calibrated) setStatus((current) => (current === 'ready' ? current : 'ready'));
           if (result.action && acceptingInputRef.current) onActionRef.current(result.action);
+          if (result.rearmed) onRearmedRef.current();
         });
       } catch {
         setStatus('unavailable');

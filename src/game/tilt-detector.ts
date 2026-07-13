@@ -37,6 +37,7 @@ export type TiltDetectorResult = {
   action: TiltAction | null;
   calibrated: boolean;
   delta: number;
+  rearmed: boolean;
 };
 
 export const DEFAULT_TILT_CONFIG: TiltDetectorConfig = {
@@ -98,6 +99,7 @@ export function updateTiltDetector(
       action: null,
       calibrated,
       delta: 0,
+      rearmed: false,
     };
   }
 
@@ -105,13 +107,14 @@ export function updateTiltDetector(
 
   if (!state.armed) {
     const neutralCount = Math.abs(delta) <= config.neutralAngle ? state.neutralCount + 1 : 0;
+    const rearmed = neutralCount >= config.rearmSamples;
     return {
       state: {
         ...state,
         rawAngle: angle,
         unwrappedAngle,
         filteredAngle,
-        armed: neutralCount >= config.rearmSamples,
+        armed: rearmed,
         candidateAction: null,
         candidateCount: 0,
         neutralCount,
@@ -119,6 +122,7 @@ export function updateTiltDetector(
       action: null,
       calibrated: true,
       delta,
+      rearmed,
     };
   }
 
@@ -143,6 +147,7 @@ export function updateTiltDetector(
       action: null,
       calibrated: true,
       delta,
+      rearmed: false,
     };
   }
 
@@ -164,7 +169,7 @@ export function updateTiltDetector(
     config,
   );
 
-  return { state: nextState, action, calibrated: true, delta };
+  return { state: nextState, action, calibrated: true, delta, rearmed: false };
 }
 
 function adjustNeutralBaseline(

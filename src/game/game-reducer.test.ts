@@ -127,8 +127,25 @@ describe('tilt detector', () => {
 
     result = updateTiltDetector(result.state, 0.1, config);
     assert.equal(result.state.armed, true);
+    assert.equal(result.rearmed, true);
     result = updateTiltDetector(result.state, -0.7, config);
     assert.equal(result.action, 'passed');
+  });
+
+  it('keeps feedback visible until enough neutral samples rearm the detector', () => {
+    const stableConfig = { ...config, rearmSamples: 3 };
+    let result = updateTiltDetector(createTiltDetectorState(), 0, stableConfig);
+    result = updateTiltDetector(result.state, 0, stableConfig);
+    result = updateTiltDetector(result.state, 0.7, stableConfig);
+    assert.equal(result.action, 'correct');
+
+    result = updateTiltDetector(result.state, 0, stableConfig, false);
+    assert.equal(result.rearmed, false);
+    result = updateTiltDetector(result.state, 0, stableConfig, false);
+    assert.equal(result.rearmed, false);
+    result = updateTiltDetector(result.state, 0, stableConfig, false);
+    assert.equal(result.rearmed, true);
+    assert.equal(result.state.armed, true);
   });
 
   it('normalizes left-landscape readings', () => {

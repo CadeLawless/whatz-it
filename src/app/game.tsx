@@ -66,6 +66,7 @@ export default function GameScreen() {
       round.status === 'ready' || round.status === 'playing' || round.status === 'feedback',
     acceptingInput: round.status === 'playing',
     onAction: handleAnswer,
+    onRearmed: advanceCard,
   });
   const handleFinishEarly = useCallback(() => {
     setFinishPromptVisible(true);
@@ -108,9 +109,10 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (round.status !== 'feedback') return;
+    if (tiltStatus !== 'unavailable' && tiltStatus !== 'denied') return;
     const timeout = setTimeout(advanceCard, 550);
     return () => clearTimeout(timeout);
-  }, [advanceCard, round.status]);
+  }, [advanceCard, round.status, tiltStatus]);
 
   useEffect(() => {
     if (round.status !== 'finished') return;
