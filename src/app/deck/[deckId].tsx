@@ -45,7 +45,6 @@ export default function DeckDetailsScreen() {
       <Stack.Screen options={{ title: deck.title }} />
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         <View style={[styles.heroCard, { backgroundColor: colors.play }]}>
-          <Text style={styles.deckIcon}>{deck.icon}</Text>
           <View style={styles.freePill}>
             <Text style={styles.freeText}>FREE DECK</Text>
           </View>
@@ -98,13 +97,6 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     justifyContent: 'flex-end',
     overflow: 'hidden',
-  },
-  deckIcon: {
-    position: 'absolute',
-    right: spacing.lg,
-    top: spacing.lg,
-    fontSize: 76,
-    transform: [{ rotate: '8deg' }],
   },
   freePill: {
     alignSelf: 'flex-start',

@@ -165,7 +165,7 @@ export default function GameScreen() {
           </Text>
           <Text style={styles.timerLabel}>TIME</Text>
         </View>
-        <Text style={[typography.deckName, styles.deckName]}>{deck.icon} {deck.title}</Text>
+        <Text style={[typography.deckName, styles.deckName]}>{deck.title}</Text>
         {/* <Text style={styles.progress}>
           {round.currentCardIndex + 1} / {round.cardOrder.length}
         </Text> */}

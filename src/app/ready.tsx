@@ -112,7 +112,7 @@ export default function ReadyScreen() {
     >
       <View style={styles.topRow}>
         <Text style={styles.duration}>{formatRoundClock(round.durationSeconds)}</Text>
-        <Text style={[typography.deckName, styles.deckName]}>{deck.icon} {deck.title}</Text>
+        <Text style={[typography.deckName, styles.deckName]}>{deck.title}</Text>
       </View>
 
       <View style={styles.center}>

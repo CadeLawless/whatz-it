@@ -61,7 +61,7 @@ export default function ResultsScreen() {
           <View>
             <Text style={styles.eyebrow}>ROUND COMPLETE</Text>
             <Text style={styles.title}>Nice guessing!</Text>
-            <Text style={styles.deckName}>{deck.icon} {deck.title}</Text>
+            <Text style={styles.deckName}>{deck.title}</Text>
             <View style={styles.scoreRow}>
               <View style={[styles.scoreCard, { backgroundColor: colors.correct }]}>
                 <Text style={styles.score}>{correctCount}</Text>
