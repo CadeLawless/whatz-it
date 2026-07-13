@@ -29,8 +29,12 @@ export default function GameScreen() {
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const roundStarted = useRef(false);
   const lastTickSecond = useRef<number | null>(null);
+  const finishSoundPlayed = useRef(false);
   const roundStartPlayer = useAudioPlayer(require('../../assets/sounds/round-start.wav'));
   const finalTickPlayer = useAudioPlayer(require('../../assets/sounds/final-tick.wav'));
+  const correctPlayer = useAudioPlayer(require('../../assets/sounds/correct.wav'));
+  const passPlayer = useAudioPlayer(require('../../assets/sounds/pass.wav'));
+  const roundEndPlayer = useAudioPlayer(require('../../assets/sounds/round-end.wav'));
   const router = useRouter();
   const { round, answerCard, advanceCard, finishRound, startRound } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
@@ -45,13 +49,15 @@ export default function GameScreen() {
   const handleAnswer = useCallback(
     (outcome: 'correct' | 'passed') => {
       if (outcome === 'correct') {
+        replaySound(correctPlayer);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       } else {
+        replaySound(passPlayer);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
       }
       answerCard(outcome);
     },
-    [answerCard],
+    [answerCard, correctPlayer, passPlayer],
   );
   const tiltStatus = useTiltControls({
     enabled:
@@ -83,7 +89,7 @@ export default function GameScreen() {
   }, [round.status, roundStartPlayer, startRound, tiltStatus]);
 
   useEffect(() => {
-    if (round.status !== 'playing') return;
+    if (round.status !== 'playing' && round.status !== 'feedback') return;
     if (remainingSeconds < 1 || remainingSeconds > 10) {
       lastTickSecond.current = null;
       return;
@@ -101,8 +107,13 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (round.status !== 'finished') return;
+    if (!finishSoundPlayed.current) {
+      finishSoundPlayed.current = true;
+      replaySound(roundEndPlayer);
+    }
     let active = true;
     const showResults = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
       await lockPortraitOrientation();
       if (active) router.replace('/results' as Href);
     };
@@ -110,7 +121,7 @@ export default function GameScreen() {
     return () => {
       active = false;
     };
-  }, [round.status, router]);
+  }, [round.status, roundEndPlayer, router]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -213,7 +224,10 @@ export default function GameScreen() {
       )}
 
       {round.status === 'finished' && (
-        <View style={[styles.transitionOverlay, { backgroundColor: deck.color }]} />
+        <View style={[styles.transitionOverlay, { backgroundColor: deck.color }]}>
+          <Text style={styles.finishKicker}>ROUND COMPLETE</Text>
+          <Text style={styles.finishTitle}>TIME&apos;S UP!</Text>
+        </View>
       )}
 
       {finishPromptVisible && round.status !== 'finished' && (
@@ -361,7 +375,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1.3,
     marginTop: spacing.sm,
   },
-  transitionOverlay: { ...StyleSheet.absoluteFill },
+  transitionOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  finishKicker: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 2.2, opacity: 0.6 },
+  finishTitle: { color: colors.ink, fontSize: 56, lineHeight: 66, fontWeight: '900', letterSpacing: -2 },
   promptOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 20,

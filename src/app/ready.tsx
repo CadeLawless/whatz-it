@@ -12,7 +12,7 @@ import { colors, radius, spacing, typography } from '@/theme';
 import { lockLandscapeOrientation, lockPortraitOrientation } from '@/utils/orientation';
 import { replaySound } from '@/utils/sound';
 
-const GET_READY_SOUND_MS = 1350;
+const GET_READY_SOUND_MS = 1050;
 
 export default function ReadyScreen() {
   const { height } = useWindowDimensions();
