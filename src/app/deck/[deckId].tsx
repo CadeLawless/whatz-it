@@ -1,4 +1,5 @@
 import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,6 +13,7 @@ import {
   saveRoundDuration,
 } from '@/storage/preferences';
 import { colors, radius, spacing, typography } from '@/theme';
+import { lockLandscapeOrientation } from '@/utils/orientation';
 
 export default function DeckDetailsScreen() {
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
@@ -19,6 +21,7 @@ export default function DeckDetailsScreen() {
   const router = useRouter();
   const { configureRound } = useRound();
   const [duration, setDuration] = useState(DEFAULT_ROUND_DURATION);
+  const [isStarting, setIsStarting] = useState(false);
 
   useEffect(() => {
     loadRoundDuration().then(setDuration);
@@ -33,16 +36,20 @@ export default function DeckDetailsScreen() {
     );
   }
 
-  const handleStart = () => {
+  const handleStart = async () => {
+    if (isStarting) return;
     const safeDuration = clampRoundDuration(duration);
     if (!configureRound(deck.id, safeDuration)) return;
+    setIsStarting(true);
     saveRoundDuration(safeDuration).catch(() => undefined);
+    await lockLandscapeOrientation();
     router.push('/ready' as Href);
   };
 
   return (
     <>
       <Stack.Screen options={{ title: deck.title }} />
+      <View style={styles.screen}>
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         <View style={[styles.heroCard, { backgroundColor: colors.play }]}>
           <View style={styles.freePill}>
@@ -68,6 +75,7 @@ export default function DeckDetailsScreen() {
 
         <Pressable
           accessibilityRole="button"
+          disabled={isStarting}
           onPress={handleStart}
           style={({ pressed }) => [styles.startButton, pressed && styles.startButtonPressed]}
         >
@@ -75,12 +83,23 @@ export default function DeckDetailsScreen() {
           <Text style={styles.startArrow}>→</Text>
         </Pressable>
       </ScrollView>
+      {isStarting && (
+        <View style={styles.startingOverlay}>
+          <StatusBar hidden animated={false} />
+        </View>
+      )}
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  startingOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 100,
+    backgroundColor: colors.play,
+  },
   content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   centered: {
     flex: 1,

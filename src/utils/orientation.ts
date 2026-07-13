@@ -7,7 +7,7 @@ function waitForLayout() {
 }
 
 export async function lockLandscapeOrientation() {
-  await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(
+  await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT).catch(
     () => undefined,
   );
   await waitForLayout();

@@ -1,16 +1,18 @@
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { colors, radius, spacing, typography } from '@/theme';
-import { lockPortraitOrientation } from '@/utils/orientation';
+import { lockLandscapeOrientation, lockPortraitOrientation } from '@/utils/orientation';
 
 export default function ResultsScreen() {
   const router = useRouter();
   const { round, configureRound, resetRound } = useRound();
+  const [isStarting, setIsStarting] = useState(false);
   const deck = getDeckById(round.deckId ?? undefined);
   const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
   const passedCount = round.results.length - correctCount;
@@ -41,8 +43,11 @@ export default function ResultsScreen() {
     );
   }
 
-  const handleReplay = () => {
+  const handleReplay = async () => {
+    if (isStarting) return;
     configureRound(deck.id, round.durationSeconds);
+    setIsStarting(true);
+    await lockLandscapeOrientation();
     router.replace('/ready' as Href);
   };
 
@@ -91,7 +96,11 @@ export default function ResultsScreen() {
         ListEmptyComponent={<Text style={styles.noCards}>Time ran out before a card was answered.</Text>}
         ListFooterComponent={
           <View style={styles.actions}>
-            <Pressable onPress={handleReplay} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+            <Pressable
+              disabled={isStarting}
+              onPress={handleReplay}
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+            >
               <Text style={styles.primaryButtonText}>PLAY AGAIN</Text>
             </Pressable>
             <Pressable onPress={handleHome} style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}>
@@ -100,12 +109,22 @@ export default function ResultsScreen() {
           </View>
         }
       />
+      {isStarting && (
+        <View style={styles.startingOverlay}>
+          <StatusBar hidden animated={false} />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
+  startingOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 100,
+    backgroundColor: colors.play,
+  },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   empty: {
     flex: 1,
