@@ -9,9 +9,12 @@ export default function DeckLibraryScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <FlatList
+        key="deck-grid-3-columns"
         data={decks}
+        numColumns={3}
         keyExtractor={(deck) => deck.id}
         contentContainerStyle={styles.content}
+        columnWrapperStyle={styles.deckRow}
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.brandRow}>
@@ -26,7 +29,11 @@ export default function DeckLibraryScreen() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => <DeckCard deck={item} />}
+        renderItem={({ item }) => (
+          <View style={styles.deckCell}>
+            <DeckCard deck={item} />
+          </View>
+        )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListFooterComponent={
           <View style={styles.tip}>
@@ -46,6 +53,9 @@ export default function DeckLibraryScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   content: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing.xxxl,
@@ -80,7 +90,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     maxWidth: 440,
   },
-  separator: { height: spacing.md },
+  deckRow: { gap: spacing.sm },
+  deckCell: { flex: 1, maxWidth: '32%' },
+  separator: { height: spacing.sm },
   tip: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,7 +1,7 @@
 import { Link } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '@/theme';
+import { colors, radius } from '@/theme';
 import type { Deck } from '@/types/deck';
 
 type DeckCardProps = { deck: Deck };
@@ -11,26 +11,18 @@ export function DeckCard({ deck }: DeckCardProps) {
     <Link href={{ pathname: '/deck/[deckId]', params: { deckId: deck.id } }} asChild>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${deck.title}, ${deck.cards.length} cards`}
+        accessibilityLabel={deck.title}
         style={({ pressed }) => [
           styles.card,
           { backgroundColor: deck.color },
           pressed && styles.cardPressed,
         ]}
       >
-        <View style={styles.copy}>
-          <View style={styles.freePill}>
-            <Text style={styles.freeText}>FREE</Text>
-          </View>
-          <Text style={styles.title}>{deck.title}</Text>
-          <Text style={styles.description} numberOfLines={2}>
-            {deck.description}
-          </Text>
-          <Text style={styles.count}>{deck.cards.length} CARDS</Text>
-        </View>
-        <Text style={styles.icon}>{deck.icon}</Text>
-        <View style={styles.arrowCircle}>
-          <Text style={styles.arrow}>→</Text>
+        <View style={styles.placeholderGraphic}>
+          <View style={styles.sun} />
+          <View style={styles.swoop} />
+          <View style={styles.dotLarge} />
+          <View style={styles.dotSmall} />
         </View>
       </Pressable>
     </Link>
@@ -39,56 +31,54 @@ export function DeckCard({ deck }: DeckCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    minHeight: 210,
-    borderRadius: radius.xl,
-    padding: spacing.lg,
+    width: '100%',
+    aspectRatio: 0.72,
+    borderRadius: radius.lg,
     overflow: 'hidden',
-    justifyContent: 'space-between',
+    borderWidth: 2,
+    borderColor: 'rgba(24,35,29,0.12)',
   },
-  cardPressed: { transform: [{ scale: 0.985 }], opacity: 0.92 },
-  copy: { maxWidth: '70%', zIndex: 1 },
-  freePill: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.78)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: radius.pill,
-    marginBottom: spacing.sm,
+  cardPressed: { transform: [{ scale: 0.96 }], opacity: 0.88 },
+  placeholderGraphic: {
+    flex: 1,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
-  freeText: { color: colors.ink, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
-  title: { color: colors.ink, fontSize: 29, fontWeight: '900', letterSpacing: -0.7 },
-  description: {
-    color: colors.ink,
-    fontSize: 15,
-    lineHeight: 21,
-    marginTop: spacing.xs,
-    opacity: 0.78,
-  },
-  count: {
-    color: colors.ink,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-    marginTop: spacing.md,
-    opacity: 0.65,
-  },
-  icon: {
+  sun: {
     position: 'absolute',
-    right: spacing.lg,
-    top: spacing.lg,
-    fontSize: 70,
-    transform: [{ rotate: '7deg' }],
+    width: '72%',
+    aspectRatio: 1,
+    borderRadius: 999,
+    top: '13%',
+    left: '14%',
+    backgroundColor: 'rgba(255,255,255,0.72)',
   },
-  arrowCircle: {
+  swoop: {
     position: 'absolute',
-    right: spacing.lg,
-    bottom: spacing.lg,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: '145%',
+    height: '50%',
+    left: '-22%',
+    bottom: '-14%',
+    borderRadius: 999,
     backgroundColor: colors.ink,
-    alignItems: 'center',
-    justifyContent: 'center',
+    transform: [{ rotate: '-10deg' }],
   },
-  arrow: { color: colors.white, fontSize: 23, fontWeight: '700', marginTop: -2 },
+  dotLarge: {
+    position: 'absolute',
+    width: '22%',
+    aspectRatio: 1,
+    borderRadius: 999,
+    right: '9%',
+    bottom: '22%',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  dotSmall: {
+    position: 'absolute',
+    width: '10%',
+    aspectRatio: 1,
+    borderRadius: 999,
+    left: '13%',
+    top: '10%',
+    backgroundColor: colors.ink,
+  },
 });
