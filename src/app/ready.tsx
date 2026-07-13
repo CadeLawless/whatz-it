@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
+import { OrientationTransition } from '@/components/orientation-transition';
 import { formatRoundClock } from '@/game/round-duration';
 import { useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
@@ -102,11 +103,7 @@ export default function ReadyScreen() {
   if (!deck) return null;
 
   if (!orientationSettled) {
-    return (
-      <View style={[styles.rotationShell, { backgroundColor: colors.play }]}>
-        <StatusBar hidden animated={false} />
-      </View>
-    );
+    return <OrientationTransition style={styles.rotationShell} />;
   }
 
   const countSize = Math.max(92, Math.min(138, height * 0.34));

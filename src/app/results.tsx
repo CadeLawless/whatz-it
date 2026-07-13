@@ -1,10 +1,10 @@
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDeckById } from '@/data/decks';
+import { OrientationTransition } from '@/components/orientation-transition';
 import { useRound } from '@/game/round-context';
 import { colors, radius, spacing, typography } from '@/theme';
 import { lockPortraitOrientation } from '@/utils/orientation';
@@ -109,9 +109,7 @@ export default function ResultsScreen() {
         }
       />
       {isStarting && (
-        <View style={styles.startingOverlay}>
-          <StatusBar hidden animated={false} />
-        </View>
+        <OrientationTransition style={styles.startingOverlay} />
       )}
     </SafeAreaView>
   );
@@ -122,7 +120,6 @@ const styles = StyleSheet.create({
   startingOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 100,
-    backgroundColor: colors.play,
   },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   empty: {

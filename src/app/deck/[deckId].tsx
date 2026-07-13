@@ -1,10 +1,10 @@
 import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TimerPicker } from '@/components/timer-picker';
+import { OrientationTransition } from '@/components/orientation-transition';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { clampRoundDuration, DEFAULT_ROUND_DURATION } from '@/game/round-duration';
@@ -82,9 +82,7 @@ export default function DeckDetailsScreen() {
         </Pressable>
       </ScrollView>
       {isStarting && (
-        <View style={styles.startingOverlay}>
-          <StatusBar hidden animated={false} />
-        </View>
+        <OrientationTransition style={styles.startingOverlay} />
       )}
       </View>
     </>
@@ -96,7 +94,6 @@ const styles = StyleSheet.create({
   startingOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 100,
-    backgroundColor: colors.play,
   },
   content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   centered: {
