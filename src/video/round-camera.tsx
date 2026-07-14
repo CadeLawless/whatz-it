@@ -1,6 +1,6 @@
 import { setAudioModeAsync } from 'expo-audio';
 import { forwardRef, useImperativeHandle, useRef } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import {
   Camera,
   type Recorder,
@@ -38,6 +38,14 @@ export async function requestRoundCameraPermissions() {
     playsInSilentMode: true,
     shouldRouteThroughEarpiece: false,
   });
+  if (Platform.OS === 'ios') {
+    try {
+      const { prepareRecordingAudio } = await import('whatz-it-video-export');
+      await prepareRecordingAudio();
+    } catch {
+      // Older development builds do not yet contain the native audio-session helper.
+    }
+  }
   return true;
 }
 

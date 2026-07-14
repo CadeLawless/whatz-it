@@ -11,7 +11,7 @@ struct VideoOverlayEventRecord: Record {
 
 private enum VideoExportError: Error, LocalizedError {
   case missingVideoTrack
-  case cannotCreateCompositionTrack
+  case missingAudioTrack
   case cannotCreateExporter
   case exportFailed(String)
 
@@ -19,8 +19,8 @@ private enum VideoExportError: Error, LocalizedError {
     switch self {
     case .missingVideoTrack:
       return "The recorded file does not contain a video track."
-    case .cannotCreateCompositionTrack:
-      return "The video could not be prepared for export."
+    case .missingAudioTrack:
+      return "This recording does not contain an audio track. Please record a new round after installing the latest build."
     case .cannotCreateExporter:
       return "The video exporter could not be created."
     case .exportFailed(let message):
@@ -44,6 +44,16 @@ public final class WhatzItVideoExportModule: Module {
         throw error
       }
     }
+
+    AsyncFunction("prepareRecordingAudio") { () throws in
+      let audioSession = AVAudioSession.sharedInstance()
+      try audioSession.setCategory(
+        .playAndRecord,
+        mode: .videoRecording,
+        options: [.defaultToSpeaker]
+      )
+      try audioSession.setActive(true)
+    }
   }
 
   private static func export(
@@ -56,37 +66,15 @@ public final class WhatzItVideoExportModule: Module {
     guard let sourceVideoTrack = videoTracks.first else {
       throw VideoExportError.missingVideoTrack
     }
+    let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+    guard !audioTracks.isEmpty else {
+      throw VideoExportError.missingAudioTrack
+    }
 
     let duration = try await asset.load(.duration)
     let naturalSize = try await sourceVideoTrack.load(.naturalSize)
     let preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
     let timeRange = CMTimeRange(start: .zero, duration: duration)
-    let composition = AVMutableComposition()
-
-    guard let compositionVideoTrack = composition.addMutableTrack(
-      withMediaType: .video,
-      preferredTrackID: kCMPersistentTrackID_Invalid
-    ) else {
-      throw VideoExportError.cannotCreateCompositionTrack
-    }
-    try compositionVideoTrack.insertTimeRange(timeRange, of: sourceVideoTrack, at: .zero)
-
-    if let sourceAudioTrack = try await asset.loadTracks(withMediaType: .audio).first,
-       let compositionAudioTrack = composition.addMutableTrack(
-        withMediaType: .audio,
-        preferredTrackID: kCMPersistentTrackID_Invalid
-       ) {
-      let sourceAudioRange = try await sourceAudioTrack.load(.timeRange)
-      let audioDuration = CMTimeCompare(sourceAudioRange.duration, duration) > 0
-        ? duration
-        : sourceAudioRange.duration
-      try compositionAudioTrack.insertTimeRange(
-        CMTimeRange(start: sourceAudioRange.start, duration: audioDuration),
-        of: sourceAudioTrack,
-        at: .zero
-      )
-    }
-
     let transformedRect = CGRect(origin: .zero, size: naturalSize).applying(preferredTransform)
     let renderSize = CGSize(width: abs(transformedRect.width), height: abs(transformedRect.height))
     let normalizedTransform = preferredTransform.concatenating(
@@ -95,7 +83,7 @@ public final class WhatzItVideoExportModule: Module {
 
     let instruction = AVMutableVideoCompositionInstruction()
     instruction.timeRange = timeRange
-    let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
+    let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
     layerInstruction.setTransform(normalizedTransform, at: .zero)
     instruction.layerInstructions = [layerInstruction]
 
@@ -109,15 +97,17 @@ public final class WhatzItVideoExportModule: Module {
       durationSeconds: max(0, duration.seconds)
     )
 
-    guard let exporter = AVAssetExportSession(
-      asset: composition,
-      presetName: AVAssetExportPresetHighestQuality
-    ) else {
+    let compatiblePresets = AVAssetExportSession.exportPresets(compatibleWith: asset)
+    let preset = compatiblePresets.contains(AVAssetExportPreset1280x720)
+      ? AVAssetExportPreset1280x720
+      : AVAssetExportPresetHighestQuality
+    guard let exporter = AVAssetExportSession(asset: asset, presetName: preset) else {
       throw VideoExportError.cannotCreateExporter
     }
     exporter.outputURL = outputUrl
     exporter.outputFileType = .mp4
-    exporter.shouldOptimizeForNetworkUse = true
+    exporter.shouldOptimizeForNetworkUse = false
+    exporter.canPerformMultiplePassesOverSourceMediaData = false
     exporter.videoComposition = videoComposition
 
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -192,12 +182,33 @@ public final class WhatzItVideoExportModule: Module {
     container.opacity = 0
 
     let textLayer = CATextLayer()
-    textLayer.frame = container.bounds.insetBy(dx: width * 0.07, dy: height * 0.12)
-    textLayer.string = event.text
-    textLayer.alignmentMode = .center
-    textLayer.foregroundColor = colors(for: event.kind).foreground.cgColor
-    textLayer.font = UIFont.systemFont(ofSize: width * 0.09, weight: .bold)
-    textLayer.fontSize = width * 0.09
+    let horizontalPadding = width * 0.07
+    let availableTextWidth = width - horizontalPadding * 2
+    let font = UIFont.systemFont(ofSize: width * 0.09, weight: .bold)
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = .center
+    paragraph.lineBreakMode = .byTruncatingTail
+    let attributedText = NSAttributedString(
+      string: event.text,
+      attributes: [
+        .font: font,
+        .foregroundColor: colors(for: event.kind).foreground,
+        .paragraphStyle: paragraph
+      ]
+    )
+    let measuredText = attributedText.boundingRect(
+      with: CGSize(width: availableTextWidth, height: height),
+      options: [.usesLineFragmentOrigin, .usesFontLeading],
+      context: nil
+    )
+    let textHeight = min(height, ceil(measuredText.height))
+    textLayer.frame = CGRect(
+      x: horizontalPadding,
+      y: (height - textHeight) / 2,
+      width: availableTextWidth,
+      height: textHeight
+    )
+    textLayer.string = attributedText
     textLayer.contentsScale = UIScreen.main.scale
     textLayer.isWrapped = true
     textLayer.truncationMode = .end

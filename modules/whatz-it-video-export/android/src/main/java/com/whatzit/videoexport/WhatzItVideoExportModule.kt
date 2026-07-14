@@ -49,6 +49,10 @@ class WhatzItVideoExportModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("WhatzItVideoExport")
 
+    AsyncFunction("prepareRecordingAudio") {
+      // VisionCamera configures Android's recording audio source directly.
+    }
+
     AsyncFunction("exportOverlayVideo") {
         inputUri: String,
         events: List<VideoOverlayEvent>,

@@ -1,5 +1,6 @@
 import { useEventListener } from 'expo';
 import { setAudioModeAsync } from 'expo-audio';
+import { StatusBar } from 'expo-status-bar';
 import { useVideoPlayer, type VideoPlayer, VideoView } from 'expo-video';
 import { useMemo, useState } from 'react';
 import {
@@ -11,7 +12,6 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '@/theme';
 import type { RoundVideo, RoundVideoEvent } from '@/video/round-videos';
@@ -81,7 +81,8 @@ export function RoundVideoPlayer({ video, style }: RoundVideoPlayerProps) {
         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
         visible={expanded}
       >
-        <SafeAreaView style={styles.modalRoot}>
+        <View style={styles.modalRoot}>
+          <StatusBar hidden animated={false} />
           <View style={styles.expandedFrame}>
             <VideoView
               contentFit="contain"
@@ -101,7 +102,7 @@ export function RoundVideoPlayer({ video, style }: RoundVideoPlayerProps) {
           >
             <Text style={styles.closeText}>×</Text>
           </Pressable>
-        </SafeAreaView>
+        </View>
       </Modal>
     </>
   );
