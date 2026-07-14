@@ -203,7 +203,7 @@ export default function GameScreen() {
                 disabled={round.status === 'finished'}
                 onPress={handleFinishEarly}
               />
-              <Text style={styles.timer}>
+              <Text pointerEvents="none" style={styles.timer}>
                 {formatRoundClock(round.status === 'ready' ? round.durationSeconds : remainingSeconds)}
               </Text>
               <Text style={styles.deckName}>{deck.title}</Text>
