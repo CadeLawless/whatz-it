@@ -47,7 +47,6 @@ const RoundContext = createContext<RoundContextValue | null>(null);
 export function RoundProvider({ children }: PropsWithChildren) {
   const [round, dispatch] = useReducer(roundReducer, initialRoundState);
   const [cameraEnabled, setCameraEnabled] = useState(false);
-  const [recordWithAudio, setRecordWithAudio] = useState(false);
   const [currentVideo, setCurrentVideo] = useState<RoundVideo | null>(null);
   const seenCardsByDeck = useRef(new Map<string, Set<string>>());
   const cameraRef = useRef<CameraView>(null);
@@ -89,10 +88,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
 
       const microphonePermission = await Camera.requestMicrophonePermissionsAsync();
       if (recordingCancelled.current) return 'unavailable' as const;
-      setRecordWithAudio(microphonePermission.granted);
+      if (!microphonePermission.granted) return 'permission-denied' as const;
+
       await setAudioModeAsync({
-        allowsRecording: microphonePermission.granted,
-        interruptionMode: 'mixWithOthers',
+        allowsRecording: true,
+        interruptionMode: 'doNotMix',
         playsInSilentMode: true,
         shouldRouteThroughEarpiece: false,
       });
@@ -273,7 +273,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
           facing="front"
           mirror
           mode="video"
-          mute={!recordWithAudio}
+          mute={false}
           onCameraReady={() => {
             cameraReady.current = true;
             cameraReadyResolver.current?.(true);

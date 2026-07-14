@@ -18,10 +18,10 @@ import { RoundVideoPlayer } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { decks, getDeckById } from '@/data/decks';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
+import { colors } from '@/theme';
 import {
   deleteRoundVideo,
   loadRoundVideos,
-  saveRoundVideoToDevice,
   type RoundVideo,
 } from '@/video/round-videos';
 
@@ -32,7 +32,6 @@ export default function DeckLibraryScreen() {
   const [decksExpanded, setDecksExpanded] = useState(true);
   const [videosExpanded, setVideosExpanded] = useState(true);
   const [videos, setVideos] = useState<RoundVideo[]>([]);
-  const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
   const pageWidth = Math.min(width, 720);
   const horizontalPadding = width < 380 ? 22 : Math.min(48, Math.round(width * 0.074));
   const columnGap = width < 380 ? 16 : Math.min(32, Math.round(width * 0.06));
@@ -57,19 +56,6 @@ export default function DeckLibraryScreen() {
       };
     }, []),
   );
-
-  const handleSave = async (video: RoundVideo) => {
-    if (savingVideoId) return;
-    setSavingVideoId(video.id);
-    try {
-      await saveRoundVideoToDevice(video.uri);
-      Alert.alert('Video saved', 'The round video is now in your device library.');
-    } catch {
-      Alert.alert('Could not save video', 'Please allow photo library access and try again.');
-    } finally {
-      setSavingVideoId(null);
-    }
-  };
 
   const handleDelete = (video: RoundVideo) => {
     Alert.alert('Delete round video?', 'This removes the video from WHATZ IT on this device.', [
@@ -163,13 +149,11 @@ export default function DeckLibraryScreen() {
                       <View style={styles.videoActions}>
                         <Pressable
                           accessibilityRole="button"
-                          disabled={savingVideoId !== null}
-                          onPress={() => handleSave(video)}
-                          style={({ pressed }) => [styles.saveButton, pressed && styles.pressed]}
+                          accessibilityState={{ disabled: true }}
+                          disabled
+                          style={styles.saveButton}
                         >
-                          <Text style={styles.saveButtonText}>
-                            {savingVideoId === video.id ? 'SAVING…' : 'SAVE'}
-                          </Text>
+                          <Text style={styles.saveButtonText}>EXPORT SOON</Text>
                         </Pressable>
                         <Pressable
                           accessibilityRole="button"
@@ -297,7 +281,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 17,
-    backgroundColor: '#459EFE',
+    backgroundColor: colors.muted,
   },
   saveButtonText: { color: '#FFFFFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
   deleteButton: {

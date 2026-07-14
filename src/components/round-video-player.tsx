@@ -1,4 +1,5 @@
 import { useEventListener } from 'expo';
+import { setAudioModeAsync } from 'expo-audio';
 import { useVideoPlayer, type VideoPlayer, VideoView } from 'expo-video';
 import { useMemo, useState } from 'react';
 import {
@@ -40,15 +41,15 @@ export function RoundVideoPlayer({ video, style }: RoundVideoPlayerProps) {
   );
 
   const openExpanded = () => {
-    setPlayerMuted(player, false);
-    player.play();
     setExpanded(true);
+    enablePlayerAudio(player);
   };
 
   const closeExpanded = () => {
     setPlayerMuted(player, true);
     player.play();
     setExpanded(false);
+    restoreAppAudioMode();
   };
 
   return (
@@ -107,6 +108,31 @@ function setPlayerMuted(player: VideoPlayer, muted: boolean) {
   player.muted = muted;
 }
 
+function enablePlayerAudio(player: VideoPlayer) {
+  setAudioModeAsync({
+    allowsRecording: false,
+    interruptionMode: 'doNotMix',
+    playsInSilentMode: true,
+    shouldRouteThroughEarpiece: false,
+  })
+    .catch(() => undefined)
+    .finally(() => {
+      player.volume = 1;
+      player.audioMixingMode = 'doNotMix';
+      player.muted = false;
+      player.play();
+    });
+}
+
+function restoreAppAudioMode() {
+  setAudioModeAsync({
+    allowsRecording: false,
+    interruptionMode: 'mixWithOthers',
+    playsInSilentMode: false,
+    shouldRouteThroughEarpiece: false,
+  }).catch(() => undefined);
+}
+
 function getEventAtTime(events: RoundVideoEvent[], timeMs: number) {
   let current: RoundVideoEvent | undefined;
   for (const event of events) {
@@ -147,7 +173,7 @@ function getEventPalette(kind: RoundVideoEvent['kind']) {
     case 'correct':
       return { background: 'rgba(135, 237, 170, 0.78)', foreground: colors.ink };
     case 'passed':
-      return { background: 'rgba(225, 111, 200, 0.78)', foreground: colors.white };
+      return { background: 'rgba(255, 119, 43, 0.78)', foreground: colors.passText };
     case 'times-up':
     case 'countdown':
       return { background: 'rgba(50, 139, 232, 0.78)', foreground: colors.white };
@@ -164,8 +190,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: spacing.lg,
     bottom: 72,
-    maxWidth: '48%',
-    minWidth: 132,
+    width: 240,
     minHeight: 66,
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
@@ -175,9 +200,8 @@ const styles = StyleSheet.create({
   overlayCompact: {
     left: 7,
     bottom: 7,
-    minWidth: 48,
+    width: 96,
     minHeight: 28,
-    maxWidth: '62%',
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 8,
