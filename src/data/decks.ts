@@ -1884,7 +1884,7 @@ export const decks: Deck[] = [
   },
   {
     id: 'fictional-who-am-i',
-    title: 'Fictionallly Who Am I?',
+    title: 'Fictionally Who Am I?',
     description: 'Famous fictional characters from movies, television, books, comics, animation, and video games.',
     coverImage: require('../../assets/images/decks/fictional-who-am-i.png'),
     version: 1,
