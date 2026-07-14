@@ -39,6 +39,7 @@ export default function RootLayout() {
         <Stack.Screen
           name="deck/[deckId]"
           options={{
+            animation: 'none',
             title: 'Choose your round',
             orientation: 'portrait',
             headerBackTitle: 'Back to Decks',
