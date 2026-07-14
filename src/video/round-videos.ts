@@ -10,6 +10,13 @@ export type RoundVideo = {
   uri: string;
   deckId: string;
   createdAt: number;
+  events?: RoundVideoEvent[];
+};
+
+export type RoundVideoEvent = {
+  atMs: number;
+  kind: 'countdown' | 'card' | 'correct' | 'passed' | 'times-up';
+  text: string;
 };
 
 function readExtension(uri: string) {
@@ -41,7 +48,11 @@ export async function loadRoundVideos() {
   return available.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export async function storeRoundVideo(temporaryUri: string, deckId: string) {
+export async function storeRoundVideo(
+  temporaryUri: string,
+  deckId: string,
+  events: RoundVideoEvent[] = [],
+) {
   if (Platform.OS === 'web') throw new Error('Round recording is only available on a device.');
   const { Directory, File, Paths } = await import('expo-file-system');
   const videoDirectory = new Directory(Paths.document, VIDEO_DIRECTORY_NAME);
@@ -51,7 +62,7 @@ export async function storeRoundVideo(temporaryUri: string, deckId: string) {
   const destination = new File(videoDirectory, `${id}.${readExtension(temporaryUri)}`);
   await new File(temporaryUri).copy(destination);
 
-  const video: RoundVideo = { id, uri: destination.uri, deckId, createdAt };
+  const video: RoundVideo = { id, uri: destination.uri, deckId, createdAt, events };
   const previous = await loadRoundVideos();
   const next = [video, ...previous].slice(0, MAX_STORED_VIDEOS);
   const removed = previous.filter((item) => !next.some((kept) => kept.id === item.id));

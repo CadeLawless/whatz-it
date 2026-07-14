@@ -10,7 +10,12 @@ import { ScreenshotTransitionProvider } from '@/components/screenshot-transition
 
 export default function RootLayout() {
   useEffect(() => {
-    setAudioModeAsync({ playsInSilentMode: false }).catch(() => undefined);
+    setAudioModeAsync({
+      allowsRecording: false,
+      interruptionMode: 'mixWithOthers',
+      playsInSilentMode: false,
+      shouldRouteThroughEarpiece: false,
+    }).catch(() => undefined);
   }, []);
 
   return (

@@ -101,7 +101,7 @@ export default function ResultsScreen() {
             <Text style={styles.deckName}>{deck.title}</Text>
             {currentVideo && (
               <View style={styles.videoSection}>
-                <RoundVideoPlayer uri={currentVideo.uri} style={styles.video} />
+                <RoundVideoPlayer video={currentVideo} style={styles.video} />
                 <Pressable
                   accessibilityRole="button"
                   disabled={isSavingVideo}

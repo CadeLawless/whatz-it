@@ -10,7 +10,7 @@ import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { getDeckById } from '@/data/decks';
-import { useRound } from '@/game/round-context';
+import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { colors, radius, spacing } from '@/theme';
 import { replaySound } from '@/utils/sound';
@@ -21,17 +21,24 @@ const READY_TRANSITION_MS = 450;
 export default function ReadyScreen() {
   const { height } = useLandscapeDimensions();
   const router = useRouter();
-  const { cancelRecording, prepareRecording, round, resetRound, startRecording } = useRound();
+  const {
+    cancelRecording,
+    prepareRecording,
+    recordOverlayEvent,
+    round,
+    resetRound,
+    startRecording,
+  } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
   const [count, setCount] = useState(3);
   const [manualReady, setManualReady] = useState(false);
   const [orientationSettled, setOrientationSettled] = useState(false);
   const [introComplete, setIntroComplete] = useState(false);
-  const [recordingPrepared, setRecordingPrepared] = useState(false);
+  const [recordingPreparation, setRecordingPreparation] =
+    useState<RecordingPreparation | 'preparing'>('preparing');
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
   const introStarted = useRef(false);
-  const recordingStarted = useRef(false);
   const screenRef = useRef<View>(null);
   const { beginTransition, revealTransition } = useScreenshotTransition();
   const getReadyPlayer = useAudioPlayer(require('../../assets/sounds/get-ready.wav'));
@@ -40,11 +47,15 @@ export default function ReadyScreen() {
   const count1Player = useAudioPlayer(require('../../assets/sounds/count-1.wav'));
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady = foreheadStatus === 'ready' || manualReady;
+  const recordingPrepared =
+    recordingPreparation === 'ready' ||
+    recordingPreparation === 'permission-denied' ||
+    recordingPreparation === 'unavailable';
 
   useEffect(() => {
     let active = true;
-    prepareRecording().finally(() => {
-      if (active) setRecordingPrepared(true);
+    prepareRecording().then((preparation) => {
+      if (active) setRecordingPreparation(preparation);
     });
     return () => {
       active = false;
@@ -64,20 +75,31 @@ export default function ReadyScreen() {
     if (!positionReady || !orientationSettled || !recordingPrepared || isLeaving || introStarted.current) return;
     introStarted.current = true;
     replaySound(getReadyPlayer);
-    const timeout = setTimeout(() => setIntroComplete(true), GET_READY_SOUND_MS);
+    const timeout = setTimeout(() => {
+      const started = startRecording();
+      if (recordingPreparation === 'ready' && !started) {
+        introStarted.current = false;
+        setRecordingPreparation('error');
+        return;
+      }
+      setIntroComplete(true);
+    }, GET_READY_SOUND_MS);
     return () => clearTimeout(timeout);
-  }, [getReadyPlayer, isLeaving, orientationSettled, positionReady, recordingPrepared]);
-
-  useEffect(() => {
-    if (!introComplete || recordingStarted.current) return;
-    recordingStarted.current = true;
-    startRecording();
-  }, [introComplete, startRecording]);
+  }, [
+    getReadyPlayer,
+    isLeaving,
+    orientationSettled,
+    positionReady,
+    recordingPreparation,
+    recordingPrepared,
+    startRecording,
+  ]);
 
   useEffect(() => {
     if (!introComplete || isLeaving) return;
+    recordOverlayEvent({ kind: 'countdown', text: String(count) });
     replaySound(count === 3 ? count3Player : count === 2 ? count2Player : count1Player);
-  }, [count, count1Player, count2Player, count3Player, introComplete, isLeaving]);
+  }, [count, count1Player, count2Player, count3Player, introComplete, isLeaving, recordOverlayEvent]);
 
   useEffect(() => {
     if (isLeaving) return;
@@ -114,6 +136,11 @@ export default function ReadyScreen() {
 
   const countSize = Math.max(92, Math.min(138, height * 0.34));
 
+  const handleRetryCamera = async () => {
+    setRecordingPreparation('preparing');
+    setRecordingPreparation(await prepareRecording());
+  };
+
   const handleCancel = async () => {
     setIsLeaving(true);
     await cancelRecording();
@@ -147,7 +174,21 @@ export default function ReadyScreen() {
             <Text style={styles.deckName}>{deck.title}</Text>
 
             <View style={styles.center}>
-              {positionReady ? (
+              {recordingPreparation === 'error' ? (
+                <>
+                  <Text style={styles.positionTitle}>CAMERA NOT READY</Text>
+                  <Text style={styles.instructions}>
+                    The round will wait so your full video is not missed.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={handleRetryCamera}
+                    style={styles.manualButton}
+                  >
+                    <Text style={styles.manualButtonText}>RETRY CAMERA</Text>
+                  </Pressable>
+                </>
+              ) : positionReady ? (
                 <>
                   {introComplete ? (
                     <Text

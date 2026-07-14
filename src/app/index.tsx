@@ -149,7 +149,7 @@ export default function DeckLibraryScreen() {
                   const deck = getDeckById(video.deckId);
                   return (
                     <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
-                      <RoundVideoPlayer uri={video.uri} style={styles.video} />
+                      <RoundVideoPlayer video={video} style={styles.video} />
                       <Text numberOfLines={1} style={styles.videoDeckName}>
                         {deck?.title ?? 'Round video'}
                       </Text>
