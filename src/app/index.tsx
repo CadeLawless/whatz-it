@@ -72,7 +72,7 @@ export default function DeckLibraryScreen() {
   };
 
   const handleDelete = (video: RoundVideo) => {
-    Alert.alert('Delete round video?', 'This removes the video from Goose What on this device.', [
+    Alert.alert('Delete round video?', 'This removes the video from WHATZ IT on this device.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',

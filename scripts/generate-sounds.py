@@ -1,4 +1,4 @@
-"""Generate the original Goose What party-game sound pack."""
+"""Generate the original WHATZ IT party-game sound pack."""
 
 import math
 import random

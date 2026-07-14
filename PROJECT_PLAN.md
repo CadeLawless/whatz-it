@@ -1,8 +1,8 @@
-# Goose What — MVP Project Plan
+# WHATZ IT — MVP Project Plan
 
 ## 1. Product Overview
 
-Goose What is a mobile party game inspired by the forehead-guessing game format. A player selects a themed deck, holds the phone against their forehead, and tries to guess the displayed card using clues from the other players.
+WHATZ IT is a mobile party game inspired by the forehead-guessing game format. A player selects a themed deck, holds the phone against their forehead, and tries to guess the displayed card using clues from the other players.
 
 During a round:
 
@@ -562,4 +562,3 @@ The first implementation session should complete the following:
 7. Commit the working foundation before beginning the game loop.
 
 The next milestone should be a full button-controlled round. Motion controls should be added only after navigation, timing, scoring, and replay behavior are dependable.
-

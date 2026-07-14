@@ -1,6 +1,6 @@
-# Goose What
+# WHATZ IT
 
-Goose What is a React Native party game built with Expo. Players choose a themed deck, hold the phone to their forehead, and guess cards from their friends' clues.
+WHATZ IT is a React Native party game built with Expo. Players choose a themed deck, hold the phone to their forehead, and guess cards from their friends' clues.
 
 This repository currently contains the Milestone 3 motion-control implementation:
 
@@ -69,7 +69,7 @@ Install the resulting build from its QR code. For later development sessions, st
 npm start
 ```
 
-The application identifiers are `com.cadelawless.goosewhat` on both platforms.
+The application identifiers are `com.cadelawless.whatzit` on both platforms.
 
 ## Checks
 

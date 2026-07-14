@@ -5,7 +5,7 @@ import {
   DEFAULT_ROUND_DURATION,
 } from '@/game/round-duration';
 
-const ROUND_DURATION_KEY = 'goose-what:round-duration';
+const ROUND_DURATION_KEY = 'whatz-it:round-duration';
 
 export async function loadRoundDuration() {
   try {

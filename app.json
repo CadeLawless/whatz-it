@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Goose What",
-    "slug": "goose-what",
+    "name": "WHATZ IT",
+    "slug": "whatz-it",
     "version": "0.1.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
-    "scheme": "goosewhat",
+    "scheme": "whatzit",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.cadelawless.goosewhat",
+      "bundleIdentifier": "com.cadelawless.whatzit",
       "supportsTablet": true,
       "requireFullScreen": true,
       "infoPlist": {
@@ -17,7 +17,7 @@
       }
     },
     "android": {
-      "package": "com.cadelawless.goosewhat",
+      "package": "com.cadelawless.whatzit",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -35,7 +35,7 @@
       [
         "expo-sensors",
         {
-          "motionPermission": "Allow Goose What to detect correct and passed cards when you tilt your device."
+          "motionPermission": "Allow WHATZ IT to detect correct and passed cards when you tilt your device."
         }
       ],
       [
@@ -56,15 +56,15 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow Goose What to record the clues and reactions during a round.",
+          "microphonePermission": "Allow WHATZ IT to record the clues and reactions during a round.",
           "recordAudioAndroid": true
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Goose What to record the clue-givers during a round.",
-          "microphonePermission": "Allow Goose What to record the clues and reactions during a round.",
+          "cameraPermission": "Allow WHATZ IT to record the clue-givers during a round.",
+          "microphonePermission": "Allow WHATZ IT to record the clues and reactions during a round.",
           "recordAudioAndroid": true,
           "barcodeScannerEnabled": false
         }
@@ -73,7 +73,7 @@
         "expo-media-library",
         {
           "photosPermission": false,
-          "savePhotosPermission": "Allow Goose What to save a round video when you tap Save Video.",
+          "savePhotosPermission": "Allow WHATZ IT to save a round video when you tap Save Video.",
           "granularPermissions": [
             "video"
           ]
