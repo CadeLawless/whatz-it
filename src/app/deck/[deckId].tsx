@@ -135,12 +135,14 @@ export default function DeckDetailsScreen() {
             <View style={styles.heroCard}>
               <View style={styles.heroCopy}>
                 <Text
+                  accessibilityLabel={deck.title}
                   adjustsFontSizeToFit
-                  minimumFontScale={0.7}
+                  android_hyphenationFrequency="none"
+                  minimumFontScale={0.55}
                   numberOfLines={2}
                   style={styles.deckTitle}
                 >
-                  {deck.title}
+                  {keepTitleWordsIntact(deck.title)}
                 </Text>
 
                 <Text style={styles.deckDescription}>
@@ -212,6 +214,15 @@ export default function DeckDetailsScreen() {
       </SafeAreaView>
     </>
   );
+}
+
+const WORD_JOINER = '\u2060';
+
+function keepTitleWordsIntact(title: string) {
+  return title
+    .split(/(\s+)/u)
+    .map((part) => (part.trim() ? Array.from(part).join(WORD_JOINER) : part))
+    .join('');
 }
 
 const styles = StyleSheet.create({
