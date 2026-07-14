@@ -1,8 +1,7 @@
 import { Image } from 'expo-image';
 import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  type LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -216,7 +215,9 @@ export default function DeckDetailsScreen() {
   );
 }
 
-const MINIMUM_TITLE_FONT_SIZE = 12;
+const MAXIMUM_TITLE_FONT_SIZE = 32;
+const TITLE_LINE_HEIGHT_RATIO = 1.125;
+const TITLE_FIT_SAFETY = 0.94;
 
 function AutoFitDeckTitle({
   availableWidth,
@@ -225,68 +226,103 @@ function AutoFitDeckTitle({
   availableWidth: number;
   title: string;
 }) {
-  const [fontSize, setFontSize] = useState(32);
+  const candidates = getTitleLineCandidates(title);
+  const measurementLines = [...new Set(candidates.flat())];
+  const [lineWidths, setLineWidths] = useState<Record<string, number>>({});
+  const hasMeasurements = measurementLines.every((line) => lineWidths[line] !== undefined);
+
+  let fittedFontSize = MAXIMUM_TITLE_FONT_SIZE;
+  let fittedLines = candidates[0];
+
+  if (hasMeasurements) {
+    let largestFontSize = 0;
+
+    for (const candidate of candidates) {
+      const widestLine = Math.max(...candidate.map((line) => lineWidths[line]));
+      const candidateFontSize = Math.min(
+        MAXIMUM_TITLE_FONT_SIZE,
+        (MAXIMUM_TITLE_FONT_SIZE * availableWidth * TITLE_FIT_SAFETY) / widestLine,
+      );
+
+      if (candidateFontSize > largestFontSize + 0.05) {
+        largestFontSize = candidateFontSize;
+        fittedLines = candidate;
+      }
+    }
+
+    fittedFontSize = Math.max(1, Math.floor(largestFontSize * 10) / 10);
+  }
 
   return (
     <View
       accessibilityLabel={title}
       accessible
-      onLayout={(event) => fitTitleToTwoLines(event, fontSize, setFontSize)}
-      style={[
-        styles.deckTitle,
-        {
-          columnGap: fontSize * 0.25,
-          minHeight: fontSize * 1.125,
-        },
-      ]}
+      style={styles.deckTitle}
     >
-      {title.split(/\s+/u).map((word, index) => (
-        <Text
-          accessible={false}
-          key={`${word}-${index}`}
-          numberOfLines={1}
-          onLayout={(event) =>
-            fitTitleWord(event, availableWidth, fontSize, setFontSize)
-          }
-          style={[
-            styles.deckTitleWord,
-            {
-              fontSize,
-              lineHeight: fontSize * 1.125,
-            },
-          ]}
-        >
-          {word}
-        </Text>
-      ))}
+      {hasMeasurements ? (
+        fittedLines.map((line) => (
+          <Text
+            accessible={false}
+            key={line}
+            style={[
+              styles.deckTitleLine,
+              {
+                fontSize: fittedFontSize,
+                lineHeight: fittedFontSize * TITLE_LINE_HEIGHT_RATIO,
+              },
+            ]}
+          >
+            {line}
+          </Text>
+        ))
+      ) : (
+        <View style={styles.deckTitlePlaceholder} />
+      )}
+
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        pointerEvents="none"
+        style={styles.deckTitleMeasurements}
+      >
+        {measurementLines.map((line) => (
+          <Text
+            key={line}
+            numberOfLines={1}
+            onTextLayout={(event) => {
+              const measuredWidth = event.nativeEvent.lines[0]?.width;
+              if (!measuredWidth) return;
+
+              setLineWidths((currentWidths) => {
+                if (Math.abs((currentWidths[line] ?? 0) - measuredWidth) < 0.1) {
+                  return currentWidths;
+                }
+
+                return { ...currentWidths, [line]: measuredWidth };
+              });
+            }}
+            style={styles.deckTitleMeasurementText}
+          >
+            {line}
+          </Text>
+        ))}
+      </View>
     </View>
   );
 }
 
-function fitTitleToTwoLines(
-  event: LayoutChangeEvent,
-  fontSize: number,
-  setFontSize: Dispatch<SetStateAction<number>>,
-) {
-  const lineHeight = fontSize * 1.125;
-  if (event.nativeEvent.layout.height <= lineHeight * 2 + 1) return;
+function getTitleLineCandidates(title: string) {
+  const words = title.trim().split(/\s+/u);
+  const candidates = [[words.join(' ')]];
 
-  const nextSize = Math.max(MINIMUM_TITLE_FONT_SIZE, fontSize - 1);
-  setFontSize((currentSize) => Math.min(currentSize, nextSize));
-}
+  for (let splitIndex = 1; splitIndex < words.length; splitIndex += 1) {
+    candidates.push([
+      words.slice(0, splitIndex).join(' '),
+      words.slice(splitIndex).join(' '),
+    ]);
+  }
 
-function fitTitleWord(
-  event: LayoutChangeEvent,
-  availableWidth: number,
-  fontSize: number,
-  setFontSize: Dispatch<SetStateAction<number>>,
-) {
-  const wordWidth = event.nativeEvent.layout.width;
-  if (wordWidth <= availableWidth + 0.5) return;
-
-  const fittedSize = Math.floor((fontSize * availableWidth * 0.98 * 10) / wordWidth) / 10;
-  const nextSize = Math.max(MINIMUM_TITLE_FONT_SIZE, fittedSize);
-  setFontSize((currentSize) => Math.min(currentSize, nextSize));
+  return candidates;
 }
 
 const styles = StyleSheet.create({
@@ -395,16 +431,36 @@ const styles = StyleSheet.create({
 
   deckTitle: {
     width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
+    position: 'relative',
+    alignItems: 'flex-start',
   },
 
-  deckTitleWord: {
-    flexShrink: 0,
+  deckTitleLine: {
+    width: '100%',
     color: colors.white,
     fontWeight: '900',
     textAlign: 'left',
+    textTransform: 'uppercase',
+  },
+
+  deckTitlePlaceholder: {
+    height: MAXIMUM_TITLE_FONT_SIZE * TITLE_LINE_HEIGHT_RATIO * 2,
+  },
+
+  deckTitleMeasurements: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 10000,
+    opacity: 0,
+  },
+
+  deckTitleMeasurementText: {
+    width: 10000,
+    color: colors.white,
+    fontSize: MAXIMUM_TITLE_FONT_SIZE,
+    lineHeight: MAXIMUM_TITLE_FONT_SIZE * TITLE_LINE_HEIGHT_RATIO,
+    fontWeight: '900',
     textTransform: 'uppercase',
   },
 
