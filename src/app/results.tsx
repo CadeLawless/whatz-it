@@ -21,7 +21,7 @@ export default function ResultsScreen() {
   const { beginTransition, revealTransition } = useScreenshotTransition();
   const deck = getDeckById(round.deckId ?? undefined);
   const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
-  const passedCount = round.results.length - correctCount;
+  const passedCount = round.results.filter((result) => result.outcome === 'passed').length;
 
   useEffect(() => {
     if (isPortrait) revealTransition('results');
@@ -98,13 +98,21 @@ export default function ResultsScreen() {
         }
         renderItem={({ item }) => {
           const card = deck.cards.find((candidate) => candidate.id === item.cardId);
+          const outcomeColor =
+            item.outcome === 'correct'
+              ? colors.correct
+              : item.outcome === 'passed'
+                ? colors.pass
+                : colors.border;
+          const outcomeIcon = item.outcome === 'correct' ? '✓' : item.outcome === 'passed' ? '×' : '—';
+          const outcomeLabel = item.outcome === 'neutral' ? 'UNANSWERED' : item.outcome.toUpperCase();
           return (
             <View style={styles.resultRow}>
-              <View style={[styles.outcomeDot, { backgroundColor: item.outcome === 'correct' ? colors.correct : colors.pass }]}>
-                <Text style={styles.outcomeIcon}>{item.outcome === 'correct' ? '✓' : '×'}</Text>
+              <View style={[styles.outcomeDot, { backgroundColor: outcomeColor }]}>
+                <Text style={styles.outcomeIcon}>{outcomeIcon}</Text>
               </View>
               <Text style={styles.resultText}>{card?.text ?? 'Unknown card'}</Text>
-              <Text style={styles.outcomeText}>{item.outcome.toUpperCase()}</Text>
+              <Text style={styles.outcomeText}>{outcomeLabel}</Text>
             </View>
           );
         }}

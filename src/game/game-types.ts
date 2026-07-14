@@ -1,10 +1,11 @@
 export type RoundStatus = 'idle' | 'ready' | 'playing' | 'feedback' | 'finished';
 
 export type CardOutcome = 'correct' | 'passed';
+export type CardResultOutcome = CardOutcome | 'neutral';
 
 export type CardResult = {
   cardId: string;
-  outcome: CardOutcome;
+  outcome: CardResultOutcome;
   answeredAt: number;
 };
 
@@ -25,5 +26,5 @@ export type RoundAction =
   | { type: 'START'; now: number }
   | { type: 'ANSWER'; outcome: CardOutcome; now: number }
   | { type: 'ADVANCE' }
-  | { type: 'FINISH' }
+  | { type: 'FINISH'; now: number }
   | { type: 'RESET' };

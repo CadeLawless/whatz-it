@@ -60,8 +60,37 @@ describe('roundReducer', () => {
 
   it('ignores repeated finish actions', () => {
     const ready = { ...initialRoundState, status: 'ready' as const };
-    const finished = roundReducer(ready, { type: 'FINISH' });
-    assert.strictEqual(roundReducer(finished, { type: 'FINISH' }), finished);
+    const finished = roundReducer(ready, { type: 'FINISH', now: 4_000 });
+    assert.strictEqual(roundReducer(finished, { type: 'FINISH', now: 4_100 }), finished);
+  });
+
+  it('records the displayed unanswered card as neutral when a round ends', () => {
+    const playing = {
+      ...initialRoundState,
+      status: 'playing' as const,
+      deckId: 'animals',
+      cardOrder: ['seen-card', 'not-seen-card'],
+    };
+    const finished = roundReducer(playing, { type: 'FINISH', now: 5_000 });
+
+    assert.equal(finished.status, 'finished');
+    assert.deepEqual(finished.results, [
+      { cardId: 'seen-card', outcome: 'neutral', answeredAt: 5_000 },
+    ]);
+  });
+
+  it('does not duplicate the current card when a round ends during feedback', () => {
+    const playing = {
+      ...initialRoundState,
+      status: 'playing' as const,
+      deckId: 'animals',
+      cardOrder: ['answered-card'],
+    };
+    const answered = roundReducer(playing, { type: 'ANSWER', outcome: 'correct', now: 6_000 });
+    const finished = roundReducer(answered, { type: 'FINISH', now: 6_100 });
+
+    assert.equal(finished.results.length, 1);
+    assert.equal(finished.results[0].outcome, 'correct');
   });
 });
 

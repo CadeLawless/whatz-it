@@ -57,9 +57,22 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
         latestOutcome: null,
       };
     }
-    case 'FINISH':
+    case 'FINISH': {
       if (state.status === 'idle' || state.status === 'finished') return state;
-      return { ...state, status: 'finished', latestOutcome: null };
+      const cardId = state.cardOrder[state.currentCardIndex];
+      const shouldRecordNeutral =
+        (state.status === 'ready' || state.status === 'playing') &&
+        cardId !== undefined &&
+        !state.results.some((result) => result.cardId === cardId);
+      return {
+        ...state,
+        status: 'finished',
+        latestOutcome: null,
+        results: shouldRecordNeutral
+          ? [...state.results, { cardId, outcome: 'neutral', answeredAt: action.now }]
+          : state.results,
+      };
+    }
     case 'RESET':
       return initialRoundState;
     default:

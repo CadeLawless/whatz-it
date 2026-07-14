@@ -62,7 +62,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
         }
         dispatch({ type: 'ADVANCE' });
       },
-      finishRound: () => dispatch({ type: 'FINISH' }),
+      finishRound: () => dispatch({ type: 'FINISH', now: Date.now() }),
       resetRound: () => dispatch({ type: 'RESET' }),
     }),
     [round],
