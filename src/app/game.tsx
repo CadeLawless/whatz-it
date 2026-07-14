@@ -260,6 +260,32 @@ export default function GameScreen() {
               </View>
             )}
 
+            {finishPromptVisible && round.status !== 'finished' && (
+              <View accessibilityViewIsModal style={styles.promptOverlay}>
+                <View style={styles.promptCard}>
+                  <Text style={styles.promptTitle}>Finish round early?</Text>
+                  <Text style={styles.promptBody}>
+                    Your answers so far will still appear in the results.
+                  </Text>
+                  <View style={styles.promptActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setFinishPromptVisible(false)}
+                      style={({ pressed }) => [styles.promptCancel, pressed && styles.promptPressed]}
+                    >
+                      <Text style={styles.promptCancelText}>KEEP PLAYING</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={confirmFinishEarly}
+                      style={({ pressed }) => [styles.promptFinish, pressed && styles.promptPressed]}
+                    >
+                      <Text style={styles.promptFinishText}>FINISH ROUND</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
 
           {round.status === 'feedback' && (
@@ -268,6 +294,7 @@ export default function GameScreen() {
                 style={[
                   styles.feedbackIcon,
                   round.latestOutcome === 'passed' && styles.passFeedbackText,
+                  { color: round.latestOutcome === 'correct' ? colors.correctText : colors.passText }
                 ]}
               >
                 {round.latestOutcome === 'correct' ? '✓' : '×'}
@@ -275,38 +302,12 @@ export default function GameScreen() {
               <Text
                 style={[
                   styles.feedbackText,
-                  round.latestOutcome === 'passed' && styles.passFeedbackText,
+                  round.latestOutcome === 'passed' && styles.passFeedbackText,,
+                  { color: round.latestOutcome === 'correct' ? colors.correctText : colors.passText }
                 ]}
               >
                 {round.latestOutcome === 'correct' ? 'CORRECT!' : 'PASS'}
               </Text>
-            </View>
-          )}
-
-          {finishPromptVisible && round.status !== 'finished' && (
-            <View accessibilityViewIsModal style={styles.promptOverlay}>
-              <View style={styles.promptCard}>
-                <Text style={styles.promptTitle}>Finish round early?</Text>
-                <Text style={styles.promptBody}>
-                  Your answers so far will still appear in the results.
-                </Text>
-                <View style={styles.promptActions}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setFinishPromptVisible(false)}
-                    style={({ pressed }) => [styles.promptCancel, pressed && styles.promptPressed]}
-                  >
-                    <Text style={styles.promptCancelText}>KEEP PLAYING</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={confirmFinishEarly}
-                    style={({ pressed }) => [styles.promptFinish, pressed && styles.promptPressed]}
-                  >
-                    <Text style={styles.promptFinishText}>FINISH ROUND</Text>
-                  </Pressable>
-                </View>
-              </View>
             </View>
           )}
         </SafeAreaView>
@@ -350,7 +351,6 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     overflow: 'hidden',
   },
-  closeButton: { position: 'absolute', top: 14, left: 14, zIndex: 12 },
   topRow: {
     height: 72,
     flexShrink: 0,
@@ -483,10 +483,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   finishKicker: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 2.2, opacity: 0.72 },
-  finishTitle: { color: '#FFFFFF', fontSize: 60, lineHeight: 68, fontWeight: '900' },
+  finishTitle: { color: colors.white, fontSize: 60, lineHeight: 68, fontWeight: '500' },
   promptOverlay: {
     ...StyleSheet.absoluteFill,
-    zIndex: 100,
+    zIndex: 20,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
