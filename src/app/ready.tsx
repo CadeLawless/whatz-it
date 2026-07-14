@@ -21,15 +21,17 @@ const READY_TRANSITION_MS = 450;
 export default function ReadyScreen() {
   const { height } = useLandscapeDimensions();
   const router = useRouter();
-  const { round, resetRound } = useRound();
+  const { cancelRecording, prepareRecording, round, resetRound, startRecording } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
   const [count, setCount] = useState(3);
   const [manualReady, setManualReady] = useState(false);
   const [orientationSettled, setOrientationSettled] = useState(false);
   const [introComplete, setIntroComplete] = useState(false);
+  const [recordingPrepared, setRecordingPrepared] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
   const introStarted = useRef(false);
+  const recordingStarted = useRef(false);
   const screenRef = useRef<View>(null);
   const { beginTransition, revealTransition } = useScreenshotTransition();
   const getReadyPlayer = useAudioPlayer(require('../../assets/sounds/get-ready.wav'));
@@ -38,6 +40,16 @@ export default function ReadyScreen() {
   const count1Player = useAudioPlayer(require('../../assets/sounds/count-1.wav'));
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady = foreheadStatus === 'ready' || manualReady;
+
+  useEffect(() => {
+    let active = true;
+    prepareRecording().finally(() => {
+      if (active) setRecordingPrepared(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [prepareRecording]);
 
   useEffect(() => {
     const timeout = setTimeout(() => setOrientationSettled(true), READY_TRANSITION_MS);
@@ -49,12 +61,18 @@ export default function ReadyScreen() {
   }, [orientationSettled, revealTransition]);
 
   useEffect(() => {
-    if (!positionReady || !orientationSettled || isLeaving || introStarted.current) return;
+    if (!positionReady || !orientationSettled || !recordingPrepared || isLeaving || introStarted.current) return;
     introStarted.current = true;
     replaySound(getReadyPlayer);
     const timeout = setTimeout(() => setIntroComplete(true), GET_READY_SOUND_MS);
     return () => clearTimeout(timeout);
-  }, [getReadyPlayer, isLeaving, orientationSettled, positionReady]);
+  }, [getReadyPlayer, isLeaving, orientationSettled, positionReady, recordingPrepared]);
+
+  useEffect(() => {
+    if (!introComplete || recordingStarted.current) return;
+    recordingStarted.current = true;
+    startRecording();
+  }, [introComplete, startRecording]);
 
   useEffect(() => {
     if (!introComplete || isLeaving) return;
@@ -98,6 +116,7 @@ export default function ReadyScreen() {
 
   const handleCancel = async () => {
     setIsLeaving(true);
+    await cancelRecording();
     try {
       const uri = await captureRef(screenRef, {
         format: 'jpg',

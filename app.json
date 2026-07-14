@@ -56,10 +56,30 @@
       [
         "expo-audio",
         {
-          "microphonePermission": false,
-          "recordAudioAndroid": false
+          "microphonePermission": "Allow Goose What to record the clues and reactions during a round.",
+          "recordAudioAndroid": true
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Goose What to record the clue-givers during a round.",
+          "microphonePermission": "Allow Goose What to record the clues and reactions during a round.",
+          "recordAudioAndroid": true,
+          "barcodeScannerEnabled": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "Allow Goose What to save a round video when you tap Save Video.",
+          "granularPermissions": [
+            "video"
+          ]
+        }
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

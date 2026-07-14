@@ -45,11 +45,16 @@ export default function GameScreen() {
   const roundEndPlayer = useAudioPlayer(require('../../assets/sounds/round-end.wav'));
   const router = useRouter();
   const { beginTransition } = useScreenshotTransition();
-  const { round, answerCard, advanceCard, finishRound, startRound } = useRound();
+  const { round, answerCard, advanceCard, finishRound, startRound, stopRecording } = useRound();
+  const stopRecordingRef = useRef(stopRecording);
   const deck = getDeckById(round.deckId ?? undefined);
   const currentCardId = round.cardOrder[round.currentCardIndex];
   const currentCard = deck?.cards.find((card) => card.id === currentCardId);
   const handleExpire = useCallback(() => finishRound(), [finishRound]);
+
+  useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+  }, [stopRecording]);
   const remainingSeconds = useRoundTimer({
     endsAt: round.endsAt,
     active: round.status === 'playing' || round.status === 'feedback',
@@ -132,6 +137,8 @@ export default function GameScreen() {
     let active = true;
     const showResults = async () => {
       await new Promise((resolve) => setTimeout(resolve, ROUND_END_SCREEN_MS));
+      if (!active) return;
+      await stopRecordingRef.current();
       if (!active) return;
       try {
         const uri = await captureRef(screenRef, {

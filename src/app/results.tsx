@@ -1,21 +1,24 @@
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
 import { PortraitTransition } from '@/components/orientation-transition';
+import { RoundVideoPlayer } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
+import { saveRoundVideoToDevice } from '@/video/round-videos';
 
 export default function ResultsScreen() {
   const router = useRouter();
-  const { round, configureRound, resetRound } = useRound();
+  const { currentVideo, round, configureRound, resetRound } = useRound();
   const [isStarting, setIsStarting] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
+  const [isSavingVideo, setIsSavingVideo] = useState(false);
   const screenRef = useRef<View>(null);
   const isPortrait = usePortraitScreen();
   const { beginTransition, revealTransition } = useScreenshotTransition();
@@ -66,6 +69,19 @@ export default function ResultsScreen() {
     router.replace('/');
   };
 
+  const handleSaveVideo = async () => {
+    if (!currentVideo || isSavingVideo) return;
+    setIsSavingVideo(true);
+    try {
+      await saveRoundVideoToDevice(currentVideo.uri);
+      Alert.alert('Video saved', 'The round video is now in your device library.');
+    } catch {
+      Alert.alert('Could not save video', 'Please allow photo library access and try again.');
+    } finally {
+      setIsSavingVideo(false);
+    }
+  };
+
   return (
     <SafeAreaView
       ref={screenRef}
@@ -83,6 +99,21 @@ export default function ResultsScreen() {
             <Text style={styles.eyebrow}>ROUND COMPLETE</Text>
             <Text style={styles.title}>Nice guessing!</Text>
             <Text style={styles.deckName}>{deck.title}</Text>
+            {currentVideo && (
+              <View style={styles.videoSection}>
+                <RoundVideoPlayer uri={currentVideo.uri} style={styles.video} />
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isSavingVideo}
+                  onPress={handleSaveVideo}
+                  style={({ pressed }) => [styles.saveVideoButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.saveVideoText}>
+                    {isSavingVideo ? 'SAVING…' : 'SAVE VIDEO'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
             <View style={styles.scoreRow}>
               <View style={[styles.scoreCard, { backgroundColor: colors.correct }]}>
                 <Text style={styles.score}>{correctCount}</Text>
@@ -156,6 +187,18 @@ const styles = StyleSheet.create({
   eyebrow: { color: colors.muted, fontSize: 12, fontWeight: '900', letterSpacing: 1.8 },
   title: { ...typography.hero, color: colors.ink, marginTop: spacing.sm },
   deckName: { color: colors.muted, fontSize: 16, fontWeight: '700', marginTop: spacing.sm },
+  videoSection: { alignItems: 'center', marginTop: spacing.lg },
+  video: { width: 180, aspectRatio: 16 / 9, borderRadius: radius.lg },
+  saveVideoButton: {
+    minHeight: 42,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.ink,
+  },
+  saveVideoText: { color: colors.white, fontSize: 11, fontWeight: '900', letterSpacing: 1.1 },
   scoreRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xl },
   scoreCard: { flex: 1, borderRadius: radius.xl, padding: spacing.lg },
   score: { color: colors.ink, fontSize: 52, lineHeight: 58, fontWeight: '900' },
