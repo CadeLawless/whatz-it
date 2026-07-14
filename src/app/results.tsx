@@ -101,7 +101,7 @@ export default function ResultsScreen() {
           return (
             <View style={styles.resultRow}>
               <View style={[styles.outcomeDot, { backgroundColor: item.outcome === 'correct' ? colors.correct : colors.pass }]}>
-                <Text style={styles.outcomeIcon}>{item.outcome === 'correct' ? '✓' : '↑'}</Text>
+                <Text style={styles.outcomeIcon}>{item.outcome === 'correct' ? '✓' : '×'}</Text>
               </View>
               <Text style={styles.resultText}>{card?.text ?? 'Unknown card'}</Text>
               <Text style={styles.outcomeText}>{item.outcome.toUpperCase()}</Text>

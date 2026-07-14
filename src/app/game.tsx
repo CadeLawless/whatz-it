@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
+import { CloseButton } from '@/components/close-button';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { getDeckById } from '@/data/decks';
@@ -163,129 +164,147 @@ export default function GameScreen() {
 
   const locked = round.status !== 'playing';
   const feedbackColor = round.latestOutcome === 'correct' ? colors.correct : colors.pass;
+  const outerColor =
+    round.status === 'feedback'
+      ? feedbackColor
+      : round.status === 'finished'
+        ? colors.surface
+        : colors.playSoft;
+  const panelColor =
+    round.status === 'feedback'
+      ? feedbackColor
+      : round.status === 'finished'
+        ? colors.play
+        : colors.surface;
+  const panelBorderColor =
+    round.status === 'feedback'
+      ? round.latestOutcome === 'correct'
+        ? colors.correctBorder
+        : colors.passBorder
+      : round.status === 'finished'
+        ? colors.playBorder
+        : '#439EFE';
   const cardFontSize = getCardFontSize(currentCard.text, width, height);
 
   return (
     <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
       <LandscapeViewport>
-        <SafeAreaView
-          edges={['top', 'bottom']}
-          style={[styles.safeArea, { backgroundColor: colors.play }]}
-        >
+        <SafeAreaView edges={['top', 'bottom']} style={[styles.safeArea, { backgroundColor: outerColor }]}>
           <StatusBar hidden animated={false} />
-      <View style={styles.topRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Finish round early"
-          disabled={round.status === 'ready'}
-          onPress={handleFinishEarly}
-          style={({ pressed }) => [styles.finishButton, pressed && styles.finishButtonPressed]}
-        >
-          <Text style={styles.finishButtonText}>END ROUND</Text>
-        </Pressable>
-        <View style={styles.timerPill}>
-          <Text style={styles.timer}>
-            {formatRoundClock(round.status === 'ready' ? round.durationSeconds : remainingSeconds)}
-          </Text>
-          <Text style={styles.timerLabel}>TIME</Text>
-        </View>
-        <Text style={[typography.deckName, styles.deckName]}>{deck.title}</Text>
-        {/* <Text style={styles.progress}>
-          {round.currentCardIndex + 1} / {round.cardOrder.length}
-        </Text> */}
-      </View>
-
-      {/* <View style={styles.sensorRow}>
-        <View style={[styles.sensorDot, tiltStatus === 'ready' && styles.sensorDotReady]} />
-        <Text style={styles.sensorText}>{getTiltStatusLabel(tiltStatus)}</Text>
-      </View> */}
-
-      <View style={styles.cardArea}>
-        <Text style={styles.cardLabel}>YOUR CARD</Text>
-        <Text
-          maxFontSizeMultiplier={1.1}
-          style={[
-            styles.cardText,
-            { fontSize: cardFontSize, lineHeight: Math.round(cardFontSize * 1.1) },
-          ]}
-        >
-          {currentCard.text}
-        </Text>
-      </View>
-
-      {Platform.OS === 'web' && (
-        <View style={styles.controls}>
-          <Pressable
-            accessibilityRole="button"
-            disabled={locked}
-            onPress={() => handleAnswer('passed')}
-            style={({ pressed }) => [styles.control, styles.passButton, pressed && styles.controlPressed]}
+          <View
+            style={[
+              styles.panel,
+              { backgroundColor: panelColor, borderColor: panelBorderColor },
+            ]}
           >
-            <Text style={styles.controlIcon}>↑</Text>
-            <Text style={styles.controlText}>PASS</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            disabled={locked}
-            onPress={() => handleAnswer('correct')}
-            style={({ pressed }) => [styles.control, styles.correctButton, pressed && styles.controlPressed]}
-          >
-            <Text style={styles.controlIcon}>↓</Text>
-            <Text style={styles.controlText}>CORRECT</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {round.status === 'feedback' && (
-        <View style={[styles.feedback, { backgroundColor: feedbackColor }]}>
-          <Text style={styles.feedbackIcon}>{round.latestOutcome === 'correct' ? '✓' : '↗'}</Text>
-          <Text style={styles.feedbackText}>
-            {round.latestOutcome === 'correct' ? 'CORRECT!' : 'PASSED'}
-          </Text>
-        </View>
-      )}
-
-      {round.status === 'ready' && (
-        <View style={styles.setupOverlay}>
-          <Text style={styles.setupIcon}>◎</Text>
-          <Text style={styles.setupTitle}>Hold steady</Text>
-          <Text style={styles.setupText}>{getTiltStatusLabel(tiltStatus)}</Text>
-        </View>
-      )}
-
-      {round.status === 'finished' && (
-        <View style={[styles.transitionOverlay, { backgroundColor: colors.play }]}>
-          <Text style={styles.finishKicker}>ROUND COMPLETE</Text>
-          <Text style={styles.finishTitle}>TIME&apos;S UP!</Text>
-        </View>
-      )}
-
-      {finishPromptVisible && round.status !== 'finished' && (
-        <View accessibilityViewIsModal style={styles.promptOverlay}>
-          <View style={styles.promptCard}>
-            <Text style={styles.promptTitle}>Finish round early?</Text>
-            <Text style={styles.promptBody}>
-              Your answers so far will still appear in the results.
-            </Text>
-            <View style={styles.promptActions}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setFinishPromptVisible(false)}
-                style={({ pressed }) => [styles.promptCancel, pressed && styles.promptPressed]}
-              >
-                <Text style={styles.promptCancelText}>KEEP PLAYING</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={confirmFinishEarly}
-                style={({ pressed }) => [styles.promptFinish, pressed && styles.promptPressed]}
-              >
-                <Text style={styles.promptFinishText}>FINISH ROUND</Text>
-              </Pressable>
+            <View style={styles.topRow}>
+              <CloseButton
+                accessibilityLabel="Finish round early"
+                disabled={round.status === 'finished'}
+                onPress={handleFinishEarly}
+              />
+              <Text style={styles.timer}>
+                {formatRoundClock(round.status === 'ready' ? round.durationSeconds : remainingSeconds)}
+              </Text>
+              <Text style={styles.deckName}>{deck.title}</Text>
             </View>
+
+            <View style={styles.cardArea}>
+              <Text
+                maxFontSizeMultiplier={1.1}
+                style={[
+                  styles.cardText,
+                  { fontSize: cardFontSize, lineHeight: Math.round(cardFontSize * 1.1) },
+                ]}
+              >
+                {currentCard.text}
+              </Text>
+            </View>
+
+            {Platform.OS === 'web' && (
+              <View style={styles.controls}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={locked}
+                  onPress={() => handleAnswer('passed')}
+                  style={({ pressed }) => [styles.control, styles.passButton, pressed && styles.controlPressed]}
+                >
+                  <Text style={styles.controlIcon}>×</Text>
+                  <Text style={styles.controlText}>PASS</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={locked}
+                  onPress={() => handleAnswer('correct')}
+                  style={({ pressed }) => [styles.control, styles.correctButton, pressed && styles.controlPressed]}
+                >
+                  <Text style={styles.controlIcon}>✓</Text>
+                  <Text style={styles.controlText}>CORRECT</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {round.status === 'feedback' && (
+              <View style={styles.feedback}>
+                <Text
+                  style={[
+                    styles.feedbackIcon,
+                    round.latestOutcome === 'passed' && styles.passFeedbackText,
+                  ]}
+                >
+                  {round.latestOutcome === 'correct' ? '✓' : '×'}
+                </Text>
+                <Text
+                  style={[
+                    styles.feedbackText,
+                    round.latestOutcome === 'passed' && styles.passFeedbackText,
+                  ]}
+                >
+                  {round.latestOutcome === 'correct' ? 'CORRECT!' : 'PASS'}
+                </Text>
+              </View>
+            )}
+
+            {round.status === 'ready' && (
+              <View style={styles.setupOverlay}>
+                <Text style={styles.setupTitle}>HOLD STEADY</Text>
+                <Text style={styles.setupText}>{getTiltStatusLabel(tiltStatus)}</Text>
+              </View>
+            )}
+
+            {round.status === 'finished' && (
+              <View style={styles.transitionOverlay}>
+                <Text style={styles.finishTitle}>TIME&apos;S UP!</Text>
+              </View>
+            )}
+
+            {finishPromptVisible && round.status !== 'finished' && (
+              <View accessibilityViewIsModal style={styles.promptOverlay}>
+                <View style={styles.promptCard}>
+                  <Text style={styles.promptTitle}>Finish round early?</Text>
+                  <Text style={styles.promptBody}>
+                    Your answers so far will still appear in the results.
+                  </Text>
+                  <View style={styles.promptActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setFinishPromptVisible(false)}
+                      style={({ pressed }) => [styles.promptCancel, pressed && styles.promptPressed]}
+                    >
+                      <Text style={styles.promptCancelText}>KEEP PLAYING</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={confirmFinishEarly}
+                      style={({ pressed }) => [styles.promptFinish, pressed && styles.promptPressed]}
+                    >
+                      <Text style={styles.promptFinishText}>FINISH ROUND</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
-        </View>
-      )}
         </SafeAreaView>
       </LandscapeViewport>
     </View>
@@ -314,9 +333,29 @@ function getTiltStatusLabel(status: ReturnType<typeof useTiltControls>) {
 }
 
 const styles = StyleSheet.create({
-  captureRoot: { flex: 1, backgroundColor: colors.play },
-  safeArea: { flex: 1, padding: spacing.lg, overflow: 'hidden' },
-  topRow: { height: 52, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  captureRoot: { flex: 1, backgroundColor: colors.playSoft },
+  safeArea: {
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    overflow: 'hidden',
+  },
+  panel: {
+    flex: 1,
+    minHeight: 0,
+    borderWidth: 6,
+    borderRadius: 28,
+    overflow: 'hidden',
+  },
+  topRow: {
+    height: 72,
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    zIndex: 2,
+  },
   finishButton: {
     position: 'absolute',
     left: 0,
@@ -328,7 +367,14 @@ const styles = StyleSheet.create({
   },
   finishButtonPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   finishButtonText: { color: colors.ink, fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
-  deckName: { position: 'absolute', right: 0, color: colors.white },
+  deckName: {
+    width: 190,
+    color: '#000000',
+    fontSize: 18,
+    fontWeight: '400',
+    textAlign: 'right',
+    textTransform: 'uppercase',
+  },
   timerPill: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -338,7 +384,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
   },
-  timer: { color: colors.ink, fontSize: 25, fontWeight: '900' },
+  timer: { color: colors.play, fontSize: 25, fontWeight: '900' },
   timerLabel: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
   progress: { color: colors.ink, fontSize: 13, fontWeight: '900', opacity: 0.65 },
   sensorRow: {
@@ -360,49 +406,59 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 86,
+    paddingTop: spacing.sm,
+    paddingBottom: 70,
   },
   cardLabel: { color: colors.white, fontSize: 11, fontWeight: '900', letterSpacing: 2, opacity: 0.72 },
   cardText: {
-    color: colors.white,
+    color: colors.play,
     fontWeight: '900',
-    letterSpacing: -2.4,
+    letterSpacing: -1.6,
     textAlign: 'center',
-    marginTop: spacing.sm,
     maxWidth: '100%',
     flexShrink: 1,
   },
-  controls: { flexDirection: 'row', flexShrink: 0, gap: spacing.md },
+  controls: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    bottom: spacing.sm,
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   control: {
     flex: 1,
-    minHeight: 92,
-    borderRadius: radius.lg,
+    minHeight: 54,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   passButton: { backgroundColor: colors.pass },
   correctButton: { backgroundColor: colors.correct },
   controlPressed: { transform: [{ scale: 0.98 }], opacity: 0.86 },
-  controlIcon: { color: colors.ink, fontSize: 28, fontWeight: '900', lineHeight: 30 },
-  controlText: { color: colors.ink, fontSize: 13, fontWeight: '900', letterSpacing: 1.2 },
+  controlIcon: { color: '#000000', fontSize: 24, fontWeight: '900', lineHeight: 26 },
+  controlText: { color: '#000000', fontSize: 11, fontWeight: '900', letterSpacing: 1.1 },
   feedback: {
     ...StyleSheet.absoluteFill,
+    zIndex: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  feedbackIcon: { color: colors.ink, fontSize: 110, fontWeight: '900', lineHeight: 120 },
-  feedbackText: { color: colors.ink, fontSize: 34, fontWeight: '900', letterSpacing: 1 },
+  feedbackIcon: { color: '#000000', fontSize: 124, fontWeight: '700', lineHeight: 130 },
+  feedbackText: { color: '#000000', fontSize: 42, fontWeight: '500', letterSpacing: 0.5 },
+  passFeedbackText: { color: colors.white },
   setupOverlay: {
     ...StyleSheet.absoluteFill,
+    zIndex: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(247,245,239,0.96)',
+    backgroundColor: colors.surface,
   },
   setupIcon: { color: colors.ink, fontSize: 72, lineHeight: 80, fontWeight: '700' },
-  setupTitle: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
+  setupTitle: { ...typography.title, color: colors.play, marginTop: spacing.sm },
   setupText: {
-    color: colors.muted,
+    color: colors.play,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.3,
@@ -415,7 +471,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   finishKicker: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 2.2, opacity: 0.72 },
-  finishTitle: { color: colors.white, fontSize: 56, lineHeight: 66, fontWeight: '900', letterSpacing: -2 },
+  finishTitle: { color: colors.white, fontSize: 60, lineHeight: 68, fontWeight: '500' },
   promptOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 20,

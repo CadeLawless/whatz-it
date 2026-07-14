@@ -1,19 +1,19 @@
-import { type Href, useRouter } from 'expo-router';
 import { useAudioPlayer } from 'expo-audio';
+import { type Href, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
-import { getDeckById } from '@/data/decks';
-import { OrientationTransition } from '@/components/orientation-transition';
+import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
+import { OrientationTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
-import { formatRoundClock } from '@/game/round-duration';
+import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
-import { colors, radius, spacing, typography } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
 import { replaySound } from '@/utils/sound';
 
 const GET_READY_SOUND_MS = 1050;
@@ -76,7 +76,7 @@ export default function ReadyScreen() {
       return;
     }
 
-    if (!positionReady || !orientationSettled || !introComplete || isLeaving) return;
+    if (!positionReady || !orientationSettled || !introComplete) return;
 
     const timeout = setTimeout(() => {
       if (count === 1 && !launched.current) {
@@ -84,7 +84,6 @@ export default function ReadyScreen() {
         router.replace('/game' as Href);
         return;
       }
-
       setCount((value) => Math.max(1, value - 1));
     }, 1000);
     return () => clearTimeout(timeout);
@@ -121,59 +120,49 @@ export default function ReadyScreen() {
   return (
     <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
       <LandscapeViewport>
-        <SafeAreaView
-          edges={['top', 'bottom']}
-          style={[styles.safeArea, { backgroundColor: colors.play }]}
-        >
+        <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
           <StatusBar hidden animated={false} />
-      <View style={styles.topRow}>
-        <Text style={styles.duration}>{formatRoundClock(round.durationSeconds)}</Text>
-        <Text style={[typography.deckName, styles.deckName]}>{deck.title}</Text>
-      </View>
+          <View style={styles.panel}>
+            <View style={styles.closeButton}>
+              <CloseButton
+                accessibilityLabel="Cancel round"
+                disabled={isLeaving}
+                onPress={handleCancel}
+              />
+            </View>
+            <Text style={styles.deckName}>{deck.title}</Text>
 
-      <View style={styles.center}>
-        <Text style={styles.kicker}>HOLD THE PHONE TO YOUR FOREHEAD</Text>
-        {positionReady ? (
-          <>
-            {introComplete ? (
-              <Text style={[styles.count, { fontSize: countSize, lineHeight: countSize * 1.05 }]}>
-                {count}
-              </Text>
-            ) : (
-              <Text style={styles.getReady}>GET READY</Text>
-            )}
-            <Text style={styles.instructions}>Hold steady - your round is about to begin.</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.phoneIcon}>▭</Text>
-            <Text style={styles.positionTitle}>{getPositionMessage(foreheadStatus)}</Text>
-            <Text style={styles.instructions}>
-              Keep the phone sideways with the screen facing away from you.
-            </Text>
-            {(foreheadStatus === 'unavailable' || foreheadStatus === 'denied') && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setManualReady(true)}
-                style={styles.manualButton}
-              >
-                <Text style={styles.manualButtonText}>START COUNTDOWN</Text>
-              </Pressable>
-            )}
-          </>
-        )}
-      </View>
-
-      <View style={styles.footer}>
-        <Pressable
-          accessibilityRole="button"
-          disabled={isLeaving}
-          onPress={handleCancel}
-          style={styles.cancelButton}
-        >
-          <Text style={styles.cancelText}>CANCEL</Text>
-        </Pressable>
-      </View>
+            <View style={styles.center}>
+              {positionReady ? (
+                <>
+                  {introComplete ? (
+                    <Text
+                      style={[styles.count, { fontSize: countSize, lineHeight: countSize * 1.05 }]}
+                    >
+                      {count}
+                    </Text>
+                  ) : (
+                    <Text style={styles.getReady}>GET READY</Text>
+                  )}
+                  <Text style={styles.instructions}>Hold steady — your round is about to begin.</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.positionTitle}>{getPositionMessage(foreheadStatus)}</Text>
+                  <Text style={styles.instructions}>Tilt down for correct, tilt up to pass</Text>
+                  {(foreheadStatus === 'unavailable' || foreheadStatus === 'denied') && (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setManualReady(true)}
+                      style={styles.manualButton}
+                    >
+                      <Text style={styles.manualButtonText}>START COUNTDOWN</Text>
+                    </Pressable>
+                  )}
+                </>
+              )}
+            </View>
+          </View>
         </SafeAreaView>
       </LandscapeViewport>
     </View>
@@ -185,7 +174,7 @@ function getPositionMessage(status: ReturnType<typeof useForeheadPosition>) {
     case 'checking':
       return 'Checking device motion...';
     case 'waiting':
-      return 'Place the phone on your forehead';
+      return 'Place on forehead';
     case 'ready':
       return 'Ready';
     case 'denied':
@@ -196,76 +185,78 @@ function getPositionMessage(status: ReturnType<typeof useForeheadPosition>) {
 }
 
 const styles = StyleSheet.create({
-  captureRoot: { flex: 1, backgroundColor: colors.play },
-  rotationShell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  captureRoot: { flex: 1, backgroundColor: colors.surface },
+  rotationShell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
   safeArea: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     overflow: 'hidden',
+    backgroundColor: colors.surface,
   },
-  topRow: {
-    flexDirection: 'row',
-    flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  panel: {
+    flex: 1,
+    minHeight: 0,
+    borderWidth: 6,
+    borderColor: colors.playBorder,
+    borderRadius: 28,
+    overflow: 'hidden',
+    backgroundColor: colors.play,
   },
-  duration: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: '900',
-    backgroundColor: 'rgba(255,255,255,0.65)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
+  closeButton: { position: 'absolute', top: 14, left: 14, zIndex: 2 },
+  deckName: {
+    position: 'absolute',
+    top: 23,
+    right: 28,
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '400',
+    textTransform: 'uppercase',
   },
   center: {
     flex: 1,
     minHeight: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.sm,
+    paddingHorizontal: 86,
+    paddingVertical: spacing.xl,
   },
-  deckName: { color: colors.white },
-  kicker: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 1.8, textAlign: 'center' },
   count: { color: colors.white, fontWeight: '900', letterSpacing: -8 },
-  getReady: { color: colors.white, fontSize: 42, lineHeight: 54, fontWeight: '900', letterSpacing: 2 },
-  phoneIcon: {
+  getReady: {
     color: colors.white,
-    fontSize: 84,
-    lineHeight: 92,
-    fontWeight: '300',
-    transform: [{ rotate: '90deg' }],
+    fontSize: 48,
+    lineHeight: 56,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   positionTitle: {
     color: colors.white,
-    fontSize: 28,
-    lineHeight: 32,
+    fontSize: 46,
+    lineHeight: 52,
     fontWeight: '900',
     textAlign: 'center',
-    marginBottom: spacing.xs,
+    textTransform: 'uppercase',
   },
   instructions: {
-    ...typography.body,
     color: colors.white,
+    fontSize: 21,
+    lineHeight: 28,
+    fontWeight: '400',
     textAlign: 'center',
-    opacity: 0.72,
-    maxWidth: 460,
+    marginTop: spacing.md,
+    maxWidth: 520,
   },
   manualButton: {
     marginTop: spacing.lg,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: radius.pill,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
   },
-  manualButtonText: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
-  footer: { flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingTop: spacing.xs },
-  cancelButton: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.65)',
-  },
-  cancelText: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 1.4 },
+  manualButtonText: { color: '#000000', fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
 });

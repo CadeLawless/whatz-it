@@ -9,22 +9,22 @@ import { useScreenshotTransition } from '@/components/screenshot-transition-prov
 import { decks } from '@/data/decks';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 
-const HOME_DECK_IDS = [
-  'snack-attack',
-  'animal-antics',
-  '90s-kids',
-  'star-studded',
-  'internet-famous',
-  'game-on',
-  'fictional-who-am-i',
-  'name-that-tune',
-  'movie-mania',
-  'binge-worthy',
+const HOME_DECK_ID_GROUPS = [
+  ['snack-attack'],
+  ['animal-antics'],
+  ['90s-kids'],
+  ['celebrity-shuffle', 'star-studded'],
+  ['gone-viral', 'internet-famous'],
+  ['game-on'],
+  ['fictional-who-am-i'],
+  ['music-mix', 'name-that-tune'],
+  ['movie-mania'],
+  ['binge-worthy'],
 ] as const;
 
 const deckById = new Map(decks.map((deck) => [deck.id, deck]));
-const homeDecks = HOME_DECK_IDS.flatMap((deckId) => {
-  const deck = deckById.get(deckId);
+const homeDecks = HOME_DECK_ID_GROUPS.flatMap((deckIds) => {
+  const deck = deckIds.map((deckId) => deckById.get(deckId)).find(Boolean);
   return deck ? [deck] : [];
 });
 

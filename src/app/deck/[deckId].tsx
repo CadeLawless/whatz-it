@@ -3,16 +3,13 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { TimerPicker } from '@/components/timer-picker';
 import { OrientationTransition, PortraitTransition } from '@/components/orientation-transition';
+import { TimerPicker } from '@/components/timer-picker';
 import { getDeckById } from '@/data/decks';
+import { clampRoundDuration, DEFAULT_ROUND_DURATION } from '@/game/round-duration';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
-import { clampRoundDuration, DEFAULT_ROUND_DURATION } from '@/game/round-duration';
-import {
-  loadRoundDuration,
-  saveRoundDuration,
-} from '@/storage/preferences';
+import { loadRoundDuration, saveRoundDuration } from '@/storage/preferences';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function DeckDetailsScreen() {
@@ -50,128 +47,146 @@ export default function DeckDetailsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: deck.title }} />
-      <View style={styles.screen}>
-      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <View style={[styles.heroCard, { backgroundColor: colors.play }]}>
-          <View style={styles.freePill}>
-            <Text style={styles.freeText}>FREE DECK</Text>
-          </View>
-          <Text style={styles.deckTitle}>{deck.title}</Text>
-          <Text style={styles.deckDescription}>{deck.description}</Text>
-          <Text style={styles.cardCount}>{deck.cards.length} cards</Text>
-        </View>
-
-        <Text style={styles.sectionLabel}>ROUND LENGTH</Text>
-        <TimerPicker value={duration} onChange={(value) => setDuration(clampRoundDuration(value))} />
-
-        {/* <Text style={styles.sectionLabel}>QUICK PREVIEW</Text>
-        <View style={styles.previewList}>
-          {deck.cards.slice(0, 3).map((card, index) => (
-            <View key={card.id} style={styles.previewRow}>
-              <Text style={styles.previewNumber}>{String(index + 1).padStart(2, '0')}</Text>
-              <Text style={styles.previewText}>{card.text}</Text>
-            </View>
-          ))}
-        </View> */}
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={isStarting}
-          onPress={handleStart}
-          style={({ pressed }) => [styles.startButton, pressed && styles.startButtonPressed]}
+      <Stack.Screen options={{ headerShown: false }} />
+      <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          style={styles.screen}
         >
-          <Text style={styles.startButtonText}>GET READY</Text>
-          <Text style={styles.startArrow}>→</Text>
-        </Pressable>
-      </ScrollView>
-      {isStarting && (
-        <OrientationTransition style={styles.startingOverlay} />
-      )}
-      </View>
+          <Pressable
+            accessibilityLabel="Back to Decks"
+            accessibilityRole="button"
+            onPress={() => router.back()}
+            style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
+          >
+            <Text style={styles.backChevron}>‹</Text>
+            <Text style={styles.backText}>Back to Decks</Text>
+          </Pressable>
+
+          <View style={styles.heroCard}>
+            <Text style={styles.deckTitle}>{deck.title}</Text>
+            <Text style={styles.deckDescription}>{deck.description}</Text>
+          </View>
+
+          <Text style={styles.sectionLabel}>ROUND LENGTH</Text>
+          <TimerPicker
+            value={duration}
+            onChange={(value) => setDuration(clampRoundDuration(value))}
+          />
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={isStarting}
+            onPress={handleStart}
+            style={({ pressed }) => [styles.startButton, pressed && styles.startButtonPressed]}
+          >
+            <Text style={styles.startButtonText}>LET&apos;S PLAY</Text>
+            <Text style={styles.startArrow}>→</Text>
+          </Pressable>
+        </ScrollView>
+        {isStarting && <OrientationTransition style={styles.startingOverlay} />}
+      </SafeAreaView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   orientationGate: { flex: 1 },
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.surface },
   startingOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 100,
   },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  content: { flexGrow: 1, padding: spacing.lg, paddingBottom: spacing.xl },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
   },
   notFoundTitle: { ...typography.title, color: colors.ink },
-  notFoundText: { ...typography.body, color: colors.muted, textAlign: 'center', marginTop: spacing.sm },
-  heroCard: {
-    minHeight: 300,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  freePill: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.82)',
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  freeText: { color: colors.ink, fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
-  deckTitle: { ...typography.hero, color: colors.white },
-  deckDescription: { ...typography.body, color: colors.white, marginTop: spacing.sm, maxWidth: 360 },
-  cardCount: {
-    color: colors.white,
-    fontSize: 13,
-    fontWeight: '800',
-    marginTop: spacing.md,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  sectionLabel: {
+  notFoundText: {
+    ...typography.body,
     color: colors.muted,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1.7,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
-  previewList: {
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  previewRow: {
+  backButton: {
+    alignSelf: 'flex-start',
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 5,
   },
-  previewNumber: { color: colors.muted, fontSize: 12, fontWeight: '800' },
-  previewText: { color: colors.ink, fontSize: 17, fontWeight: '700' },
-  startButton: {
+  backButtonPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  backChevron: { color: '#000000', fontSize: 35, lineHeight: 38, fontWeight: '300' },
+  backText: { color: '#000000', fontSize: 17, fontWeight: '500', marginLeft: 2 },
+  heroCard: {
+    minHeight: 166,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
     marginTop: spacing.xl,
-    backgroundColor: colors.ink,
-    borderRadius: radius.lg,
-    minHeight: 62,
-    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.play,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.18,
+    shadowRadius: 13,
+    elevation: 6,
+  },
+  deckTitle: {
+    color: colors.white,
+    fontSize: 35,
+    lineHeight: 40,
+    fontWeight: '900',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  deckDescription: {
+    color: colors.white,
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: '400',
+    textAlign: 'center',
+    marginTop: spacing.md,
+    maxWidth: 420,
+  },
+  sectionLabel: {
+    color: colors.play,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
+  },
+  startButton: {
+    marginTop: 'auto',
+    marginBottom: 0,
+    minHeight: 76,
+    paddingHorizontal: spacing.xl,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderRadius: radius.xl,
+    backgroundColor: colors.pass,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.18,
+    shadowRadius: 13,
+    elevation: 6,
   },
   startButtonPressed: { transform: [{ scale: 0.99 }], opacity: 0.9 },
-  startButtonText: { color: colors.white, fontSize: 15, fontWeight: '900', letterSpacing: 1.1 },
-  startArrow: { color: colors.white, fontSize: 25, fontWeight: '700' },
+  startButtonText: { color: colors.white, fontSize: 27, fontWeight: '900' },
+  startArrow: { color: colors.white, fontSize: 44, lineHeight: 48, fontWeight: '300' },
 });
