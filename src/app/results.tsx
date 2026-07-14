@@ -4,9 +4,9 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
-import { getDeckById } from '@/data/decks';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
+import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
   primaryButton: {
     minHeight: 58,
     borderRadius: radius.lg,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.play,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
