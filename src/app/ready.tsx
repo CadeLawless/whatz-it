@@ -104,24 +104,24 @@ export default function ReadyScreen() {
         quality: 0.95,
         result: 'tmpfile',
       });
-      await beginTransition({ destination: 'home', direction: 'right', uri });
+      await beginTransition({ destination: 'deck', direction: 'right', uri });
     } catch {
       // If capture is unavailable, navigation still completes normally.
     }
     resetRound();
-    router.replace('/');
+    router.replace(`/deck/${deck.id}` as Href);
   };
 
   return (
     <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
       <LandscapeViewport>
-        <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+        <SafeAreaView edges={[]} style={styles.safeArea}>
           <StatusBar hidden animated={false} />
           <View style={styles.panel}>
             <View style={styles.closeButton}>
               <CloseButton
                 accessibilityLabel="Cancel round"
-                disabled={isLeaving}
+                disabled={isLeaving || !orientationSettled}
                 onPress={handleCancel}
               />
             </View>
@@ -183,8 +183,7 @@ const styles = StyleSheet.create({
   captureRoot: { flex: 1, backgroundColor: colors.surface },
   safeArea: {
     flex: 1,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    padding: 16,
     overflow: 'hidden',
     backgroundColor: colors.surface,
   },

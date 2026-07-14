@@ -9,25 +9,6 @@ import { useScreenshotTransition } from '@/components/screenshot-transition-prov
 import { decks } from '@/data/decks';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 
-const HOME_DECK_ID_GROUPS = [
-  ['snack-attack'],
-  ['animal-antics'],
-  ['90s-kids'],
-  ['celebrity-shuffle', 'star-studded'],
-  ['gone-viral', 'internet-famous'],
-  ['game-on'],
-  ['fictional-who-am-i'],
-  ['music-mix', 'name-that-tune'],
-  ['movie-mania'],
-  ['binge-worthy'],
-] as const;
-
-const deckById = new Map(decks.map((deck) => [deck.id, deck]));
-const homeDecks = HOME_DECK_ID_GROUPS.flatMap((deckIds) => {
-  const deck = deckIds.map((deckId) => deckById.get(deckId)).find(Boolean);
-  return deck ? [deck] : [];
-});
-
 export default function DeckLibraryScreen() {
   const { width } = useWindowDimensions();
   const isPortrait = usePortraitScreen();
@@ -81,7 +62,7 @@ export default function DeckLibraryScreen() {
           </View>
 
           <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
-            {homeDecks.map((deck) => (
+            {decks.map((deck) => (
               <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
                 <DeckCard deck={deck} />
               </View>

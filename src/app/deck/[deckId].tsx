@@ -23,11 +23,15 @@ export default function DeckDetailsScreen() {
   const [isStarting, setIsStarting] = useState(false);
   const screenRef = useRef<View>(null);
   const isPortrait = usePortraitScreen();
-  const { beginTransition } = useScreenshotTransition();
+  const { beginTransition, revealTransition } = useScreenshotTransition();
 
   useEffect(() => {
     loadRoundDuration().then(setDuration);
   }, []);
+
+  useEffect(() => {
+    if (isPortrait) revealTransition('deck');
+  }, [isPortrait, revealTransition]);
 
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
 

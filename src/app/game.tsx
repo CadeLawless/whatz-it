@@ -189,7 +189,7 @@ export default function GameScreen() {
   return (
     <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
       <LandscapeViewport>
-        <SafeAreaView edges={['top', 'bottom']} style={[styles.safeArea, { backgroundColor: outerColor }]}>
+        <SafeAreaView edges={[]} style={[styles.safeArea, { backgroundColor: outerColor }]}>
           <StatusBar hidden animated={false} />
           <View
             style={[
@@ -244,27 +244,6 @@ export default function GameScreen() {
               </View>
             )}
 
-            {round.status === 'feedback' && (
-              <View style={styles.feedback}>
-                <Text
-                  style={[
-                    styles.feedbackIcon,
-                    round.latestOutcome === 'passed' && styles.passFeedbackText,
-                  ]}
-                >
-                  {round.latestOutcome === 'correct' ? '✓' : '×'}
-                </Text>
-                <Text
-                  style={[
-                    styles.feedbackText,
-                    round.latestOutcome === 'passed' && styles.passFeedbackText,
-                  ]}
-                >
-                  {round.latestOutcome === 'correct' ? 'CORRECT!' : 'PASS'}
-                </Text>
-              </View>
-            )}
-
             {round.status === 'ready' && (
               <View style={styles.setupOverlay}>
                 <Text style={styles.setupTitle}>HOLD STEADY</Text>
@@ -305,6 +284,27 @@ export default function GameScreen() {
               </View>
             )}
           </View>
+
+          {round.status === 'feedback' && (
+            <View style={[styles.feedback, { backgroundColor: feedbackColor }]}>
+              <Text
+                style={[
+                  styles.feedbackIcon,
+                  round.latestOutcome === 'passed' && styles.passFeedbackText,
+                ]}
+              >
+                {round.latestOutcome === 'correct' ? '✓' : '×'}
+              </Text>
+              <Text
+                style={[
+                  styles.feedbackText,
+                  round.latestOutcome === 'passed' && styles.passFeedbackText,
+                ]}
+              >
+                {round.latestOutcome === 'correct' ? 'CORRECT!' : 'PASS'}
+              </Text>
+            </View>
+          )}
         </SafeAreaView>
       </LandscapeViewport>
     </View>
@@ -336,8 +336,7 @@ const styles = StyleSheet.create({
   captureRoot: { flex: 1, backgroundColor: colors.playSoft },
   safeArea: {
     flex: 1,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    padding: 16,
     overflow: 'hidden',
   },
   panel: {
@@ -384,7 +383,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
   },
-  timer: { color: colors.play, fontSize: 25, fontWeight: '900' },
+  timer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    color: colors.play,
+    fontSize: 25,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
   timerLabel: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
   progress: { color: colors.ink, fontSize: 13, fontWeight: '900', opacity: 0.65 },
   sensorRow: {
@@ -441,7 +448,7 @@ const styles = StyleSheet.create({
   controlText: { color: '#000000', fontSize: 11, fontWeight: '900', letterSpacing: 1.1 },
   feedback: {
     ...StyleSheet.absoluteFill,
-    zIndex: 10,
+    zIndex: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
