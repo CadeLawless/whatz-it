@@ -8,7 +8,6 @@ import { captureRef } from 'react-native-view-shot';
 
 import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
-import { OrientationTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
@@ -32,7 +31,7 @@ export default function ReadyScreen() {
   const launched = useRef(false);
   const introStarted = useRef(false);
   const screenRef = useRef<View>(null);
-  const { beginTransition } = useScreenshotTransition();
+  const { beginTransition, revealTransition } = useScreenshotTransition();
   const getReadyPlayer = useAudioPlayer(require('../../assets/sounds/get-ready.wav'));
   const count3Player = useAudioPlayer(require('../../assets/sounds/count-3.wav'));
   const count2Player = useAudioPlayer(require('../../assets/sounds/count-2.wav'));
@@ -44,6 +43,10 @@ export default function ReadyScreen() {
     const timeout = setTimeout(() => setOrientationSettled(true), READY_TRANSITION_MS);
     return () => clearTimeout(timeout);
   }, []);
+
+  useEffect(() => {
+    if (orientationSettled) revealTransition('ready');
+  }, [orientationSettled, revealTransition]);
 
   useEffect(() => {
     if (!positionReady || !orientationSettled || isLeaving || introStarted.current) return;
@@ -90,14 +93,6 @@ export default function ReadyScreen() {
   }, [count, deck, introComplete, isLeaving, orientationSettled, positionReady, round.status, router]);
 
   if (!deck) return null;
-
-  if (!orientationSettled) {
-    return (
-      <LandscapeViewport>
-        <OrientationTransition style={styles.rotationShell} />
-      </LandscapeViewport>
-    );
-  }
 
   const countSize = Math.max(92, Math.min(138, height * 0.34));
 
@@ -186,12 +181,6 @@ function getPositionMessage(status: ReturnType<typeof useForeheadPosition>) {
 
 const styles = StyleSheet.create({
   captureRoot: { flex: 1, backgroundColor: colors.surface },
-  rotationShell: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
   safeArea: {
     flex: 1,
     paddingHorizontal: 18,

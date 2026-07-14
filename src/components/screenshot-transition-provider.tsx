@@ -16,7 +16,7 @@ import {
 } from 'react';
 import { releaseCapture } from 'react-native-view-shot';
 
-export type ScreenshotDestination = 'home' | 'deck' | 'results';
+export type ScreenshotDestination = 'home' | 'deck' | 'ready' | 'results';
 type SlideDirection = 'left' | 'right';
 
 type ScreenshotTransition = {

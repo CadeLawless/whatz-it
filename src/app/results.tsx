@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
 import { getDeckById } from '@/data/decks';
-import { OrientationTransition, PortraitTransition } from '@/components/orientation-transition';
+import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
@@ -127,19 +127,12 @@ export default function ResultsScreen() {
           <Text style={styles.secondaryButtonText}>BACK TO DECKS</Text>
         </Pressable>
       </View>
-      {isStarting && (
-        <OrientationTransition style={styles.startingOverlay} />
-      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  startingOverlay: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 100,
-  },
   orientationGate: { flex: 1 },
   list: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.lg },

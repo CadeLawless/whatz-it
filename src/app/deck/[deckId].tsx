@@ -1,9 +1,11 @@
 import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { captureRef } from 'react-native-view-shot';
 
-import { OrientationTransition, PortraitTransition } from '@/components/orientation-transition';
+import { PortraitTransition } from '@/components/orientation-transition';
+import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { TimerPicker } from '@/components/timer-picker';
 import { getDeckById } from '@/data/decks';
 import { clampRoundDuration, DEFAULT_ROUND_DURATION } from '@/game/round-duration';
@@ -19,7 +21,9 @@ export default function DeckDetailsScreen() {
   const { configureRound } = useRound();
   const [duration, setDuration] = useState(DEFAULT_ROUND_DURATION);
   const [isStarting, setIsStarting] = useState(false);
+  const screenRef = useRef<View>(null);
   const isPortrait = usePortraitScreen();
+  const { beginTransition } = useScreenshotTransition();
 
   useEffect(() => {
     loadRoundDuration().then(setDuration);
@@ -36,19 +40,34 @@ export default function DeckDetailsScreen() {
     );
   }
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (isStarting) return;
     const safeDuration = clampRoundDuration(duration);
     if (!configureRound(deck.id, safeDuration)) return;
     setIsStarting(true);
     saveRoundDuration(safeDuration).catch(() => undefined);
+    try {
+      const uri = await captureRef(screenRef, {
+        format: 'jpg',
+        quality: 0.95,
+        result: 'tmpfile',
+      });
+      await beginTransition({ destination: 'ready', direction: 'left', uri });
+    } catch {
+      // If capture is unavailable, Ready still opens without a transition.
+    }
     router.push('/ready' as Href);
   };
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+      <SafeAreaView
+        ref={screenRef}
+        collapsable={false}
+        style={styles.screen}
+        edges={['top', 'bottom']}
+      >
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -85,7 +104,6 @@ export default function DeckDetailsScreen() {
             <Text style={styles.startArrow}>→</Text>
           </Pressable>
         </ScrollView>
-        {isStarting && <OrientationTransition style={styles.startingOverlay} />}
       </SafeAreaView>
     </>
   );
@@ -94,10 +112,6 @@ export default function DeckDetailsScreen() {
 const styles = StyleSheet.create({
   orientationGate: { flex: 1 },
   screen: { flex: 1, backgroundColor: colors.surface },
-  startingOverlay: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 100,
-  },
   content: { flexGrow: 1, padding: spacing.lg, paddingBottom: spacing.xl },
   centered: {
     flex: 1,
