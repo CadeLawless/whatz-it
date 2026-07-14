@@ -10,10 +10,12 @@ export const colors = {
   play: '#386DEC',
   playBorder: '#4BCBFD',
   playSoft: '#9AE3FF',
-  correct: '#AEE666',
+  correct: '#D0FF93',
   correctBorder: '#7BC61B',
-  pass: '#f56f14',
+  correctText: '#487213',
+  pass: '#FF772B',
   passBorder: '#FEAB39',
+  passText: '#020202',
   white: '#FFFFFF',
 } as const;
 
