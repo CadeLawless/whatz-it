@@ -5,6 +5,7 @@ export const decks: Deck[] = [
     id: 'animal-antics',
     title: 'Animal Antics',
     description: 'Wild, woolly, tiny, and enormous creatures from around the world.',
+    coverImage: require('../../assets/images/decks/animal-antics.png'),
     version: 1,
     cards: [
       { id: 'animal-001', text: 'Penguin' },
@@ -213,6 +214,7 @@ export const decks: Deck[] = [
     id: 'snack-attack',
     title: 'Snack Attack',
     description: 'Sweet, salty, crunchy, cheesy, and delicious foods everyone knows.',
+    coverImage: require('../../assets/images/decks/snack-attack.png'),
     version: 1,
     cards: [
       { id: 'snack-001', text: 'Pizza' },
@@ -421,6 +423,7 @@ export const decks: Deck[] = [
     id: 'star-studded',
     title: 'Star-Studded',
     description: 'Famous actors and actresses from blockbuster movies, television, and comedy.',
+    coverImage: require('../../assets/images/decks/star-studded.png'),
     version: 1,
     cards: [
       { id: 'star-001', text: 'Tom Hanks' },
@@ -629,6 +632,7 @@ export const decks: Deck[] = [
     id: 'movie-mania',
     title: 'Movie Mania',
     description: 'Animated favorites, comedies, adventures, romances, and blockbuster movies everyone recognizes.',
+    coverImage: require('../../assets/images/decks/movie-mania.png'),
     version: 1,
     cards: [
       { id: 'movie-001', text: 'Titanic' },
@@ -837,6 +841,7 @@ export const decks: Deck[] = [
     id: 'name-that-tune',
     title: 'Name That Tune',
     description: 'Popular songs across decades, formatted as “Title” by Artist.',
+    coverImage: require('../../assets/images/decks/name-that-tune.png'),
     version: 1,
     cards: [
       { id: 'song-001', text: '"Shake It Off" by Taylor Swift' },
@@ -1045,6 +1050,7 @@ export const decks: Deck[] = [
     id: 'binge-worthy',
     title: 'Binge-Worthy',
     description: 'Popular television and streaming shows from sitcoms, dramas, animation, and reality TV.',
+    coverImage: require('../../assets/images/decks/binge-worthy.png'),
     version: 1,
     cards: [
       { id: 'show-001', text: 'Friends' },
@@ -1253,6 +1259,7 @@ export const decks: Deck[] = [
     id: 'game-on',
     title: 'Game On',
     description: 'Video games, characters, consoles, power-ups, and gaming terms players instantly recognize.',
+    coverImage: require('../../assets/images/decks/game-on.png'),
     version: 1,
     cards: [
       { id: 'game-001', text: 'Minecraft' },
@@ -1461,6 +1468,7 @@ export const decks: Deck[] = [
     id: 'internet-famous',
     title: 'Internet Famous',
     description: 'Memes, viral moments, creators, apps, slang, and online culture from across the internet.',
+    coverImage: require('../../assets/images/decks/internet-famous.png'),
     version: 1,
     cards: [
       { id: 'internet-001', text: 'TikTok' },
@@ -1669,6 +1677,7 @@ export const decks: Deck[] = [
     id: '90s-kids',
     title: '90s Kids',
     description: 'Toys, shows, music, gadgets, fashion, and trends from the 1990s through the 2010s.',
+    coverImage: require('../../assets/images/decks/90s-kids.png'),
     version: 1,
     cards: [
       { id: 'throwback-001', text: 'Tamagotchi' },
@@ -1877,6 +1886,7 @@ export const decks: Deck[] = [
     id: 'fictional-who-am-i',
     title: 'Fictional Who Am I?',
     description: 'Famous fictional characters from movies, television, books, comics, animation, and video games.',
+    coverImage: require('../../assets/images/decks/fictional-who-am-i.png'),
     version: 1,
     cards: [
       { id: 'fictional-001', text: 'Mario' },

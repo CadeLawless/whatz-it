@@ -15,7 +15,6 @@ export default function DeckLibraryScreen() {
   const { revealTransition } = useScreenshotTransition();
   const gridWidth = Math.min(width, 720);
   const deckWidth = Math.floor((gridWidth - spacing.lg * 2 - spacing.sm * 2) / 3);
-  const deckHeight = Math.round(deckWidth / 0.72);
 
   useEffect(() => {
     if (isPortrait) revealTransition('home');
@@ -44,7 +43,7 @@ export default function DeckLibraryScreen() {
 
         <View style={styles.deckGrid}>
           {decks.map((deck) => (
-            <View key={deck.id} style={{ width: deckWidth, height: deckHeight }}>
+            <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
               <DeckCard deck={deck} />
             </View>
           ))}
