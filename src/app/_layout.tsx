@@ -38,12 +38,15 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="deck/[deckId]"
-          options={{
-            animation: 'none',
+          options={({ route }) => ({
+            animation:
+              (route.params as { transition?: string } | undefined)?.transition === 'apple-slide'
+                ? 'default'
+                : 'none',
             title: 'Choose your round',
             orientation: 'portrait',
             headerBackTitle: 'Back to Decks',
-          }}
+          })}
         />
         <Stack.Screen
           name="ready"

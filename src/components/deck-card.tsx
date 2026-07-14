@@ -15,7 +15,12 @@ export function DeckCard({ deck }: DeckCardProps) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={deck.title}
-        onPress={() => router.push({ pathname: '/deck/[deckId]', params: { deckId: deck.id } })}
+        onPress={() =>
+          router.push({
+            pathname: '/deck/[deckId]',
+            params: { deckId: deck.id, transition: 'apple-slide' },
+          })
+        }
         style={({ pressed }) => [
           styles.card,
           { backgroundColor: colors.play },
