@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 86,
     paddingVertical: spacing.xl,
   },
-  count: { color: colors.white, fontWeight: '900', letterSpacing: -8 },
+  count: { color: colors.white, fontWeight: '900' },
   getReady: {
     color: colors.white,
     fontSize: 48,
