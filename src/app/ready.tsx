@@ -199,7 +199,6 @@ export default function ReadyScreen() {
                   ) : (
                     <Text style={styles.getReady}>GET READY</Text>
                   )}
-                  <Text style={styles.instructions}>Hold steady — your round is about to begin.</Text>
                 </>
               ) : (
                 <>
