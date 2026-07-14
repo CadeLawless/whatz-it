@@ -197,20 +197,24 @@ export default function GameScreen() {
               { backgroundColor: panelColor, borderColor: panelBorderColor },
             ]}
           >
-            <View pointerEvents="box-none" style={styles.closeButton}>
-              <CloseButton
-                accessibilityLabel="Finish round early"
-                disabled={round.status === 'finished'}
-                onPress={handleFinishEarly}
-              />
-            </View>
+            {round.status !== 'finished' && (
+              <>
+                <View pointerEvents="box-none" style={styles.closeButton}>
+                  <CloseButton
+                    accessibilityLabel="Finish round early"
+                    disabled={false}
+                    onPress={handleFinishEarly}
+                  />
+                </View>
 
-            <View style={styles.topRow}>
-              <Text pointerEvents="none" style={styles.timer}>
-                {formatRoundClock(round.status === 'ready' ? round.durationSeconds : remainingSeconds)}
-              </Text>
-              <Text style={styles.deckName}>{deck.title}</Text>
-            </View>
+                <View style={styles.topRow}>
+                  <Text pointerEvents="none" style={styles.timer}>
+                    {formatRoundClock(round.status === 'ready' ? round.durationSeconds : remainingSeconds)}
+                  </Text>
+                  <Text style={styles.deckName}>{deck.title}</Text>
+                </View>
+              </>
+            )}
 
             <View style={styles.cardArea}>
               <Text
@@ -358,7 +362,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     paddingHorizontal: 14,
     zIndex: 2,
   },
