@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
 import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react';
 import {
+  type LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -43,6 +44,10 @@ export default function DeckDetailsScreen() {
   const { beginTransition, revealTransition } = useScreenshotTransition();
 
   const posterWidth = Math.min(156, Math.max(126, width * 0.36));
+  const titleAvailableWidth = Math.max(
+    1,
+    (width - spacing.lg * 2 - spacing.xl * 2) * 0.59,
+  );
 
   useEffect(() => {
     loadRoundDuration().then(setDuration);
@@ -134,16 +139,11 @@ export default function DeckDetailsScreen() {
           <View style={styles.heroShadow}>
             <View style={styles.heroCard}>
               <View style={styles.heroCopy}>
-                <Text
-                  accessibilityLabel={deck.title}
-                  adjustsFontSizeToFit
-                  android_hyphenationFrequency="none"
-                  minimumFontScale={0.55}
-                  numberOfLines={2}
-                  style={styles.deckTitle}
-                >
-                  {keepTitleWordsIntact(deck.title)}
-                </Text>
+                <AutoFitDeckTitle
+                  availableWidth={titleAvailableWidth}
+                  key={`${deck.id}-${width}`}
+                  title={deck.title}
+                />
 
                 <Text style={styles.deckDescription}>
                   {deck.description}
@@ -216,13 +216,77 @@ export default function DeckDetailsScreen() {
   );
 }
 
-const WORD_JOINER = '\u2060';
+const MINIMUM_TITLE_FONT_SIZE = 12;
 
-function keepTitleWordsIntact(title: string) {
-  return title
-    .split(/(\s+)/u)
-    .map((part) => (part.trim() ? Array.from(part).join(WORD_JOINER) : part))
-    .join('');
+function AutoFitDeckTitle({
+  availableWidth,
+  title,
+}: {
+  availableWidth: number;
+  title: string;
+}) {
+  const [fontSize, setFontSize] = useState(32);
+
+  return (
+    <View
+      accessibilityLabel={title}
+      accessible
+      onLayout={(event) => fitTitleToTwoLines(event, fontSize, setFontSize)}
+      style={[
+        styles.deckTitle,
+        {
+          columnGap: fontSize * 0.25,
+          minHeight: fontSize * 1.125,
+        },
+      ]}
+    >
+      {title.split(/\s+/u).map((word, index) => (
+        <Text
+          accessible={false}
+          key={`${word}-${index}`}
+          numberOfLines={1}
+          onLayout={(event) =>
+            fitTitleWord(event, availableWidth, fontSize, setFontSize)
+          }
+          style={[
+            styles.deckTitleWord,
+            {
+              fontSize,
+              lineHeight: fontSize * 1.125,
+            },
+          ]}
+        >
+          {word}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+function fitTitleToTwoLines(
+  event: LayoutChangeEvent,
+  fontSize: number,
+  setFontSize: Dispatch<SetStateAction<number>>,
+) {
+  const lineHeight = fontSize * 1.125;
+  if (event.nativeEvent.layout.height <= lineHeight * 2 + 1) return;
+
+  const nextSize = Math.max(MINIMUM_TITLE_FONT_SIZE, fontSize - 1);
+  setFontSize((currentSize) => Math.min(currentSize, nextSize));
+}
+
+function fitTitleWord(
+  event: LayoutChangeEvent,
+  availableWidth: number,
+  fontSize: number,
+  setFontSize: Dispatch<SetStateAction<number>>,
+) {
+  const wordWidth = event.nativeEvent.layout.width;
+  if (wordWidth <= availableWidth + 0.5) return;
+
+  const fittedSize = Math.floor((fontSize * availableWidth * 0.98 * 10) / wordWidth) / 10;
+  const nextSize = Math.max(MINIMUM_TITLE_FONT_SIZE, fittedSize);
+  setFontSize((currentSize) => Math.min(currentSize, nextSize));
 }
 
 const styles = StyleSheet.create({
@@ -330,9 +394,15 @@ const styles = StyleSheet.create({
   },
 
   deckTitle: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+
+  deckTitleWord: {
+    flexShrink: 0,
     color: colors.white,
-    fontSize: 32,
-    lineHeight: 36,
     fontWeight: '900',
     textAlign: 'left',
     textTransform: 'uppercase',
