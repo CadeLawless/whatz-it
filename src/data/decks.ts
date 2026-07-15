@@ -395,7 +395,7 @@ export const decks: Deck[] = [
     id: 'celebrity-shuffle',
     title: 'Celebrity Shuffle',
     description: 'Hollywood Legends, famous musicians, sports heroes, and internet superstars.',
-    coverImage: require('../../assets/images/decks/star-studded.png'),
+    coverImage: require('../../assets/images/decks/celebrity-shuffle.png'),
     version: 1,
     cards: [
       { id: 'star-001', text: 'Tom Hanks' },
@@ -2176,6 +2176,7 @@ export const decks: Deck[] = [
     id: 'road-trip',
     title: 'Road Trip',
     description: 'Everything to do with an American road trip.',
+    coverImage: require('../../assets/images/decks/road-trip.png'),
     version: 1,
     cards: [
       { id: 'road-001', text: 'Route 66' },
@@ -2373,6 +2374,7 @@ export const decks: Deck[] = [
     id: 'fast-food',
     title: 'Fast Food',
     description: 'America\'s favorite fast food places.',
+    coverImage: require('../../assets/images/decks/fast-food.png'),
     version: 1,
     cards: [
       { id: 'fast-food-001', text: 'McDonald\'s' },
@@ -2487,6 +2489,7 @@ export const decks: Deck[] = [
     id: 'sports-icons',
     title: 'Sports Icons',
     description: 'The greatest athletes of all time.',
+    coverImage: require('../../assets/images/decks/sports-icons.png'),
     version: 1,
     cards: [
       { id: 'sports-icon-001', text: 'Michael Jordan' },
@@ -2695,6 +2698,7 @@ export const decks: Deck[] = [
     id: 'act-it-out',
     title: 'Act It Out',
     description: 'No words allowed, bring your best performance!',
+    coverImage: require('../../assets/images/decks/act-it-out.png'),
     version: 1,
     cards: [
       { id: 'act-001', text: 'Brushing Teeth' },
