@@ -60,7 +60,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      3
+      4
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -255,7 +255,7 @@ public final class WhatzItVideoExportModule: Module {
     microphoneParameters.setVolume(1, at: .zero)
     let effectParameters = effectTracks.map { track in
       let parameters = AVMutableAudioMixInputParameters(track: track)
-      parameters.setVolume(0.92, at: .zero)
+      parameters.setVolume(0.3, at: .zero)
       return parameters
     }
     audioMix.inputParameters = [microphoneParameters] + effectParameters
@@ -496,9 +496,9 @@ public final class WhatzItVideoExportModule: Module {
     start: Double,
     duration: Double
   ) -> CALayer {
-    let width = renderSize.width * 0.43
-    let height = max(renderSize.height * 0.16, width * 0.42)
-    let margin = renderSize.width * 0.05
+    let width = renderSize.width * 0.36
+    let height = max(renderSize.height * 0.085, width * 0.26)
+    let margin = renderSize.width * 0.035
     let container = CALayer()
     container.frame = CGRect(
       x: (renderSize.width - width) / 2,
@@ -533,12 +533,12 @@ public final class WhatzItVideoExportModule: Module {
       palette.background.setFill()
       UIBezierPath(
         roundedRect: CGRect(origin: .zero, size: size),
-        cornerRadius: min(size.width, size.height) * 0.1
+        cornerRadius: min(size.width, size.height) * 0.08
       ).fill()
 
-      let horizontalPadding = size.width * 0.07
+      let horizontalPadding = size.width * 0.055
       let availableTextWidth = size.width - horizontalPadding * 2
-      let font = UIFont.systemFont(ofSize: size.width * 0.09, weight: .bold)
+      let font = UIFont.systemFont(ofSize: size.width * 0.075, weight: .bold)
       let paragraph = NSMutableParagraphStyle()
       paragraph.alignment = .center
       paragraph.lineBreakMode = .byTruncatingTail
