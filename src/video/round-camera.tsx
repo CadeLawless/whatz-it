@@ -1,5 +1,5 @@
 import { RecordingPresets, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
-import { forwardRef, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import {
   Camera,
@@ -62,6 +62,23 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
     const recorderRef = useRef<Recorder | null>(null);
     const resultPromiseRef = useRef<Promise<string> | null>(null);
     const microphoneRef = useRef<{ offsetMs: number } | null>(null);
+    const microphonePreparedRef = useRef(false);
+
+    const prepareMicrophone = useCallback(async () => {
+      if (Platform.OS !== 'ios' || !microphoneEnabled) return microphoneEnabled;
+      if (microphonePreparedRef.current) return true;
+      try {
+        await prepareRoundRecordingAudio();
+        if (!microphoneRecorder.getStatus().canRecord) {
+          await microphoneRecorder.prepareToRecordAsync();
+        }
+        microphonePreparedRef.current = true;
+        return true;
+      } catch (error) {
+        console.warn('Microphone preparation failed; recording video without audio.', error);
+        return false;
+      }
+    }, [microphoneEnabled, microphoneRecorder]);
 
     useImperativeHandle(
       ref,
@@ -70,8 +87,8 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           if (!enabled || !device || recorderRef.current) return null;
           let recorder: Recorder | null = null;
           try {
-            let microphonePrepared = microphoneEnabled;
-            if (microphonePrepared) {
+            let microphonePrepared = await prepareMicrophone();
+            if (microphonePrepared && Platform.OS !== 'ios') {
               try {
                 await prepareRoundRecordingAudio();
               } catch (error) {
@@ -92,7 +109,6 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             const videoStartedAt = Date.now();
             if (Platform.OS === 'ios' && microphonePrepared) {
               try {
-                await microphoneRecorder.prepareToRecordAsync();
                 microphoneRecorder.record();
                 microphoneRef.current = {
                   offsetMs: Math.max(0, Date.now() - videoStartedAt),
@@ -120,6 +136,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             recorderRef.current = null;
             resultPromiseRef.current = null;
             microphoneRef.current = null;
+            microphonePreparedRef.current = false;
             return null;
           }
         },
@@ -143,6 +160,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             recorderRef.current = null;
             resultPromiseRef.current = null;
             microphoneRef.current = null;
+            microphonePreparedRef.current = false;
           }
         },
         async cancelRecording() {
@@ -168,10 +186,11 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             recorderRef.current = null;
             resultPromiseRef.current = null;
             microphoneRef.current = null;
+            microphonePreparedRef.current = false;
           }
         },
       }),
-      [device, enabled, microphoneEnabled, microphoneRecorder, videoOutput],
+      [device, enabled, microphoneRecorder, prepareMicrophone, videoOutput],
     );
 
     if (!enabled || !device) return null;
@@ -181,7 +200,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         isActive
         mirrorMode="on"
         onError={onError}
-        onStarted={onReady}
+        onStarted={() => {
+          // Prepare the microphone before ReadyScreen starts any countdown audio.
+          void prepareMicrophone().then(() => onReady());
+        }}
         outputs={[videoOutput]}
         pointerEvents="none"
         resizeMode="cover"
