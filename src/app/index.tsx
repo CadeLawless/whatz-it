@@ -21,6 +21,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DeckCard } from '@/components/deck-card';
+import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
@@ -41,6 +42,9 @@ export default function DeckLibraryScreen() {
   const [videosExpanded, setVideosExpanded] = useState(true);
   const [videos, setVideos] = useState<RoundVideo[]>([]);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
+  const [videoPendingDelete, setVideoPendingDelete] = useState<RoundVideo | null>(null);
+  const [isDeletingVideo, setIsDeletingVideo] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const pageWidth = Math.min(width, 720);
   const horizontalPadding = width < 380 ? 22 : Math.min(48, Math.round(width * 0.074));
   const columnGap = width < 380 ? 16 : Math.min(32, Math.round(width * 0.06));
@@ -84,17 +88,29 @@ export default function DeckLibraryScreen() {
   };
 
   const handleDelete = (video: RoundVideo) => {
-    Alert.alert('Delete round video?', 'This removes the video from WHATZ IT on this device.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          const next = await deleteRoundVideo(video.id);
-          setVideos(next);
-        },
-      },
-    ]);
+    setDeleteError(null);
+    setVideoPendingDelete(video);
+  };
+
+  const cancelDelete = () => {
+    if (isDeletingVideo) return;
+    setVideoPendingDelete(null);
+    setDeleteError(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!videoPendingDelete || isDeletingVideo) return;
+    setIsDeletingVideo(true);
+    setDeleteError(null);
+    try {
+      const next = await deleteRoundVideo(videoPendingDelete.id);
+      setVideos(next);
+      setVideoPendingDelete(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setIsDeletingVideo(false);
+    }
   };
 
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
@@ -102,7 +118,11 @@ export default function DeckLibraryScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
+        accessibilityElementsHidden={videoPendingDelete !== null}
         contentContainerStyle={styles.scrollContent}
+        importantForAccessibility={
+          videoPendingDelete === null ? 'auto' : 'no-hide-descendants'
+        }
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
       >
@@ -162,7 +182,13 @@ export default function DeckLibraryScreen() {
                     const deck = getDeckById(video.deckId);
                     return (
                       <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
-                      <RoundVideoPlayer video={video} style={styles.video} />
+                      <RoundVideoPlayer
+                        isSaving={savingVideoId === video.id}
+                        onDelete={handleDelete}
+                        onSave={handleSave}
+                        video={video}
+                        style={styles.video}
+                      />
                       <Text numberOfLines={1} style={styles.videoDeckName}>
                         {deck?.title ?? 'Round video'}
                       </Text>
@@ -204,6 +230,21 @@ export default function DeckLibraryScreen() {
           </View>
         </View>
       </ScrollView>
+      <ConfirmationPrompt
+        busy={isDeletingVideo}
+        busyLabel="DELETING..."
+        confirmLabel="DELETE VIDEO"
+        destructive
+        message={
+          deleteError
+            ? `The video could not be deleted. ${deleteError}`
+            : 'This removes the video from WHATZ IT on this device.'
+        }
+        onCancel={cancelDelete}
+        onConfirm={confirmDelete}
+        title={deleteError ? 'Could not delete video' : 'Delete round video?'}
+        visible={videoPendingDelete !== null}
+      />
     </SafeAreaView>
   );
 }
