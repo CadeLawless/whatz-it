@@ -180,6 +180,7 @@ export async function saveRoundVideoToDevice(video: RoundVideo) {
   const { File } = await import('expo-file-system');
   const saveFile = new File(saveUri);
   const saveAudioTrackCount = await inspectVideoAudioTrackCount(saveUri);
+  const nativeAudioValidated = await usesReliableNativeAudioValidation();
   logVideoDiagnostic('media library save started', {
     audioUri: video.audioUri,
     exportIncludesOverlays: video.exportIncludesOverlays,
@@ -187,12 +188,20 @@ export async function saveRoundVideoToDevice(video: RoundVideo) {
     saveFileExists: saveFile.exists,
     saveFileSize: saveFile.size,
     saveAudioTrackCount,
+    nativeAudioValidated,
     saveUri,
     sourceVideoUri: video.uri,
   });
-  if (video.audioUri && saveAudioTrackCount === 0) {
+  if (video.audioUri && saveAudioTrackCount === 0 && !nativeAudioValidated) {
     throw new Error(
       'The exported video has no audio track, so it was not saved. Please send the [RoundVideo] terminal logs so this can be diagnosed.',
+    );
+  }
+  if (video.audioUri && saveAudioTrackCount === 0 && nativeAudioValidated) {
+    warnVideoDiagnostic(
+      'Expo Video reported no audio tracks after native validation succeeded',
+      'Continuing because exporter version 3 validated the finished MP4 with AVFoundation.',
+      { saveUri },
     );
   }
   await Asset.create(saveUri);
@@ -231,12 +240,14 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
     const audioFile = video.audioUri ? new File(video.audioUri) : null;
     const sourceVideoFile = new File(video.uri);
     const iosVideoExportVersion = Platform.OS === 'ios' ? getIosVideoExportVersion() : null;
+    const nativeAudioValidated = Platform.OS === 'ios' && supportsReliableIosAudioExport();
     logVideoDiagnostic('native export started', {
       audioFileExists: audioFile?.exists ?? false,
       audioFileSize: audioFile?.size ?? 0,
       audioUri: video.audioUri,
       exportEventCount: exportEvents.length,
       iosVideoExportVersion,
+      nativeAudioValidated,
       sourceEventCount: video.events.length,
       sourceVideoExists: sourceVideoFile.exists,
       sourceVideoSize: sourceVideoFile.size,
@@ -271,8 +282,15 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
       exportedAudioTrackCount,
       temporaryExportUri,
     });
-    if (video.audioUri && exportedAudioTrackCount === 0) {
+    if (video.audioUri && exportedAudioTrackCount === 0 && !nativeAudioValidated) {
       throw new Error('The native exporter returned a video with no audio track.');
+    }
+    if (video.audioUri && exportedAudioTrackCount === 0 && nativeAudioValidated) {
+      warnVideoDiagnostic(
+        'Expo Video reported no audio tracks after native export validation succeeded',
+        'Accepting the export so its actual embedded audio can be played and saved.',
+        { destinationUri: destination.uri },
+      );
     }
     return updateStoredVideo({
       ...video,
@@ -298,6 +316,12 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
       if (temporaryFile.exists) temporaryFile.delete();
     }
   }
+}
+
+async function usesReliableNativeAudioValidation() {
+  if (Platform.OS !== 'ios') return false;
+  const { supportsReliableIosAudioExport } = await import('whatz-it-video-export');
+  return supportsReliableIosAudioExport();
 }
 
 async function inspectVideoAudioTrackCount(uri: string): Promise<number | null> {

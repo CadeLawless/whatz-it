@@ -32,6 +32,7 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
 };
 
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
+const ROUND_SOUND_VOLUME = 0.5;
 
 export function getRoundSoundSource(sound: RoundSoundId) {
   return ROUND_SOUND_SOURCES[sound];
@@ -44,8 +45,12 @@ export function preloadRoundSounds(sounds: RoundSoundId[]) {
 export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   try {
     await player.seekTo(0);
+    player.volume = ROUND_SOUND_VOLUME;
     player.play();
-    logVideoDiagnostic('round cue playback started', { sound });
+    logVideoDiagnostic('round cue playback started', {
+      sound,
+      volume: ROUND_SOUND_VOLUME,
+    });
   } catch (error) {
     warnVideoDiagnostic('round cue playback failed', error, { sound });
     // A cue should never interrupt the round if the device cannot play it.
