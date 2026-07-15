@@ -2,6 +2,7 @@
   "expo": {
     "name": "WHATZ IT",
     "slug": "whatz-it",
+    "owner": "cadelawlesss-team",
     "version": "0.1.0",
     "orientation": "default",
     "icon": "./assets/images/whatz-it-app-icon.png",
@@ -94,7 +95,6 @@
       "eas": {
         "projectId": "87757e5a-760d-4d13-b62e-fcfe82a87728"
       }
-    },
-    "owner": "cadelawless"
+    }
   }
 }
