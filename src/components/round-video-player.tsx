@@ -170,87 +170,89 @@ export function RoundVideoPlayer({
       >
         <LandscapeViewport>
           <View style={styles.modalRoot}>
-          <StatusBar hidden animated={false} />
-          <View style={styles.expandedFrame}>
-            <VideoView
-              contentFit="contain"
-              nativeControls
-              player={player}
-              style={StyleSheet.absoluteFill}
-              surfaceType="textureView"
-            />
-            <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} />
-          </View>
-          {(onSave || onDelete) && (
+            <StatusBar hidden animated={false} />
             <View
-              style={[styles.playerActions, { top: Math.max(spacing.lg, insets.top + spacing.sm) }]}
+              style={[
+                styles.playerToolbar,
+                {
+                  paddingLeft: Math.max(spacing.lg, insets.top + spacing.sm),
+                  paddingRight: Math.max(spacing.lg, insets.bottom + spacing.sm),
+                },
+              ]}
             >
-              {onSave && (
-                <Pressable
-                  accessibilityLabel="Download video to device"
-                  accessibilityRole="button"
-                  accessibilityState={{ busy: isSaving, disabled: isSaving || saveDisabled }}
-                  disabled={isSaving || saveDisabled}
-                  onPress={() => void saveFromPlayer()}
-                  style={({ pressed }) => [
-                    styles.playerActionButton,
-                    styles.downloadButton,
-                    pressed && !isSaving && !saveDisabled && styles.pressed,
-                    (isSaving || saveDisabled) && styles.disabled,
-                  ]}
-                >
-                  <Text style={styles.downloadButtonText}>
-                    {video.exportStatus === 'failed'
-                      ? 'EXPORT FAILED'
-                      : saveDisabled
-                        ? 'PREPARING...'
-                        : isSaving
-                          ? 'SAVING...'
-                          : 'DOWNLOAD'}
-                  </Text>
-                </Pressable>
-              )}
-              {onDelete && (
-                <Pressable
-                  accessibilityLabel="Delete video"
-                  accessibilityRole="button"
-                  disabled={isSaving}
-                  onPress={requestDelete}
-                  style={({ pressed }) => [
-                    styles.playerActionButton,
-                    styles.playerDeleteButton,
-                    pressed && !isSaving && styles.pressed,
-                    isSaving && styles.disabled,
-                  ]}
-                >
-                  <Text style={styles.playerDeleteButtonText}>DELETE</Text>
-                </Pressable>
-              )}
+              <View style={styles.playerActions}>
+                {onSave && (
+                  <Pressable
+                    accessibilityLabel="Download video to device"
+                    accessibilityRole="button"
+                    accessibilityState={{ busy: isSaving, disabled: isSaving || saveDisabled }}
+                    disabled={isSaving || saveDisabled}
+                    onPress={() => void saveFromPlayer()}
+                    style={({ pressed }) => [
+                      styles.playerActionButton,
+                      styles.downloadButton,
+                      pressed && !isSaving && !saveDisabled && styles.pressed,
+                      (isSaving || saveDisabled) && styles.disabled,
+                    ]}
+                  >
+                    <Text style={styles.downloadButtonText}>
+                      {video.exportStatus === 'failed'
+                        ? 'EXPORT FAILED'
+                        : saveDisabled
+                          ? 'PREPARING...'
+                          : isSaving
+                            ? 'SAVING...'
+                            : 'DOWNLOAD'}
+                    </Text>
+                  </Pressable>
+                )}
+                {onDelete && (
+                  <Pressable
+                    accessibilityLabel="Delete video"
+                    accessibilityRole="button"
+                    disabled={isSaving}
+                    onPress={requestDelete}
+                    style={({ pressed }) => [
+                      styles.playerActionButton,
+                      styles.playerDeleteButton,
+                      pressed && !isSaving && styles.pressed,
+                      isSaving && styles.disabled,
+                    ]}
+                  >
+                    <Text style={styles.playerDeleteButtonText}>DELETE</Text>
+                  </Pressable>
+                )}
+              </View>
+              <Pressable
+                accessibilityLabel="Close video"
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={closeExpanded}
+                style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.closeText}>{'\u00D7'}</Text>
+              </Pressable>
             </View>
-          )}
-          <Pressable
-            accessibilityLabel="Close video"
-            accessibilityRole="button"
-            hitSlop={16}
-            onPress={closeExpanded}
-            style={({ pressed }) => [
-              styles.closeButton,
-              { top: Math.max(spacing.lg, insets.top + spacing.sm) },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.closeText}>×</Text>
-          </Pressable>
-          <ConfirmationPrompt
-            cancelLabel={null}
-            confirmLabel="OK"
-            embedded
-            message={saveNotice?.message ?? ''}
-            onCancel={() => setSaveNotice(null)}
-            onConfirm={() => setSaveNotice(null)}
-            title={saveNotice?.title ?? ''}
-            visible={saveNotice !== null}
-          />
+            <View style={styles.expandedFrame}>
+              <VideoView
+                contentFit="contain"
+                nativeControls
+                player={player}
+                style={StyleSheet.absoluteFill}
+                surfaceType="textureView"
+              />
+              <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} />
+            </View>
+            <ConfirmationPrompt
+              cancelLabel={null}
+              confirmLabel="OK"
+              embedded
+              message={saveNotice?.message ?? ''}
+              onCancel={() => setSaveNotice(null)}
+              onConfirm={() => setSaveNotice(null)}
+              title={saveNotice?.title ?? ''}
+              visible={saveNotice !== null}
+            />
           </View>
         </LandscapeViewport>
       </Modal>
@@ -424,25 +426,27 @@ const styles = StyleSheet.create({
   overlayTextCompact: { fontSize: 10, lineHeight: 11 },
   overlayTimer: { marginTop: 2, fontSize: 12, lineHeight: 14, fontWeight: '800', textAlign: 'center' },
   overlayTimerCompact: { marginTop: 1, fontSize: 5, lineHeight: 6 },
+  playerToolbar: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#111111',
+  },
   closeButton: {
-    position: 'absolute',
-    right: spacing.lg,
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.62)',
-    zIndex: 20,
-    elevation: 20
   },
   playerActions: {
-    position: 'absolute',
-    left: spacing.lg,
+    flexShrink: 1,
     flexDirection: 'row',
     gap: spacing.sm,
-    zIndex: 20,
-    elevation: 20,
   },
   playerActionButton: {
     minHeight: 44,
