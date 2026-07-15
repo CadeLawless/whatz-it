@@ -32,6 +32,11 @@ export async function requestRoundCameraPermissions() {
     (await VisionCamera.requestMicrophonePermission());
   if (!microphoneGranted) return false;
 
+  await prepareRoundRecordingAudio();
+  return true;
+}
+
+async function prepareRoundRecordingAudio() {
   await setAudioModeAsync({
     allowsRecording: true,
     interruptionMode: 'doNotMix',
@@ -39,20 +44,23 @@ export async function requestRoundCameraPermissions() {
     shouldRouteThroughEarpiece: false,
   });
   if (Platform.OS === 'ios') {
-    try {
-      const { prepareRecordingAudio } = await import('whatz-it-video-export');
-      await prepareRecordingAudio();
-    } catch {
-      // Older development builds do not yet contain the native audio-session helper.
-    }
+    const { prepareRecordingAudio } = await import('whatz-it-video-export');
+    await prepareRecordingAudio();
   }
-  return true;
 }
 
 export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
   function RoundCamera({ enabled, onError, onReady }, ref) {
     const device = useCameraDevice('front');
-    const videoOutput = useVideoOutput({ enableAudio: true, fileType: 'mp4' });
+    const videoOutput = useVideoOutput({
+      enableAudio: true,
+      // VisionCamera's persistent iOS recorder writes microphone samples through
+      // a dedicated audio capture session and initializes an AVAssetWriter audio
+      // track up front. This avoids the AVCaptureMovieFileOutput path that has
+      // intermittently produced video-only files for this app.
+      enablePersistentRecorder: Platform.OS === 'ios',
+      fileType: 'mp4',
+    });
     const recorderRef = useRef<Recorder | null>(null);
     const resultPromiseRef = useRef<Promise<string> | null>(null);
 
@@ -62,6 +70,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         async startRecording(maxDuration) {
           if (!enabled || !device || recorderRef.current) return false;
           try {
+            // Audio players can update the shared iOS audio session while the Ready
+            // screen is playing. Re-apply recording mode immediately before creating
+            // the recorder so microphone capture starts under the correct session.
+            await prepareRoundRecordingAudio();
             const recorder = await videoOutput.createRecorder({ maxDuration });
             recorderRef.current = recorder;
             let finishRecording!: (filePath: string) => void;

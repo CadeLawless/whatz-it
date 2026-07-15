@@ -11,7 +11,6 @@ struct VideoOverlayEventRecord: Record {
 
 private enum VideoExportError: Error, LocalizedError {
   case missingVideoTrack
-  case missingAudioTrack
   case cannotCreateExporter
   case exportFailed(String)
 
@@ -19,8 +18,6 @@ private enum VideoExportError: Error, LocalizedError {
     switch self {
     case .missingVideoTrack:
       return "The recorded file does not contain a video track."
-    case .missingAudioTrack:
-      return "This recording does not contain an audio track. Please record a new round after installing the latest build."
     case .cannotCreateExporter:
       return "The video exporter could not be created."
     case .exportFailed(let message):
@@ -65,10 +62,6 @@ public final class WhatzItVideoExportModule: Module {
     let videoTracks = try await asset.loadTracks(withMediaType: .video)
     guard let sourceVideoTrack = videoTracks.first else {
       throw VideoExportError.missingVideoTrack
-    }
-    let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-    guard !audioTracks.isEmpty else {
-      throw VideoExportError.missingAudioTrack
     }
 
     let duration = try await asset.load(.duration)

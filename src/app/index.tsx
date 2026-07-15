@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
@@ -10,9 +11,17 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import Animated, {
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DeckCard } from '@/components/deck-card';
+import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
@@ -33,6 +42,9 @@ export default function DeckLibraryScreen() {
   const [videosExpanded, setVideosExpanded] = useState(true);
   const [videos, setVideos] = useState<RoundVideo[]>([]);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
+  const [videoPendingDelete, setVideoPendingDelete] = useState<RoundVideo | null>(null);
+  const [isDeletingVideo, setIsDeletingVideo] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const pageWidth = Math.min(width, 720);
   const horizontalPadding = width < 380 ? 22 : Math.min(48, Math.round(width * 0.074));
   const columnGap = width < 380 ? 16 : Math.min(32, Math.round(width * 0.06));
@@ -76,17 +88,29 @@ export default function DeckLibraryScreen() {
   };
 
   const handleDelete = (video: RoundVideo) => {
-    Alert.alert('Delete round video?', 'This removes the video from WHATZ IT on this device.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          const next = await deleteRoundVideo(video.id);
-          setVideos(next);
-        },
-      },
-    ]);
+    setDeleteError(null);
+    setVideoPendingDelete(video);
+  };
+
+  const cancelDelete = () => {
+    if (isDeletingVideo) return;
+    setVideoPendingDelete(null);
+    setDeleteError(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!videoPendingDelete || isDeletingVideo) return;
+    setIsDeletingVideo(true);
+    setDeleteError(null);
+    try {
+      const next = await deleteRoundVideo(videoPendingDelete.id);
+      setVideos(next);
+      setVideoPendingDelete(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setIsDeletingVideo(false);
+    }
   };
 
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
@@ -94,7 +118,11 @@ export default function DeckLibraryScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
+        accessibilityElementsHidden={videoPendingDelete !== null}
         contentContainerStyle={styles.scrollContent}
+        importantForAccessibility={
+          videoPendingDelete === null ? 'auto' : 'no-hide-descendants'
+        }
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
       >
@@ -126,7 +154,7 @@ export default function DeckLibraryScreen() {
             onPress={() => setDecksExpanded((expanded) => !expanded)}
           />
 
-          {decksExpanded && (
+          <CollapsibleContent expanded={decksExpanded}>
             <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
               {decks.map((deck) => (
                 <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
@@ -134,26 +162,33 @@ export default function DeckLibraryScreen() {
                 </View>
               ))}
             </View>
-          )}
+          </CollapsibleContent>
 
           <View style={styles.videoSection}>
+            <View accessibilityElementsHidden style={styles.sectionDivider} />
+
             <SectionHeading
               expanded={videosExpanded}
-              label="VIDEOS"
+              label="MY VIDEOS"
               onPress={() => setVideosExpanded((expanded) => !expanded)}
             />
 
-            {videosExpanded && videos.length === 0 && (
-              <Text style={styles.emptyVideos}>Your last 10 round videos will appear here.</Text>
-            )}
-
-            {videosExpanded && videos.length > 0 && (
-              <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
-                {videos.map((video) => {
-                  const deck = getDeckById(video.deckId);
-                  return (
-                    <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
-                      <RoundVideoPlayer video={video} style={styles.video} />
+            <CollapsibleContent expanded={videosExpanded}>
+              {videos.length === 0 ? (
+                <Text style={styles.emptyVideos}>Your last 10 round videos will appear here.</Text>
+              ) : (
+                <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
+                  {videos.map((video) => {
+                    const deck = getDeckById(video.deckId);
+                    return (
+                      <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
+                      <RoundVideoPlayer
+                        isSaving={savingVideoId === video.id}
+                        onDelete={handleDelete}
+                        onSave={handleSave}
+                        video={video}
+                        style={styles.video}
+                      />
                       <Text numberOfLines={1} style={styles.videoDeckName}>
                         {deck?.title ?? 'Round video'}
                       </Text>
@@ -186,15 +221,67 @@ export default function DeckLibraryScreen() {
                           <Text style={styles.deleteButtonText}>DELETE</Text>
                         </Pressable>
                       </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </CollapsibleContent>
           </View>
         </View>
       </ScrollView>
+      <ConfirmationPrompt
+        busy={isDeletingVideo}
+        busyLabel="DELETING..."
+        confirmLabel="DELETE VIDEO"
+        destructive
+        message={
+          deleteError
+            ? `The video could not be deleted. ${deleteError}`
+            : 'This removes the video from WHATZ IT on this device.'
+        }
+        onCancel={cancelDelete}
+        onConfirm={confirmDelete}
+        title={deleteError ? 'Could not delete video' : 'Delete round video?'}
+        visible={videoPendingDelete !== null}
+      />
     </SafeAreaView>
+  );
+}
+
+const COLLAPSE_DURATION = 280;
+
+function CollapsibleContent({ expanded, children }: { expanded: boolean; children: ReactNode }) {
+  const [contentHeight, setContentHeight] = useState(0);
+  const progress = useSharedValue(expanded ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(expanded ? 1 : 0, {
+      duration: COLLAPSE_DURATION,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [expanded, progress]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    height: contentHeight * progress.value,
+    opacity: progress.value,
+    transform: [{ translateY: interpolate(progress.value, [0, 1], [-10, 0]) }],
+  }));
+
+  return (
+    <Animated.View
+      accessibilityElementsHidden={!expanded}
+      importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={expanded ? 'auto' : 'none'}
+      style={[styles.collapsible, animatedStyle]}
+    >
+      <View
+        onLayout={(event) => setContentHeight(event.nativeEvent.layout.height)}
+        style={styles.collapsibleContent}
+      >
+        {children}
+      </View>
+    </Animated.View>
   );
 }
 
@@ -274,8 +361,15 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
   chevronCollapsed: { marginTop: 5, transform: [{ rotate: '-135deg' }] },
+  collapsible: { overflow: 'hidden' },
+  collapsibleContent: { position: 'absolute', top: 0, right: 0, left: 0 },
   deckGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  videoSection: { marginTop: 42 },
+  videoSection: { marginTop: 34 },
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginBottom: 30,
+    backgroundColor: '#CBD5E1',
+  },
   emptyVideos: {
     color: '#64748B',
     fontSize: 15,

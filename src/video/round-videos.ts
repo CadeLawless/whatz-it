@@ -96,8 +96,15 @@ export async function saveRoundVideoToDevice(video: RoundVideo) {
   let exportUri = video.uri;
   try {
     if (video.events?.length) {
-      const { exportOverlayVideo } = await import('whatz-it-video-export');
-      exportUri = await exportOverlayVideo(video.uri, video.events);
+      try {
+        const { exportOverlayVideo } = await import('whatz-it-video-export');
+        exportUri = await exportOverlayVideo(video.uri, video.events);
+      } catch {
+        // Saving the original recording is always better than blocking the user.
+        // This also keeps older dev builds usable when their native compositor
+        // cannot process a legacy video without an audio track.
+        exportUri = video.uri;
+      }
     }
     await Asset.create(exportUri);
   } finally {

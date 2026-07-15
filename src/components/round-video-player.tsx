@@ -12,6 +12,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '@/theme';
 import type { RoundVideo, RoundVideoEvent } from '@/video/round-videos';
@@ -19,9 +20,19 @@ import type { RoundVideo, RoundVideoEvent } from '@/video/round-videos';
 type RoundVideoPlayerProps = {
   video: RoundVideo;
   style?: StyleProp<ViewStyle>;
+  isSaving?: boolean;
+  onSave?: (video: RoundVideo) => void | Promise<void>;
+  onDelete?: (video: RoundVideo) => void;
 };
 
-export function RoundVideoPlayer({ video, style }: RoundVideoPlayerProps) {
+export function RoundVideoPlayer({
+  video,
+  style,
+  isSaving = false,
+  onSave,
+  onDelete,
+}: RoundVideoPlayerProps) {
+  const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const player = useVideoPlayer(video.uri, (instance) => {
@@ -50,6 +61,12 @@ export function RoundVideoPlayer({ video, style }: RoundVideoPlayerProps) {
     player.play();
     setExpanded(false);
     restoreAppAudioMode();
+  };
+
+  const requestDelete = () => {
+    if (!onDelete) return;
+    closeExpanded();
+    onDelete(video);
   };
 
   return (
@@ -93,12 +110,57 @@ export function RoundVideoPlayer({ video, style }: RoundVideoPlayerProps) {
             />
             <PlaybackOverlay event={event} />
           </View>
+          {(onSave || onDelete) && (
+            <View
+              style={[styles.playerActions, { top: Math.max(spacing.lg, insets.top + spacing.sm) }]}
+            >
+              {onSave && (
+                <Pressable
+                  accessibilityLabel="Download video to device"
+                  accessibilityRole="button"
+                  accessibilityState={{ busy: isSaving, disabled: isSaving }}
+                  disabled={isSaving}
+                  onPress={() => void onSave(video)}
+                  style={({ pressed }) => [
+                    styles.playerActionButton,
+                    styles.downloadButton,
+                    pressed && !isSaving && styles.pressed,
+                    isSaving && styles.disabled,
+                  ]}
+                >
+                  <Text style={styles.downloadButtonText}>
+                    {isSaving ? 'EXPORTING...' : 'DOWNLOAD'}
+                  </Text>
+                </Pressable>
+              )}
+              {onDelete && (
+                <Pressable
+                  accessibilityLabel="Delete video"
+                  accessibilityRole="button"
+                  disabled={isSaving}
+                  onPress={requestDelete}
+                  style={({ pressed }) => [
+                    styles.playerActionButton,
+                    styles.playerDeleteButton,
+                    pressed && !isSaving && styles.pressed,
+                    isSaving && styles.disabled,
+                  ]}
+                >
+                  <Text style={styles.playerDeleteButtonText}>DELETE</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
           <Pressable
             accessibilityLabel="Close video"
             accessibilityRole="button"
             hitSlop={16}
             onPress={closeExpanded}
-            style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.closeButton,
+              { top: Math.max(spacing.lg, insets.top + spacing.sm) },
+              pressed && styles.pressed,
+            ]}
           >
             <Text style={styles.closeText}>×</Text>
           </Pressable>
@@ -214,7 +276,6 @@ const styles = StyleSheet.create({
   overlayTextCompact: { fontSize: 9, lineHeight: 11 },
   closeButton: {
     position: 'absolute',
-    top: spacing.lg,
     right: spacing.lg,
     width: 44,
     height: 44,
@@ -225,6 +286,37 @@ const styles = StyleSheet.create({
     zIndex: 20,
     elevation: 20
   },
+  playerActions: {
+    position: 'absolute',
+    left: spacing.lg,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    zIndex: 20,
+    elevation: 20,
+  },
+  playerActionButton: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(0, 0, 0, 0.68)',
+  },
+  downloadButton: { backgroundColor: 'rgba(56, 109, 236, 0.94)' },
+  downloadButtonText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  playerDeleteButton: { borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.5)' },
+  playerDeleteButtonText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
   closeText: { color: colors.white, fontSize: 40, fontWeight: '900' },
   pressed: { opacity: 0.7, transform: [{ scale: 0.96 }] },
+  disabled: { opacity: 0.55 },
 });

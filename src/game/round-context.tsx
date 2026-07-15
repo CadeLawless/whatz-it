@@ -23,6 +23,7 @@ import {
   type RoundCameraRef,
 } from '@/video/round-camera';
 import {
+  deleteRoundVideo,
   storeRoundVideo,
   type RoundVideo,
   type RoundVideoEvent,
@@ -39,6 +40,7 @@ type RoundContextValue = {
   finishRound: () => void;
   resetRound: () => void;
   currentVideo: RoundVideo | null;
+  deleteCurrentVideo: () => Promise<void>;
   prepareRecording: () => Promise<RecordingPreparation>;
   startRecording: () => Promise<boolean>;
   recordOverlayEvent: (event: Omit<RoundVideoEvent, 'atMs'>) => void;
@@ -175,10 +177,18 @@ export function RoundProvider({ children }: PropsWithChildren) {
     }
   }, [finishCameraSession]);
 
+  const deleteCurrentVideo = useCallback(async () => {
+    const video = currentVideo;
+    if (!video) return;
+    await deleteRoundVideo(video.id);
+    setCurrentVideo((activeVideo) => (activeVideo?.id === video.id ? null : activeVideo));
+  }, [currentVideo]);
+
   const value = useMemo<RoundContextValue>(
     () => ({
       round,
       currentVideo,
+      deleteCurrentVideo,
       prepareRecording,
       startRecording,
       recordOverlayEvent,
@@ -240,6 +250,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     [
       cancelRecording,
       currentVideo,
+      deleteCurrentVideo,
       prepareRecording,
       recordOverlayEvent,
       round,

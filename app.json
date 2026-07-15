@@ -22,7 +22,7 @@
       "package": "com.cadelawless.whatzit",
       "icon": "./assets/images/whatz-it-app-icon.png",
       "adaptiveIcon": {
-        "backgroundColor": "#000000",
+        "backgroundColor": "#4BCBFD",
         "foregroundImage": "./assets/images/whatz-it-adaptive-foreground.png",
         "monochromeImage": "./assets/images/whatz-it-adaptive-monochrome.png"
       },
