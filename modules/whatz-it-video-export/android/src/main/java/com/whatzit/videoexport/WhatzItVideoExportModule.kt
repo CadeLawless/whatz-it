@@ -7,7 +7,9 @@ import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
@@ -139,11 +141,11 @@ private class TimedCardOverlay(
 ) : CanvasOverlay(true) {
   private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val answerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    typeface = android.graphics.Typeface.DEFAULT_BOLD
+    typeface = systemTypeface(900)
     textAlign = Paint.Align.CENTER
   }
   private val timerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    typeface = android.graphics.Typeface.DEFAULT_BOLD
+    typeface = systemTypeface(800)
     textAlign = Paint.Align.CENTER
   }
   private val brandingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -171,7 +173,7 @@ private class TimedCardOverlay(
       answerWidth = answerPaint.measureText(text)
     }
     val timerText = timerTextFor(event, timeMs)
-    timerPaint.textSize = canvasHeight * 0.028f
+    timerPaint.textSize = canvasHeight * 0.0308f
     val timerWidth = timerText?.let { timerPaint.measureText(it) } ?: 0f
     val minimumWidth = canvasWidth * 0.3f
     val width = min(canvasWidth, max(minimumWidth, max(answerWidth, timerWidth) + horizontalPadding * 2))
@@ -269,9 +271,16 @@ private class TimedCardOverlay(
   }
 
   private fun colorsFor(kind: String): Pair<Int, Int> = when (kind) {
-    "correct" -> Color.argb(163, 135, 237, 170) to Color.rgb(34, 45, 58)
-    "passed" -> Color.argb(163, 255, 119, 43) to Color.rgb(82, 38, 8)
+    "correct" -> Color.argb(163, 135, 237, 170) to Color.rgb(24, 35, 29)
+    "passed" -> Color.argb(163, 255, 119, 43) to Color.rgb(2, 2, 2)
     "countdown", "times-up" -> Color.argb(163, 50, 139, 232) to Color.WHITE
-    else -> Color.argb(163, 247, 245, 239) to Color.rgb(50, 139, 232)
+    else -> Color.argb(163, 247, 245, 239) to Color.rgb(56, 109, 236)
   }
+
+  private fun systemTypeface(weight: Int): Typeface =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      Typeface.create(Typeface.DEFAULT, weight, false)
+    } else {
+      Typeface.DEFAULT_BOLD
+    }
 }

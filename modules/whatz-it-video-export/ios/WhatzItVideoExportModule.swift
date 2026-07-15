@@ -73,7 +73,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      9
+      10
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -596,17 +596,17 @@ public final class WhatzItVideoExportModule: Module {
     let maximumTextWidth = max(1, renderSize.width - horizontalPadding * 2)
     let baseFontSize = renderSize.height * 0.056
     var fontSize = baseFontSize
-    var font = UIFont.systemFont(ofSize: fontSize, weight: .bold)
+    var font = UIFont.systemFont(ofSize: fontSize, weight: .black)
     var textSize = (text as NSString).size(withAttributes: [.font: font])
     while textSize.width > maximumTextWidth && fontSize > 1 {
       fontSize = max(1, fontSize - 1)
-      font = UIFont.systemFont(ofSize: fontSize, weight: .bold)
+      font = UIFont.systemFont(ofSize: fontSize, weight: .black)
       textSize = (text as NSString).size(withAttributes: [.font: font])
     }
     let timerFont: UIFont?
     let timerSize: CGSize
     if !timerSegments.isEmpty {
-      let font = UIFont.systemFont(ofSize: renderSize.height * 0.028, weight: .bold)
+      let font = UIFont.systemFont(ofSize: renderSize.height * 0.0308, weight: .heavy)
       timerFont = font
       timerSize = timerSegments.reduce(CGSize.zero) { largest, segment in
         let size = (segment.text as NSString).size(withAttributes: [.font: font])
@@ -891,12 +891,12 @@ public final class WhatzItVideoExportModule: Module {
     case "correct":
       return (
         UIColor(red: 135 / 255, green: 237 / 255, blue: 170 / 255, alpha: 0.64),
-        UIColor(red: 34 / 255, green: 45 / 255, blue: 58 / 255, alpha: 1)
+        UIColor(red: 24 / 255, green: 35 / 255, blue: 29 / 255, alpha: 1)
       )
     case "passed":
       return (
         UIColor(red: 255 / 255, green: 119 / 255, blue: 43 / 255, alpha: 0.64),
-        UIColor(red: 82 / 255, green: 38 / 255, blue: 8 / 255, alpha: 1)
+        UIColor(red: 2 / 255, green: 2 / 255, blue: 2 / 255, alpha: 1)
       )
     case "countdown", "times-up":
       return (
@@ -906,7 +906,7 @@ public final class WhatzItVideoExportModule: Module {
     default:
       return (
         UIColor(red: 247 / 255, green: 245 / 255, blue: 239 / 255, alpha: 0.64),
-        UIColor(red: 50 / 255, green: 139 / 255, blue: 232 / 255, alpha: 1)
+        UIColor(red: 56 / 255, green: 109 / 255, blue: 236 / 255, alpha: 1)
       )
     }
   }
