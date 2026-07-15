@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
+  type GestureResponderEvent,
   type StyleProp,
   StyleSheet,
   Text,
@@ -49,6 +50,9 @@ export function RoundVideoPlayer({
   const [deletePromptVisible, setDeletePromptVisible] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [duration, setDuration] = useState(0);
+  const [progressWidth, setProgressWidth] = useState(0);
   // Keep one source for this player's entire mounted lifetime. Replacing the raw
   // recording with its finished export would otherwise restart visible playback.
   const [playbackUri] = useState(() => video.uri);
@@ -81,6 +85,7 @@ export function RoundVideoPlayer({
   });
 
   useEventListener(player, 'playingChange', ({ isPlaying }) => {
+    setIsPlaying(isPlaying);
     if (!expandedRef.current || !separateAudioUri) return;
     if (isPlaying) {
       void separateAudio.seekTo(player.currentTime).then(() => separateAudio.play()).catch(() => undefined);
@@ -89,7 +94,8 @@ export function RoundVideoPlayer({
     }
   });
 
-  useEventListener(player, 'sourceLoad', ({ availableAudioTracks, videoSource }) => {
+  useEventListener(player, 'sourceLoad', ({ availableAudioTracks, duration, videoSource }) => {
+    setDuration(duration);
     logVideoDiagnostic('player source loaded', {
       audioTrackCount: availableAudioTracks.length,
       audioTracks: availableAudioTracks,
@@ -105,6 +111,7 @@ export function RoundVideoPlayer({
     () => getEventAtTime(video.events ?? [], currentTime * 1000),
     [currentTime, video.events],
   );
+  const playbackProgress = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
 
   const openExpanded = async () => {
     expandedRef.current = true;
@@ -163,6 +170,28 @@ export function RoundVideoPlayer({
     setSaveNotice(notice);
   };
 
+  const togglePlayback = () => {
+    if (isPlaying) {
+      player.pause();
+    } else {
+      player.play();
+    }
+  };
+
+  const seekTo = (time: number) => {
+    const nextTime = Math.max(0, Math.min(duration, time));
+    seekVideoPlayer(player, nextTime);
+    setCurrentTime(nextTime);
+    if (separateAudioUri) {
+      void separateAudio.seekTo(nextTime).catch(() => undefined);
+    }
+  };
+
+  const seekFromProgress = (event: GestureResponderEvent) => {
+    if (duration <= 0 || progressWidth <= 0) return;
+    seekTo((event.nativeEvent.locationX / progressWidth) * duration);
+  };
+
   return (
     <>
       {!expanded && (
@@ -201,16 +230,24 @@ export function RoundVideoPlayer({
         <LandscapeViewport>
           <View style={styles.modalRoot}>
             <StatusBar hidden animated={false} />
-            <View
-              style={[
-                styles.playerToolbar,
-                {
-                  paddingLeft: Math.max(spacing.lg, insets.top + spacing.sm),
-                  paddingRight: Math.max(spacing.lg, insets.bottom + spacing.sm),
-                },
-              ]}
-            >
-              <View style={styles.playerActions}>
+            <View style={styles.expandedFrame}>
+              <VideoView
+                contentFit="contain"
+                nativeControls={false}
+                player={player}
+                style={StyleSheet.absoluteFill}
+                surfaceType="textureView"
+              />
+              <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} />
+              <View
+                style={[
+                  styles.playerActions,
+                  {
+                    left: Math.max(spacing.md, insets.top + spacing.sm),
+                    top: spacing.md,
+                  },
+                ]}
+              >
                 {onSave && (
                   <Pressable
                     accessibilityLabel="Download video to device"
@@ -259,21 +296,69 @@ export function RoundVideoPlayer({
                 accessibilityRole="button"
                 hitSlop={8}
                 onPress={closeExpanded}
-                style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.closeButton,
+                  {
+                    right: Math.max(spacing.md, insets.bottom + spacing.sm),
+                    top: spacing.md,
+                  },
+                  pressed && styles.pressed,
+                ]}
               >
                 <Text style={styles.closeText}>{'\u00D7'}</Text>
               </Pressable>
-            </View>
-            <View style={styles.expandedFrame}>
-              <VideoView
-                contentFit="contain"
-                fullscreenOptions={{ enable: false }}
-                nativeControls
-                player={player}
-                style={StyleSheet.absoluteFill}
-                surfaceType="textureView"
-              />
-              <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} />
+              <View
+                style={[
+                  styles.playbackControls,
+                  {
+                    left: Math.max(spacing.md, insets.top + spacing.sm),
+                    right: Math.max(spacing.md, insets.bottom + spacing.sm),
+                  },
+                ]}
+              >
+                <Pressable
+                  accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
+                  accessibilityRole="button"
+                  onPress={togglePlayback}
+                  style={({ pressed }) => [styles.playPauseButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.playPauseText}>{isPlaying ? 'Ⅱ' : '▶'}</Text>
+                </Pressable>
+                <Text style={styles.playbackTime}>{formatRoundClock(currentTime)}</Text>
+                <Pressable
+                  accessibilityActions={[
+                    { name: 'increment', label: 'Seek forward 10 seconds' },
+                    { name: 'decrement', label: 'Seek backward 10 seconds' },
+                  ]}
+                  accessibilityLabel="Video progress"
+                  accessibilityRole="adjustable"
+                  accessibilityValue={{
+                    max: Math.round(duration),
+                    min: 0,
+                    now: Math.round(currentTime),
+                    text: `${formatRoundClock(currentTime)} of ${formatRoundClock(duration)}`,
+                  }}
+                  onAccessibilityAction={({ nativeEvent }) => {
+                    if (nativeEvent.actionName === 'increment') seekTo(currentTime + 10);
+                    if (nativeEvent.actionName === 'decrement') seekTo(currentTime - 10);
+                  }}
+                  onLayout={(layoutEvent) => {
+                    setProgressWidth(layoutEvent.nativeEvent.layout.width);
+                  }}
+                  onPress={seekFromProgress}
+                  style={styles.progressHitArea}
+                >
+                  <View style={styles.progressTrack}>
+                    <View
+                      style={[styles.progressFill, { width: `${playbackProgress * 100}%` }]}
+                    />
+                    <View
+                      style={[styles.progressThumb, { left: `${playbackProgress * 100}%` }]}
+                    />
+                  </View>
+                </Pressable>
+                <Text style={styles.playbackTime}>{formatRoundClock(duration)}</Text>
+              </View>
             </View>
             <ConfirmationPrompt
               busy={isDeleting}
@@ -310,6 +395,10 @@ export function RoundVideoPlayer({
 
 function setPlayerMuted(player: VideoPlayer, muted: boolean) {
   player.muted = muted;
+}
+
+function seekVideoPlayer(player: VideoPlayer, time: number) {
+  player.currentTime = time;
 }
 
 function pauseAudioPlayer(player: AudioPlayer) {
@@ -474,27 +563,23 @@ const styles = StyleSheet.create({
   overlayTextCompact: { fontSize: 10, lineHeight: 11 },
   overlayTimer: { marginTop: 2, fontSize: 12, lineHeight: 14, fontWeight: '800', textAlign: 'center' },
   overlayTimerCompact: { marginTop: 1, fontSize: 5, lineHeight: 6 },
-  playerToolbar: {
-    minHeight: 60,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: '#111111',
-  },
   closeButton: {
+    position: 'absolute',
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.62)',
+    zIndex: 20,
+    elevation: 20,
   },
   playerActions: {
-    flexShrink: 1,
+    position: 'absolute',
     flexDirection: 'row',
     gap: spacing.sm,
+    zIndex: 20,
+    elevation: 20,
   },
   playerActionButton: {
     minHeight: 44,
@@ -517,6 +602,58 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.8,
+  },
+  playbackControls: {
+    position: 'absolute',
+    bottom: 8,
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    zIndex: 20,
+    elevation: 20,
+  },
+  playPauseButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+  },
+  playPauseText: { color: colors.white, fontSize: 16, fontWeight: '900' },
+  playbackTime: {
+    minWidth: 34,
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    textAlign: 'center',
+  },
+  progressHitArea: { flex: 1, height: 32, justifyContent: 'center' },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.36)',
+  },
+  progressFill: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 2,
+    backgroundColor: colors.play,
+  },
+  progressThumb: {
+    position: 'absolute',
+    top: -4,
+    width: 12,
+    height: 12,
+    marginLeft: -6,
+    borderRadius: 6,
+    backgroundColor: colors.white,
   },
   closeText: { color: colors.white, fontSize: 40, fontWeight: '900' },
   pressed: { opacity: 0.7, transform: [{ scale: 0.96 }] },
