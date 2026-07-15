@@ -17,6 +17,11 @@ struct RoundAudioCueRecord: Record {
   @Field var uri: String = ""
 }
 
+private struct OverlayTimerSegment {
+  let start: Double
+  let text: String
+}
+
 private enum VideoExportError: Error, LocalizedError {
   case missingVideoTrack
   case missingAudioTrack
@@ -62,7 +67,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      7
+      8
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -527,6 +532,7 @@ public final class WhatzItVideoExportModule: Module {
         ? max(start, orderedEvents[index + 1].atMs / 1_000)
         : durationSeconds
       guard nextStart > start else { continue }
+      var timerSegments: [OverlayTimerSegment] = []
       if shouldShowTimer(for: event), let timerEndsAtMs = event.timerEndsAtMs {
         let timerEndSeconds = timerEndsAtMs / 1_000
         var segmentStart = start
@@ -540,24 +546,22 @@ public final class WhatzItVideoExportModule: Module {
             : segmentStart + (1.0 / 30.0)
           let segmentEnd = min(nextStart, safeBoundary)
           guard segmentEnd > segmentStart else { break }
-          parentLayer.addSublayer(makeOverlayLayer(
-            event: event,
-            timerText: formatRoundClock(remainingSeconds),
-            renderSize: renderSize,
-            start: segmentStart,
-            duration: segmentEnd - segmentStart
+          timerSegments.append(OverlayTimerSegment(
+            start: segmentStart - start,
+            text: formatRoundClock(remainingSeconds)
           ))
           segmentStart = segmentEnd
         }
-      } else {
-        parentLayer.addSublayer(makeOverlayLayer(
-          event: event,
-          timerText: nil,
-          renderSize: renderSize,
-          start: start,
-          duration: nextStart - start
-        ))
       }
+      // Keep one layer per event. Creating a layer for every timer second leaves
+      // completed Core Animation layers visible in some AVFoundation exports.
+      parentLayer.addSublayer(makeOverlayLayer(
+        event: event,
+        timerSegments: timerSegments,
+        renderSize: renderSize,
+        start: start,
+        duration: nextStart - start
+      ))
     }
 
     return AVVideoCompositionCoreAnimationTool(
@@ -568,7 +572,7 @@ public final class WhatzItVideoExportModule: Module {
 
   private static func makeOverlayLayer(
     event: VideoOverlayEventRecord,
-    timerText: String?,
+    timerSegments: [OverlayTimerSegment],
     renderSize: CGSize,
     start: Double,
     duration: Double
@@ -590,10 +594,13 @@ public final class WhatzItVideoExportModule: Module {
     }
     let timerFont: UIFont?
     let timerSize: CGSize
-    if let timerText {
+    if !timerSegments.isEmpty {
       let font = UIFont.systemFont(ofSize: renderSize.height * 0.028, weight: .bold)
       timerFont = font
-      timerSize = (timerText as NSString).size(withAttributes: [.font: font])
+      timerSize = timerSegments.reduce(.zero) { largest, segment in
+        let size = (segment.text as NSString).size(withAttributes: [.font: font])
+        return CGSize(width: max(largest.width, size.width), height: max(largest.height, size.height))
+      }
     } else {
       timerFont = nil
       timerSize = .zero
@@ -604,7 +611,7 @@ public final class WhatzItVideoExportModule: Module {
       max(minimumWidth, ceil(max(textSize.width, timerSize.width)) + horizontalPadding * 2)
     )
     let minimumHeight = renderSize.height * 0.123
-    let timerSpacing = timerText == nil ? 0 : renderSize.height * 0.0051
+    let timerSpacing = timerSegments.isEmpty ? 0 : renderSize.height * 0.0051
     let contentHeight = font.lineHeight + (timerFont?.lineHeight ?? 0) + timerSpacing
     let height = max(minimumHeight, ceil(contentHeight) + verticalPadding * 2)
     let margin = renderSize.height * 0.133
@@ -615,24 +622,49 @@ public final class WhatzItVideoExportModule: Module {
       width: width,
       height: height
     )
-    container.contents = makeOverlayImage(
-      event: event,
-      text: text,
-      timerText: timerText,
-      size: CGSize(width: width, height: height),
-      font: font,
-      timerFont: timerFont,
-      timerSpacing: timerSpacing,
-      horizontalPadding: horizontalPadding
-    )
+    let imageSize = CGSize(width: width, height: height)
+    let makeImage = { (timerText: String?) in
+      makeOverlayImage(
+        event: event,
+        text: text,
+        timerText: timerText,
+        size: imageSize,
+        font: font,
+        timerFont: timerFont,
+        timerSpacing: timerSpacing,
+        horizontalPadding: horizontalPadding
+      )
+    }
+    container.contents = makeImage(timerSegments.first?.text)
     container.contentsGravity = .resize
     container.opacity = 0
+
+    if timerSegments.count > 1 {
+      var frames = timerSegments.compactMap { segment -> (time: NSNumber, image: CGImage)? in
+        guard let image = makeImage(segment.text) else { return nil }
+        let normalizedTime = min(1, max(0, segment.start / duration))
+        return (NSNumber(value: normalizedTime), image)
+      }
+      if frames.count > 1, let lastFrame = frames.last {
+        frames.append((NSNumber(value: 1), lastFrame.image))
+        let timerAnimation = CAKeyframeAnimation(keyPath: "contents")
+        timerAnimation.beginTime = AVCoreAnimationBeginTimeAtZero + start
+        timerAnimation.duration = duration
+        timerAnimation.values = frames.map { $0.image as Any }
+        timerAnimation.keyTimes = frames.map { $0.time }
+        timerAnimation.calculationMode = .discrete
+        timerAnimation.fillMode = .both
+        timerAnimation.isRemovedOnCompletion = false
+        container.add(timerAnimation, forKey: "timerContents")
+      }
+    }
 
     let visibility = CAKeyframeAnimation(keyPath: "opacity")
     visibility.beginTime = AVCoreAnimationBeginTimeAtZero + start
     visibility.duration = duration
-    visibility.values = [0, 1, 1, 0]
-    visibility.keyTimes = [0, 0.001, 0.999, 1]
+    visibility.values = [0, 1, 0]
+    visibility.keyTimes = [0, 0.001, 0.999]
+    visibility.calculationMode = .discrete
     visibility.fillMode = .both
     visibility.isRemovedOnCompletion = false
     container.add(visibility, forKey: "visibility")
@@ -751,11 +783,11 @@ public final class WhatzItVideoExportModule: Module {
     guard headshot != nil || wordmark != nil else { return nil }
     let margin = renderSize.height * 0.035
     let gap = renderSize.height * 0.01
-    let headshotHeight = headshot == nil ? 0 : renderSize.height * 0.11
+    let headshotHeight = headshot == nil ? 0 : renderSize.height * 0.12
     let headshotWidth = headshot.map {
       headshotHeight * ($0.size.width / max(1, $0.size.height))
     } ?? 0
-    let wordmarkWidth = wordmark == nil ? 0 : renderSize.height * 0.22
+    let wordmarkWidth = wordmark == nil ? 0 : renderSize.height * 0.24
     let wordmarkHeight = wordmark.map {
       wordmarkWidth * ($0.size.height / max(1, $0.size.width))
     } ?? 0
