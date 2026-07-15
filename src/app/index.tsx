@@ -20,8 +20,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { DeckCard } from '@/components/deck-card';
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
+import { DeckCard } from '@/components/deck-card';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
@@ -199,7 +199,6 @@ export default function DeckLibraryScreen() {
                           year: 'numeric',
                           hour: 'numeric',
                           minute: '2-digit',
-                          timeZoneName: 'short',
                         })}
                       </Text>
                       <View style={styles.videoActions}>
