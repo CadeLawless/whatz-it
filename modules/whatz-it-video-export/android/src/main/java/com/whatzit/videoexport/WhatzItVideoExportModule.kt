@@ -55,6 +55,7 @@ class WhatzItVideoExportModule : Module() {
 
     AsyncFunction("exportOverlayVideo") {
         inputUri: String,
+        audioUri: String?,
         events: List<VideoOverlayEvent>,
         promise: Promise ->
       val context = appContext.reactContext?.applicationContext
@@ -126,7 +127,8 @@ private class TimedCardOverlay(
     val width = canvasWidth * 0.43f
     val height = max(canvasHeight * 0.16f, width * 0.42f)
     val margin = canvasWidth * 0.05f
-    val bounds = RectF(margin, canvasHeight - height - margin, margin + width, canvasHeight - margin)
+    val left = (canvasWidth - width) / 2f
+    val bounds = RectF(left, canvasHeight - height - margin, left + width, canvasHeight - margin)
     val colors = colorsFor(event.kind)
 
     backgroundPaint.color = colors.first

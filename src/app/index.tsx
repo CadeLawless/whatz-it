@@ -29,7 +29,9 @@ import { decks, getDeckById } from '@/data/decks';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import {
   deleteRoundVideo,
+  isRoundVideoReadyToSave,
   loadRoundVideos,
+  prepareRoundVideoExport,
   saveRoundVideoToDevice,
   type RoundVideo,
 } from '@/video/round-videos';
@@ -62,7 +64,17 @@ export default function DeckLibraryScreen() {
     useCallback(() => {
       let active = true;
       loadRoundVideos().then((storedVideos) => {
-        if (active) setVideos(storedVideos);
+        if (!active) return;
+        setVideos(storedVideos);
+        storedVideos.forEach((video) => {
+          if (isRoundVideoReadyToSave(video)) return;
+          void prepareRoundVideoExport(video).then((prepared) => {
+            if (!active) return;
+            setVideos((current) =>
+              current.map((item) => (item.id === prepared.id ? prepared : item)),
+            );
+          });
+        });
       });
       return () => {
         active = false;
@@ -71,7 +83,7 @@ export default function DeckLibraryScreen() {
   );
 
   const handleSave = async (video: RoundVideo) => {
-    if (savingVideoId) return;
+    if (savingVideoId || !isRoundVideoReadyToSave(video)) return;
     setSavingVideoId(video.id);
     try {
       await saveRoundVideoToDevice(video);
@@ -184,6 +196,7 @@ export default function DeckLibraryScreen() {
                       <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
                       <RoundVideoPlayer
                         isSaving={savingVideoId === video.id}
+                        saveDisabled={!isRoundVideoReadyToSave(video)}
                         onDelete={handleDelete}
                         onSave={handleSave}
                         video={video}
@@ -204,12 +217,20 @@ export default function DeckLibraryScreen() {
                       <View style={styles.videoActions}>
                         <Pressable
                           accessibilityRole="button"
-                          disabled={savingVideoId !== null}
+                          disabled={savingVideoId !== null || !isRoundVideoReadyToSave(video)}
                           onPress={() => handleSave(video)}
-                          style={({ pressed }) => [styles.saveButton, pressed && styles.pressed]}
+                          style={({ pressed }) => [
+                            styles.saveButton,
+                            !isRoundVideoReadyToSave(video) && styles.disabled,
+                            pressed && isRoundVideoReadyToSave(video) && styles.pressed,
+                          ]}
                         >
                           <Text style={styles.saveButtonText}>
-                            {savingVideoId === video.id ? 'EXPORTING…' : 'SAVE'}
+                            {!isRoundVideoReadyToSave(video)
+                              ? 'PREPARING…'
+                              : savingVideoId === video.id
+                                ? 'SAVING…'
+                                : 'SAVE'}
                           </Text>
                         </Pressable>
                         <Pressable
@@ -411,4 +432,5 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: { color: '#64748B', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
+  disabled: { opacity: 0.55 },
 });

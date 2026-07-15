@@ -12,7 +12,7 @@ import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
-import { saveRoundVideoToDevice } from '@/video/round-videos';
+import { isRoundVideoReadyToSave, saveRoundVideoToDevice } from '@/video/round-videos';
 
 export default function ResultsScreen() {
   const router = useRouter();
@@ -29,6 +29,7 @@ export default function ResultsScreen() {
   const deck = getDeckById(round.deckId ?? undefined);
   const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
   const passedCount = round.results.filter((result) => result.outcome === 'passed').length;
+  const videoReady = currentVideo ? isRoundVideoReadyToSave(currentVideo) : false;
 
   useEffect(() => {
     if (isPortrait) revealTransition('results');
@@ -74,7 +75,7 @@ export default function ResultsScreen() {
   };
 
   const handleSaveVideo = async () => {
-    if (!currentVideo || isSavingVideo) return;
+    if (!currentVideo || !videoReady || isSavingVideo) return;
     setIsSavingVideo(true);
     try {
       await saveRoundVideoToDevice(currentVideo);
@@ -138,6 +139,7 @@ export default function ResultsScreen() {
               <View style={styles.videoSection}>
                 <RoundVideoPlayer
                   isSaving={isSavingVideo}
+                  saveDisabled={!videoReady}
                   onDelete={requestDeleteVideo}
                   onSave={handleSaveVideo}
                   video={currentVideo}
@@ -145,12 +147,16 @@ export default function ResultsScreen() {
                 />
                 <Pressable
                   accessibilityRole="button"
-                  disabled={isSavingVideo}
+                  disabled={isSavingVideo || !videoReady}
                   onPress={handleSaveVideo}
-                  style={({ pressed }) => [styles.saveVideoButton, pressed && styles.pressed]}
+                  style={({ pressed }) => [
+                    styles.saveVideoButton,
+                    !videoReady && styles.disabled,
+                    pressed && videoReady && styles.pressed,
+                  ]}
                 >
                   <Text style={styles.saveVideoText}>
-                    {isSavingVideo ? 'EXPORTING…' : 'SAVE VIDEO'}
+                    {!videoReady ? 'PREPARING VIDEO…' : isSavingVideo ? 'SAVING…' : 'SAVE VIDEO'}
                   </Text>
                 </Pressable>
               </View>
@@ -307,4 +313,5 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: { color: colors.ink, fontSize: 13, fontWeight: '900', letterSpacing: 1.1 },
   pressed: { transform: [{ scale: 0.99 }], opacity: 0.88 },
+  disabled: { opacity: 0.55 },
 });

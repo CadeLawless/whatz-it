@@ -10,9 +10,15 @@ import {
 } from 'react-native-vision-camera';
 
 export type RoundCameraRef = {
-  startRecording: (maxDuration: number) => Promise<boolean>;
-  stopRecording: () => Promise<string | null>;
+  startRecording: (maxDuration: number) => Promise<number | null>;
+  stopRecording: () => Promise<RoundCapture | null>;
   cancelRecording: () => Promise<void>;
+};
+
+export type RoundCapture = {
+  videoUri: string;
+  microphoneUri?: string;
+  microphoneOffsetMs: number;
 };
 
 type RoundCameraProps = {
@@ -40,7 +46,7 @@ async function prepareRoundRecordingAudio() {
   await setAudioModeAsync({
     allowsRecording: true,
     interruptionMode: 'doNotMix',
-    playsInSilentMode: true,
+    playsInSilentMode: false,
     shouldRouteThroughEarpiece: false,
   });
   if (Platform.OS === 'ios') {
@@ -53,28 +59,24 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
   function RoundCamera({ enabled, onError, onReady }, ref) {
     const device = useCameraDevice('front');
     const videoOutput = useVideoOutput({
-      enableAudio: true,
-      // VisionCamera's persistent iOS recorder writes microphone samples through
-      // a dedicated audio capture session and initializes an AVAssetWriter audio
-      // track up front. This avoids the AVCaptureMovieFileOutput path that has
-      // intermittently produced video-only files for this app.
-      enablePersistentRecorder: Platform.OS === 'ios',
+      // iOS microphone audio is recorded independently and mixed after the round.
+      // This avoids VisionCamera's intermittently missing iOS audio track.
+      enableAudio: Platform.OS !== 'ios',
       fileType: 'mp4',
     });
     const recorderRef = useRef<Recorder | null>(null);
     const resultPromiseRef = useRef<Promise<string> | null>(null);
+    const microphoneRef = useRef<{ uri: string; offsetMs: number } | null>(null);
 
     useImperativeHandle(
       ref,
       () => ({
         async startRecording(maxDuration) {
-          if (!enabled || !device || recorderRef.current) return false;
+          if (!enabled || !device || recorderRef.current) return null;
+          let recorder: Recorder | null = null;
           try {
-            // Audio players can update the shared iOS audio session while the Ready
-            // screen is playing. Re-apply recording mode immediately before creating
-            // the recorder so microphone capture starts under the correct session.
             await prepareRoundRecordingAudio();
-            const recorder = await videoOutput.createRecorder({ maxDuration });
+            recorder = await videoOutput.createRecorder({ maxDuration });
             recorderRef.current = recorder;
             let finishRecording!: (filePath: string) => void;
             let failRecording!: (error: Error) => void;
@@ -84,11 +86,34 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             });
             void resultPromiseRef.current.catch(() => undefined);
             await recorder.startRecording(finishRecording, failRecording);
-            return true;
+            const videoStartedAt = Date.now();
+            if (Platform.OS === 'ios') {
+              const { startMicrophoneRecording } = await import('whatz-it-video-export');
+              const microphoneUri = await startMicrophoneRecording();
+              microphoneRef.current = {
+                uri: microphoneUri,
+                offsetMs: Math.max(0, Date.now() - videoStartedAt),
+              };
+            }
+            return videoStartedAt;
           } catch {
+            try {
+              if (recorder?.isRecording) await recorder.cancelRecording();
+            } catch {
+              // The recorder may already have stopped while cleaning up a failed start.
+            }
+            if (Platform.OS === 'ios') {
+              try {
+                const { cancelMicrophoneRecording } = await import('whatz-it-video-export');
+                await cancelMicrophoneRecording();
+              } catch {
+                // There may be no native microphone recorder to cancel.
+              }
+            }
             recorderRef.current = null;
             resultPromiseRef.current = null;
-            return false;
+            microphoneRef.current = null;
+            return null;
           }
         },
         async stopRecording() {
@@ -97,19 +122,40 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           if (!recorder || !result) return null;
           try {
             if (recorder.isRecording) await recorder.stopRecording();
-            return await result;
+            let microphoneUri = microphoneRef.current?.uri;
+            if (Platform.OS === 'ios' && microphoneRef.current) {
+              const { stopMicrophoneRecording } = await import('whatz-it-video-export');
+              microphoneUri = await stopMicrophoneRecording();
+            }
+            return {
+              videoUri: await result,
+              microphoneUri,
+              microphoneOffsetMs: microphoneRef.current?.offsetMs ?? 0,
+            };
           } finally {
             recorderRef.current = null;
             resultPromiseRef.current = null;
+            microphoneRef.current = null;
           }
         },
         async cancelRecording() {
           const recorder = recorderRef.current;
           try {
             if (recorder) await recorder.cancelRecording();
+          } catch {
+            // Continue so the independently recorded microphone file is also removed.
+          }
+          try {
+            if (Platform.OS === 'ios' && microphoneRef.current) {
+              const { cancelMicrophoneRecording } = await import('whatz-it-video-export');
+              await cancelMicrophoneRecording();
+            }
+          } catch {
+            // There may be no native microphone recorder left to cancel.
           } finally {
             recorderRef.current = null;
             resultPromiseRef.current = null;
+            microphoneRef.current = null;
           }
         },
       }),

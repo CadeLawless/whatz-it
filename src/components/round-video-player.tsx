@@ -1,8 +1,8 @@
 import { useEventListener } from 'expo';
-import { setAudioModeAsync } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { StatusBar } from 'expo-status-bar';
 import { useVideoPlayer, type VideoPlayer, VideoView } from 'expo-video';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -21,6 +21,7 @@ type RoundVideoPlayerProps = {
   video: RoundVideo;
   style?: StyleProp<ViewStyle>;
   isSaving?: boolean;
+  saveDisabled?: boolean;
   onSave?: (video: RoundVideo) => void | Promise<void>;
   onDelete?: (video: RoundVideo) => void;
 };
@@ -29,12 +30,16 @@ export function RoundVideoPlayer({
   video,
   style,
   isSaving = false,
+  saveDisabled = false,
   onSave,
   onDelete,
 }: RoundVideoPlayerProps) {
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
+  const expandedRef = useRef(false);
+  const previousVideoTime = useRef(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const separateAudio = useAudioPlayer(video.audioUri ?? null);
   const player = useVideoPlayer(video.uri, (instance) => {
     instance.loop = true;
     instance.muted = true;
@@ -44,19 +49,56 @@ export function RoundVideoPlayer({
 
   useEventListener(player, 'timeUpdate', ({ currentTime: nextTime }) => {
     setCurrentTime(nextTime);
+    if (!expandedRef.current || !video.audioUri) return;
+    const looped = nextTime + 0.5 < previousVideoTime.current;
+    previousVideoTime.current = nextTime;
+    const drift = Math.abs(separateAudio.currentTime - nextTime);
+    if (looped || drift > 0.35) {
+      void separateAudio
+        .seekTo(nextTime)
+        .then(() => {
+          if (expandedRef.current && looped) separateAudio.play();
+        })
+        .catch(() => undefined);
+    }
   });
+
+  useEventListener(player, 'playingChange', ({ isPlaying }) => {
+    if (!expandedRef.current || !video.audioUri) return;
+    if (isPlaying) {
+      void separateAudio.seekTo(player.currentTime).then(() => separateAudio.play()).catch(() => undefined);
+    } else {
+      separateAudio.pause();
+    }
+  });
+
+  useEffect(() => {
+    return () => separateAudio.pause();
+  }, [separateAudio]);
 
   const event = useMemo(
     () => getEventAtTime(video.events ?? [], currentTime * 1000),
     [currentTime, video.events],
   );
 
-  const openExpanded = () => {
+  const openExpanded = async () => {
+    expandedRef.current = true;
+    previousVideoTime.current = player.currentTime;
     setExpanded(true);
-    enablePlayerAudio(player);
+    await setPlaybackAudioMode().catch(() => undefined);
+    if (video.audioUri) {
+      setPlayerMuted(player, true);
+      await separateAudio.seekTo(player.currentTime).catch(() => undefined);
+      separateAudio.play();
+      player.play();
+    } else {
+      enablePlayerAudio(player);
+    }
   };
 
   const closeExpanded = () => {
+    expandedRef.current = false;
+    separateAudio.pause();
     setPlayerMuted(player, true);
     player.play();
     setExpanded(false);
@@ -85,7 +127,7 @@ export function RoundVideoPlayer({
             accessibilityHint="Opens a larger player with sound"
             accessibilityLabel="Watch round video"
             accessibilityRole="button"
-            onPress={openExpanded}
+            onPress={() => void openExpanded()}
             style={StyleSheet.absoluteFill}
           />
         </View>
@@ -118,18 +160,18 @@ export function RoundVideoPlayer({
                 <Pressable
                   accessibilityLabel="Download video to device"
                   accessibilityRole="button"
-                  accessibilityState={{ busy: isSaving, disabled: isSaving }}
-                  disabled={isSaving}
+                  accessibilityState={{ busy: isSaving, disabled: isSaving || saveDisabled }}
+                  disabled={isSaving || saveDisabled}
                   onPress={() => void onSave(video)}
                   style={({ pressed }) => [
                     styles.playerActionButton,
                     styles.downloadButton,
-                    pressed && !isSaving && styles.pressed,
-                    isSaving && styles.disabled,
+                    pressed && !isSaving && !saveDisabled && styles.pressed,
+                    (isSaving || saveDisabled) && styles.disabled,
                   ]}
                 >
                   <Text style={styles.downloadButtonText}>
-                    {isSaving ? 'EXPORTING...' : 'DOWNLOAD'}
+                    {saveDisabled ? 'PREPARING...' : isSaving ? 'SAVING...' : 'DOWNLOAD'}
                   </Text>
                 </Pressable>
               )}
@@ -175,12 +217,7 @@ function setPlayerMuted(player: VideoPlayer, muted: boolean) {
 }
 
 function enablePlayerAudio(player: VideoPlayer) {
-  setAudioModeAsync({
-    allowsRecording: false,
-    interruptionMode: 'doNotMix',
-    playsInSilentMode: true,
-    shouldRouteThroughEarpiece: false,
-  })
+  setPlaybackAudioMode()
     .catch(() => undefined)
     .finally(() => {
       player.volume = 1;
@@ -188,6 +225,15 @@ function enablePlayerAudio(player: VideoPlayer) {
       player.muted = false;
       player.play();
     });
+}
+
+function setPlaybackAudioMode() {
+  return setAudioModeAsync({
+    allowsRecording: false,
+    interruptionMode: 'doNotMix',
+    playsInSilentMode: true,
+    shouldRouteThroughEarpiece: false,
+  });
 }
 
 function restoreAppAudioMode() {
@@ -254,7 +300,8 @@ const styles = StyleSheet.create({
   expandedFrame: { flex: 1, backgroundColor: '#000000' },
   overlay: {
     position: 'absolute',
-    left: spacing.lg,
+    left: '50%',
+    transform: [{ translateX: -120 }],
     bottom: 72,
     width: 240,
     minHeight: 66,
@@ -264,7 +311,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   overlayCompact: {
-    left: 7,
+    transform: [{ translateX: -48 }],
     bottom: 7,
     width: 96,
     minHeight: 28,
