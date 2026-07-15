@@ -45,11 +45,16 @@ export function RoundVideoPlayer({
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
   const [saveNotice, setSaveNotice] = useState<VideoSaveNotice | null>(null);
+  const [expandedPlaybackSource, setExpandedPlaybackSource] = useState(() =>
+    getPreferredPlaybackSource(video),
+  );
   const expandedRef = useRef(false);
   const previousVideoTime = useRef(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const playbackUri = video.exportUri ?? video.uri;
-  const separateAudioUri = video.exportUri ? undefined : video.audioUri;
+  const preferredPlaybackSource = getPreferredPlaybackSource(video);
+  const playbackSource = expanded ? expandedPlaybackSource : preferredPlaybackSource;
+  const playbackUri = playbackSource.uri;
+  const separateAudioUri = playbackSource.isExport ? undefined : video.audioUri;
   const separateAudio = useAudioPlayer(separateAudioUri ?? null);
   const player = useVideoPlayer(playbackUri, (instance) => {
     instance.loop = true;
@@ -88,6 +93,7 @@ export function RoundVideoPlayer({
       audioTrackCount: availableAudioTracks.length,
       audioTracks: availableAudioTracks,
       exportUri: video.exportUri,
+      playbackIncludesOverlays: playbackSource.includesOverlays,
       playbackUri,
       separateAudioUri,
       videoSource,
@@ -100,6 +106,7 @@ export function RoundVideoPlayer({
   );
 
   const openExpanded = async () => {
+    setExpandedPlaybackSource(preferredPlaybackSource);
     expandedRef.current = true;
     previousVideoTime.current = player.currentTime;
     setExpanded(true);
@@ -146,7 +153,7 @@ export function RoundVideoPlayer({
             style={StyleSheet.absoluteFill}
             surfaceType="textureView"
           />
-          {!video.exportIncludesOverlays && <PlaybackOverlay event={event} compact />}
+          {!playbackSource.includesOverlays && <PlaybackOverlay event={event} compact />}
           <Pressable
             accessibilityHint="Opens a larger player with sound"
             accessibilityLabel="Watch round video"
@@ -175,7 +182,7 @@ export function RoundVideoPlayer({
               style={StyleSheet.absoluteFill}
               surfaceType="textureView"
             />
-            {!video.exportIncludesOverlays && <PlaybackOverlay event={event} />}
+            {!playbackSource.includesOverlays && <PlaybackOverlay event={event} />}
           </View>
           {(onSave || onDelete) && (
             <View
@@ -256,6 +263,16 @@ export function RoundVideoPlayer({
 
 function setPlayerMuted(player: VideoPlayer, muted: boolean) {
   player.muted = muted;
+}
+
+function getPreferredPlaybackSource(video: RoundVideo) {
+  return video.exportUri
+    ? {
+        uri: video.exportUri,
+        isExport: true,
+        includesOverlays: video.exportIncludesOverlays === true,
+      }
+    : { uri: video.uri, isExport: false, includesOverlays: false };
 }
 
 function pauseAudioPlayer(player: AudioPlayer) {
@@ -351,26 +368,26 @@ const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
     left: '50%',
-    transform: [{ translateX: -120 }],
-    bottom: 72,
-    width: 240,
-    minHeight: 66,
+    transform: [{ translateX: -100 }],
+    bottom: 52,
+    width: 200,
+    minHeight: 48,
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
   overlayCompact: {
-    transform: [{ translateX: -48 }],
-    bottom: 7,
-    width: 96,
-    minHeight: 28,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
+    transform: [{ translateX: -42 }],
+    bottom: 5,
+    width: 84,
+    minHeight: 22,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  overlayText: { fontSize: 22, lineHeight: 26, fontWeight: '900', textAlign: 'center' },
-  overlayTextCompact: { fontSize: 9, lineHeight: 11 },
+  overlayText: { fontSize: 18, lineHeight: 21, fontWeight: '900', textAlign: 'center' },
+  overlayTextCompact: { fontSize: 8, lineHeight: 9 },
   closeButton: {
     position: 'absolute',
     right: spacing.lg,

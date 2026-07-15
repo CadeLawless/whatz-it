@@ -32,7 +32,7 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
 };
 
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
-const ROUND_SOUND_VOLUME = 0.5;
+const ROUND_SOUND_VOLUME = 0.3;
 
 export function getRoundSoundSource(sound: RoundSoundId) {
   return ROUND_SOUND_SOURCES[sound];
