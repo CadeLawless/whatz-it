@@ -116,13 +116,13 @@ export function RoundProvider({ children }: PropsWithChildren) {
         const timeout = setTimeout(() => {
           cameraReadyResolver.current = null;
           resolve(false);
-        }, 5000);
+        }, 12000);
         cameraReadyResolver.current = (value) => {
           clearTimeout(timeout);
           resolve(value);
         };
       });
-      if (!ready) setCameraEnabled(false);
+      // Keep a slow camera mounted so its eventual onStarted event can make Retry work.
       return ready ? ('ready' as const) : ('error' as const);
     })()
       .catch(() => {
@@ -330,7 +330,8 @@ export function RoundProvider({ children }: PropsWithChildren) {
             cameraReadyResolver.current?.(true);
             cameraReadyResolver.current = null;
         }}
-        onError={() => {
+        onError={(error) => {
+            console.warn('Camera session failed.', error);
             cameraReady.current = false;
             setCameraEnabled(false);
             cameraReadyResolver.current?.(false);

@@ -24,7 +24,7 @@ export type RoundCapture = {
 type RoundCameraProps = {
   enabled: boolean;
   microphoneEnabled: boolean;
-  onError: () => void;
+  onError: (error: unknown) => void;
   onReady: () => void;
 };
 
@@ -37,7 +37,6 @@ export async function requestRoundCameraPermissions() {
   const microphoneGranted =
     VisionCamera.microphonePermissionStatus === 'authorized' ||
     (await VisionCamera.requestMicrophonePermission());
-  if (microphoneGranted) await prepareRoundRecordingAudio();
   return { cameraGranted: true, microphoneGranted };
 }
 
@@ -74,7 +73,15 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           if (!enabled || !device || recorderRef.current) return null;
           let recorder: Recorder | null = null;
           try {
-            if (microphoneEnabled) await prepareRoundRecordingAudio();
+            let microphonePrepared = microphoneEnabled;
+            if (microphonePrepared) {
+              try {
+                await prepareRoundRecordingAudio();
+              } catch (error) {
+                microphonePrepared = false;
+                console.warn('Microphone setup failed; recording video without audio.', error);
+              }
+            }
             recorder = await videoOutput.createRecorder({ maxDuration });
             recorderRef.current = recorder;
             let finishRecording!: (filePath: string) => void;
@@ -86,16 +93,22 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             void resultPromiseRef.current.catch(() => undefined);
             await recorder.startRecording(finishRecording, failRecording);
             const videoStartedAt = Date.now();
-            if (Platform.OS === 'ios' && microphoneEnabled) {
-              const { startMicrophoneRecording } = await import('whatz-it-video-export');
-              const microphoneUri = await startMicrophoneRecording();
-              microphoneRef.current = {
-                uri: microphoneUri,
-                offsetMs: Math.max(0, Date.now() - videoStartedAt),
-              };
+            if (Platform.OS === 'ios' && microphonePrepared) {
+              try {
+                const { startMicrophoneRecording } = await import('whatz-it-video-export');
+                const microphoneUri = await startMicrophoneRecording();
+                microphoneRef.current = {
+                  uri: microphoneUri,
+                  offsetMs: Math.max(0, Date.now() - videoStartedAt),
+                };
+              } catch (error) {
+                // A microphone failure must not discard an otherwise valid video.
+                console.warn('Microphone recording failed; continuing with video only.', error);
+              }
             }
             return videoStartedAt;
-          } catch {
+          } catch (error) {
+            console.warn('Video recording failed to start.', error);
             try {
               if (recorder?.isRecording) await recorder.cancelRecording();
             } catch {
