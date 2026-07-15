@@ -3281,7 +3281,7 @@ export const decks: Deck[] = [
       { id: 'kid-198', text: 'Skipping' },
       { id: 'kid-199', text: 'Dancing' },
       { id: 'kid-200', text: 'Building a Snowman' },
-}
+    ]
 ];
 
 export function getDeckById(deckId: string | undefined) {
