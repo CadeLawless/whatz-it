@@ -47,6 +47,7 @@ type RoundContextValue = {
   resetRound: () => void;
   currentVideo: RoundVideo | null;
   deleteCurrentVideo: () => Promise<void>;
+  retryCurrentVideoExport: () => Promise<RoundVideo | null>;
   prepareRecording: () => Promise<RecordingPreparation>;
   startRecording: () => Promise<boolean>;
   recordOverlayEvent: (event: Omit<RoundVideoEvent, 'atMs'>) => void;
@@ -237,11 +238,27 @@ export function RoundProvider({ children }: PropsWithChildren) {
     setCurrentVideo((activeVideo) => (activeVideo?.id === video.id ? null : activeVideo));
   }, [currentVideo]);
 
+  const retryCurrentVideoExport = useCallback(async () => {
+    const video = currentVideo;
+    if (!video) return null;
+    setCurrentVideo((activeVideo) =>
+      activeVideo?.id === video.id
+        ? { ...activeVideo, exportStatus: 'preparing' }
+        : activeVideo,
+    );
+    const preparedVideo = await prepareRoundVideoExport(video);
+    setCurrentVideo((activeVideo) =>
+      activeVideo?.id === preparedVideo.id ? preparedVideo : activeVideo,
+    );
+    return preparedVideo;
+  }, [currentVideo]);
+
   const value = useMemo<RoundContextValue>(
     () => ({
       round,
       currentVideo,
       deleteCurrentVideo,
+      retryCurrentVideoExport,
       prepareRecording,
       startRecording,
       recordOverlayEvent,
@@ -309,6 +326,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       prepareRecording,
       recordOverlayEvent,
       recordSoundCue,
+      retryCurrentVideoExport,
       round,
       startRecording,
       stopRecording,

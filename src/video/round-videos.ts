@@ -216,7 +216,12 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
   });
   let temporaryExportUri: string | undefined;
   try {
-    const { exportOverlayVideo, supportsFixedIosOverlayExport } =
+    const {
+      exportOverlayVideo,
+      getIosVideoExportVersion,
+      supportsFixedIosOverlayExport,
+      supportsReliableIosAudioExport,
+    } =
       await import('whatz-it-video-export');
     // Existing iOS development builds contain an overlay animation that leaves every
     // prior card visible. Export clean video plus audio until the corrected native
@@ -225,17 +230,29 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
       Platform.OS === 'ios' && !supportsFixedIosOverlayExport() ? [] : video.events;
     const audioFile = video.audioUri ? new File(video.audioUri) : null;
     const sourceVideoFile = new File(video.uri);
+    const iosVideoExportVersion = Platform.OS === 'ios' ? getIosVideoExportVersion() : null;
     logVideoDiagnostic('native export started', {
       audioFileExists: audioFile?.exists ?? false,
       audioFileSize: audioFile?.size ?? 0,
       audioUri: video.audioUri,
       exportEventCount: exportEvents.length,
+      iosVideoExportVersion,
       sourceEventCount: video.events.length,
       sourceVideoExists: sourceVideoFile.exists,
       sourceVideoSize: sourceVideoFile.size,
       sourceVideoUri: video.uri,
       supportsFixedIosOverlays: supportsFixedIosOverlayExport(),
+      supportsReliableIosAudio: supportsReliableIosAudioExport(),
     });
+    if (
+      Platform.OS === 'ios' &&
+      video.audioUri &&
+      !supportsReliableIosAudioExport()
+    ) {
+      throw new Error(
+        'This installed app build does not contain the reliable audio exporter. Install the updated build, then retry this export.',
+      );
+    }
     temporaryExportUri = await exportOverlayVideo(
       video.uri,
       video.audioUri ?? null,

@@ -16,7 +16,14 @@ import { isRoundVideoReadyToSave, saveRoundVideoToDevice } from '@/video/round-v
 
 export default function ResultsScreen() {
   const router = useRouter();
-  const { currentVideo, round, configureRound, deleteCurrentVideo, resetRound } = useRound();
+  const {
+    currentVideo,
+    round,
+    configureRound,
+    deleteCurrentVideo,
+    resetRound,
+    retryCurrentVideoExport,
+  } = useRound();
   const [isStarting, setIsStarting] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [isSavingVideo, setIsSavingVideo] = useState(false);
@@ -34,6 +41,7 @@ export default function ResultsScreen() {
   const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
   const passedCount = round.results.filter((result) => result.outcome === 'passed').length;
   const videoReady = currentVideo ? isRoundVideoReadyToSave(currentVideo) : false;
+  const videoExportFailed = currentVideo?.exportStatus === 'failed';
 
   useEffect(() => {
     if (isPortrait) revealTransition('results');
@@ -101,6 +109,16 @@ export default function ResultsScreen() {
     setSaveNotice(await handleSaveVideo());
   };
 
+  const handleRetryExport = async () => {
+    const preparedVideo = await retryCurrentVideoExport();
+    if (preparedVideo?.exportStatus === 'failed') {
+      setSaveNotice({
+        title: 'Export failed',
+        message: 'The video and its audio are safe in WHATZ IT. Please send the [RoundVideo] terminal logs.',
+      });
+    }
+  };
+
   const requestDeleteVideo = () => {
     setDeleteError(null);
     setDeletePromptVisible(true);
@@ -157,16 +175,24 @@ export default function ResultsScreen() {
                 />
                 <Pressable
                   accessibilityRole="button"
-                  disabled={isSavingVideo || !videoReady}
-                  onPress={() => void handlePortraitSave()}
+                  disabled={isSavingVideo || (!videoReady && !videoExportFailed)}
+                  onPress={() =>
+                    void (videoExportFailed ? handleRetryExport() : handlePortraitSave())
+                  }
                   style={({ pressed }) => [
                     styles.saveVideoButton,
-                    !videoReady && styles.disabled,
-                    pressed && videoReady && styles.pressed,
+                    !videoReady && !videoExportFailed && styles.disabled,
+                    pressed && (videoReady || videoExportFailed) && styles.pressed,
                   ]}
                 >
                   <Text style={styles.saveVideoText}>
-                    {!videoReady ? 'PREPARING VIDEO…' : isSavingVideo ? 'SAVING…' : 'SAVE VIDEO'}
+                    {videoExportFailed
+                      ? 'RETRY EXPORT'
+                      : !videoReady
+                        ? 'PREPARING VIDEO…'
+                        : isSavingVideo
+                          ? 'SAVING…'
+                          : 'SAVE VIDEO'}
                   </Text>
                 </Pressable>
               </View>

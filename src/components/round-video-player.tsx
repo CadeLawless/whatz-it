@@ -196,7 +196,13 @@ export function RoundVideoPlayer({
                   ]}
                 >
                   <Text style={styles.downloadButtonText}>
-                    {saveDisabled ? 'PREPARING...' : isSaving ? 'SAVING...' : 'DOWNLOAD'}
+                    {video.exportStatus === 'failed'
+                      ? 'EXPORT FAILED'
+                      : saveDisabled
+                        ? 'PREPARING...'
+                        : isSaving
+                          ? 'SAVING...'
+                          : 'DOWNLOAD'}
                   </Text>
                 </Pressable>
               )}

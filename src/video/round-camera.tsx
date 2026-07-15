@@ -252,7 +252,9 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       <Camera
         device={device}
         isActive
-        mirrorMode="on"
+        // Toggle the recorded front-camera image from the prior behavior so it
+        // has the expected left/right orientation in playback and exports.
+        mirrorMode="off"
         onError={onError}
         onStarted={() => {
           // Prepare the microphone before ReadyScreen starts any countdown audio.

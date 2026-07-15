@@ -33,8 +33,16 @@ type WhatzItVideoExportNativeModule = {
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
 
+export function getIosVideoExportVersion() {
+  return nativeModule.overlayExportVersion ?? 0;
+}
+
 export function supportsFixedIosOverlayExport() {
-  return nativeModule.overlayExportVersion === 2;
+  return getIosVideoExportVersion() >= 2;
+}
+
+export function supportsReliableIosAudioExport() {
+  return getIosVideoExportVersion() >= 3;
 }
 
 export function exportOverlayVideo(

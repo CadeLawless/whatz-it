@@ -44,6 +44,7 @@ export default function DeckLibraryScreen() {
   const [videosExpanded, setVideosExpanded] = useState(true);
   const [videos, setVideos] = useState<RoundVideo[]>([]);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
+  const [exportingVideoId, setExportingVideoId] = useState<string | null>(null);
   const [videoPendingDelete, setVideoPendingDelete] = useState<RoundVideo | null>(null);
   const [isDeletingVideo, setIsDeletingVideo] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -71,7 +72,7 @@ export default function DeckLibraryScreen() {
         if (!active) return;
         setVideos(storedVideos);
         storedVideos.forEach((video) => {
-          if (isRoundVideoReadyToSave(video)) return;
+          if (isRoundVideoReadyToSave(video) || video.exportStatus === 'failed') return;
           void prepareRoundVideoExport(video).then((prepared) => {
             if (!active) return;
             setVideos((current) =>
@@ -107,6 +108,30 @@ export default function DeckLibraryScreen() {
 
   const handlePortraitSave = async (video: RoundVideo) => {
     setSaveNotice(await handleSave(video));
+  };
+
+  const handleRetryExport = async (video: RoundVideo) => {
+    if (exportingVideoId) return;
+    setExportingVideoId(video.id);
+    setVideos((current) =>
+      current.map((item) =>
+        item.id === video.id ? { ...item, exportStatus: 'preparing' } : item,
+      ),
+    );
+    try {
+      const prepared = await prepareRoundVideoExport(video);
+      setVideos((current) =>
+        current.map((item) => (item.id === prepared.id ? prepared : item)),
+      );
+      if (prepared.exportStatus === 'failed') {
+        setSaveNotice({
+          title: 'Export failed',
+          message: 'The video and its audio are safe in WHATZ IT. Please send the [RoundVideo] terminal logs.',
+        });
+      }
+    } finally {
+      setExportingVideoId(null);
+    }
   };
 
   const handleDelete = (video: RoundVideo) => {
@@ -202,6 +227,9 @@ export default function DeckLibraryScreen() {
                 <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
                   {videos.map((video) => {
                     const deck = getDeckById(video.deckId);
+                    const videoReady = isRoundVideoReadyToSave(video);
+                    const exportFailed = video.exportStatus === 'failed';
+                    const exportPreparing = !videoReady && !exportFailed;
                     return (
                       <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
                       <RoundVideoPlayer
@@ -227,26 +255,45 @@ export default function DeckLibraryScreen() {
                       <View style={styles.videoActions}>
                         <Pressable
                           accessibilityLabel={
-                            isRoundVideoReadyToSave(video) ? 'Save video' : 'Video is exporting'
+                            exportFailed
+                              ? 'Retry video export'
+                              : videoReady
+                                ? 'Save video'
+                                : 'Video is exporting'
                           }
                           accessibilityRole="button"
                           accessibilityState={{
-                            busy: !isRoundVideoReadyToSave(video) || savingVideoId === video.id,
-                            disabled: savingVideoId !== null || !isRoundVideoReadyToSave(video),
+                            busy: exportPreparing || savingVideoId === video.id,
+                            disabled:
+                              savingVideoId !== null ||
+                              exportingVideoId !== null ||
+                              exportPreparing,
                           }}
-                          disabled={savingVideoId !== null || !isRoundVideoReadyToSave(video)}
-                          onPress={() => void handlePortraitSave(video)}
+                          disabled={
+                            savingVideoId !== null ||
+                            exportingVideoId !== null ||
+                            exportPreparing
+                          }
+                          onPress={() =>
+                            void (exportFailed
+                              ? handleRetryExport(video)
+                              : handlePortraitSave(video))
+                          }
                           style={({ pressed }) => [
                             styles.saveButton,
-                            !isRoundVideoReadyToSave(video) && styles.disabled,
-                            pressed && isRoundVideoReadyToSave(video) && styles.pressed,
+                            exportPreparing && styles.disabled,
+                            pressed && (videoReady || exportFailed) && styles.pressed,
                           ]}
                         >
-                          {!isRoundVideoReadyToSave(video) ? (
+                          {exportPreparing ? (
                             <ActivityIndicator color="#FFFFFF" size="small" />
                           ) : (
                             <Text numberOfLines={1} style={styles.saveButtonText}>
-                              {savingVideoId === video.id ? 'SAVING…' : 'SAVE'}
+                              {exportFailed
+                                ? 'RETRY'
+                                : savingVideoId === video.id
+                                  ? 'SAVING…'
+                                  : 'SAVE'}
                             </Text>
                           )}
                         </Pressable>
