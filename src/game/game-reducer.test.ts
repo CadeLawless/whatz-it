@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { initialRoundState, roundReducer } from './game-reducer';
-import { clampRoundDuration, formatRoundClock } from './round-duration';
+import {
+  clampRoundDuration,
+  formatRoundClock,
+  parseStoredRoundDuration,
+} from './round-duration';
 import { shuffle } from './shuffle';
 import {
   createTiltDetectorState,
@@ -106,6 +110,10 @@ describe('shuffle', () => {
 });
 
 describe('round duration', () => {
+  it('defaults to one minute when no preference has been saved', () => {
+    assert.equal(parseStoredRoundDuration(null), 60);
+  });
+
   it('never allows a duration above five minutes', () => {
     assert.equal(clampRoundDuration(301), 300);
     assert.equal(clampRoundDuration(9_999), 300);

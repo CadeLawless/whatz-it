@@ -139,7 +139,7 @@ export default function DeckLibraryScreen() {
           <View style={styles.videoSection}>
             <SectionHeading
               expanded={videosExpanded}
-              label="VIDEOS"
+              label="MY VIDEOS"
               onPress={() => setVideosExpanded((expanded) => !expanded)}
             />
 
