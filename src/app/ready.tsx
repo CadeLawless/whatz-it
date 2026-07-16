@@ -18,7 +18,7 @@ import { useRoundSounds } from '@/video/round-sound-provider';
 import type { RoundSoundId } from '@/video/round-sounds';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
-const GET_READY_SOUND_MS = 1898;
+const GET_READY_SOUND_MS = 2410;
 const READY_TRANSITION_MS = 450;
 
 export default function ReadyScreen() {
