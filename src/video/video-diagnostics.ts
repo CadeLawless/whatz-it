@@ -1,12 +1,7 @@
-let diagnosticSequence = 0;
-
 export function logRoundDiagnostic(stage: string, details: Record<string, unknown> = {}) {
-  if (!__DEV__) return;
-  diagnosticSequence += 1;
-  console.info(
-    `[RoundDebug #${diagnosticSequence} ${new Date().toISOString()}] ${stage}`,
-    details,
-  );
+  // Detailed round diagnostics are intentionally disabled for now.
+  void stage;
+  void details;
 }
 
 export function warnRoundDiagnostic(
@@ -14,12 +9,10 @@ export function warnRoundDiagnostic(
   error: unknown,
   details: Record<string, unknown> = {},
 ) {
-  if (!__DEV__) return;
-  diagnosticSequence += 1;
-  console.warn(`[RoundDebug #${diagnosticSequence} ${new Date().toISOString()}] ${stage}`, {
-    ...details,
-    error: error instanceof Error ? error.message : String(error),
-  });
+  // Detailed round diagnostics are intentionally disabled for now.
+  void stage;
+  void error;
+  void details;
 }
 
 export function logVideoDiagnostic(stage: string, details: Record<string, unknown> = {}) {

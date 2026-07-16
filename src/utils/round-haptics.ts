@@ -27,7 +27,9 @@ export async function triggerRoundHaptic(
   const startedAt = Date.now();
   const useIosCameraNativeHaptics = Platform.OS === 'ios' && cameraActive;
   const requestedPattern = describeRequestedPattern(cue, countdownValue);
-  const feedbackPath = useIosCameraNativeHaptics ? 'ios-native-core-haptics' : 'expo-haptics';
+  const feedbackPath = useIosCameraNativeHaptics
+    ? 'ios-native-feedback-generator'
+    : 'expo-haptics';
 
   logRoundDiagnostic('round haptic cue requested', {
     cameraActive,
@@ -42,16 +44,17 @@ export async function triggerRoundHaptic(
     if (useIosCameraNativeHaptics) {
       try {
         const nativePath = await playRoundHaptic(cue, countdownValue ?? null);
-        logRoundDiagnostic('iOS camera-safe Core Haptics pattern started', {
+        logRoundDiagnostic('iOS camera-safe native feedback started', {
           cue,
           nativePath,
           requestedPattern,
         });
       } catch (nativeError) {
-        warnRoundDiagnostic('iOS Core Haptics failed; using system vibration fallback', nativeError, {
-          cue,
-          requestedPattern,
-        });
+        warnRoundDiagnostic(
+          'iOS native feedback failed; using system vibration fallback',
+          nativeError,
+          { cue, requestedPattern },
+        );
         dispatchIosCameraFallback(cue, countdownValue);
         logRoundDiagnostic('iOS system vibration fallback dispatched', {
           actualPattern: describeIosFallback(cue, countdownValue),
