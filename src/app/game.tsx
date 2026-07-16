@@ -162,6 +162,12 @@ export default function GameScreen() {
       recordSoundCue('round-end');
       void playSound('round-end');
     }
+  }, [isRecording, playSound, recordSoundCue, round.status]);
+
+  // Recording shutdown changes isRecording. Keep navigation in its own effect so
+  // that state update cannot clean up and strand this transition on Time's Up.
+  useEffect(() => {
+    if (round.status !== 'finished') return;
     if (resultsTransitionStarted.current) return;
     resultsTransitionStarted.current = true;
     let active = true;
@@ -189,7 +195,7 @@ export default function GameScreen() {
     return () => {
       active = false;
     };
-  }, [beginTransition, isRecording, playSound, recordSoundCue, round.status, router]);
+  }, [beginTransition, round.status, router]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {

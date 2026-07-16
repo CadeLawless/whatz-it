@@ -50,7 +50,7 @@ for (const [sound, source] of Object.entries(ROUND_SOUND_SOURCES)) {
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
 const DEFAULT_ROUND_SOUND_VOLUME = 1;
 const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
-  correct: 0.65,
+  correct: 0.4,
 };
 
 export function getRoundSoundSource(sound: RoundSoundId) {
