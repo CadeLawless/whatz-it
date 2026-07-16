@@ -87,13 +87,13 @@ export async function triggerRoundHaptic(
 async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3) {
   switch (cue) {
     case 'card-flip':
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       return;
     case 'correct':
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      dispatchSystemVibrationSeries(1);
       return;
     case 'pass':
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       return;
     case 'get-ready':
       await performImpactSeries(Haptics.ImpactFeedbackStyle.Medium, 2);
@@ -108,9 +108,7 @@ async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 |
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
       return;
     case 'times-up':
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      await delay(QUICK_IMPACT_GAP_MS);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      dispatchSystemVibrationSeries(3);
   }
 }
 
@@ -125,11 +123,13 @@ function dispatchIosCameraFallback(cue: RoundHapticCue, countdownValue?: 1 | 2 |
   Vibration.cancel();
   switch (cue) {
     case 'correct':
+      dispatchSystemVibrationSeries(1);
+      return;
     case 'get-ready':
       Vibration.vibrate([0, 500]);
       return;
     case 'times-up':
-      Vibration.vibrate([0, 500, 500]);
+      dispatchSystemVibrationSeries(3);
       return;
     case 'initial-countdown':
       if (countdownValue === 2) {
@@ -148,11 +148,11 @@ function dispatchIosCameraFallback(cue: RoundHapticCue, countdownValue?: 1 | 2 |
 function describeRequestedPattern(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3) {
   switch (cue) {
     case 'card-flip':
-      return 'Light impact';
+      return 'Medium impact';
     case 'correct':
-      return 'Success notification';
+      return 'one long system vibration at system-controlled strength';
     case 'pass':
-      return 'Soft impact';
+      return 'Medium impact';
     case 'get-ready':
       return 'two quick Medium impacts';
     case 'initial-countdown':
@@ -160,17 +160,40 @@ function describeRequestedPattern(cue: RoundHapticCue, countdownValue?: 1 | 2 | 
     case 'final-countdown':
       return 'Rigid impact';
     case 'times-up':
-      return 'Heavy impact followed by Success notification';
+      return 'three long system vibrations at system-controlled strength';
   }
 }
 
 function describeIosFallback(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3) {
-  if (cue === 'correct' || cue === 'get-ready') return 'two fixed system-vibration pulses';
+  if (cue === 'correct') return 'one fixed system-vibration pulse';
+  if (cue === 'get-ready') return 'two fixed system-vibration pulses';
   if (cue === 'times-up') return 'three fixed system-vibration pulses';
   if (cue === 'initial-countdown') {
     return `${countdownValue ? 4 - countdownValue : 1} fixed system-vibration pulse(s)`;
   }
   return 'one fixed system-vibration pulse';
+}
+
+function dispatchSystemVibrationSeries(count: number) {
+  Vibration.cancel();
+  if (count <= 1) {
+    if (Platform.OS === 'ios') {
+      Vibration.vibrate();
+    } else {
+      Vibration.vibrate(450);
+    }
+    return;
+  }
+  if (Platform.OS === 'ios') {
+    Vibration.vibrate(Array.from({ length: count }, (_, index) => (index === 0 ? 0 : 520)));
+    return;
+  }
+  const pattern = [0];
+  for (let index = 0; index < count; index += 1) {
+    pattern.push(450);
+    if (index < count - 1) pattern.push(150);
+  }
+  Vibration.vibrate(pattern);
 }
 
 function delay(milliseconds: number) {

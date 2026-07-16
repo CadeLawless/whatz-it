@@ -219,11 +219,11 @@ public final class WhatzItVideoExportModule: Module {
   private static func scheduleRoundHaptic(cue: String, countdownValue: Int?) -> Bool {
     switch cue {
     case "card-flip":
-      scheduleImpact(.light)
+      scheduleImpact(.medium)
     case "correct":
-      scheduleNotification(.success)
+      scheduleSystemVibration()
     case "pass":
-      scheduleImpact(.soft)
+      scheduleImpact(.medium)
     case "get-ready":
       scheduleImpact(.medium)
       scheduleImpact(.medium, after: 0.08)
@@ -235,8 +235,9 @@ public final class WhatzItVideoExportModule: Module {
     case "final-countdown":
       scheduleImpact(.rigid)
     case "times-up":
-      scheduleImpact(.heavy)
-      scheduleNotification(.success, after: 0.1)
+      scheduleSystemVibration()
+      scheduleSystemVibration(after: 0.52)
+      scheduleSystemVibration(after: 1.04)
     default:
       return false
     }
@@ -254,14 +255,9 @@ public final class WhatzItVideoExportModule: Module {
     }
   }
 
-  private static func scheduleNotification(
-    _ type: UINotificationFeedbackGenerator.FeedbackType,
-    after delay: TimeInterval = 0
-  ) {
+  private static func scheduleSystemVibration(after delay: TimeInterval = 0) {
     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-      let generator = UINotificationFeedbackGenerator()
-      generator.prepare()
-      generator.notificationOccurred(type)
+      AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
     }
   }
 
