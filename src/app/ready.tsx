@@ -1,7 +1,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
@@ -22,20 +22,24 @@ const GET_READY_SOUND_MS = 2410;
 const READY_TRANSITION_MS = 450;
 
 export default function ReadyScreen() {
-  const { height } = useLandscapeDimensions();
+  const { height, width } = useLandscapeDimensions();
   const router = useRouter();
   const {
     cancelRecording,
     isRecording,
+    pauseRecording,
     prepareRecording,
     recordOverlayEvent,
     recordSoundCue,
     round,
     resetRound,
+    resumeRecording,
     startRecording,
   } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
   const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
+  const [introEndsAt, setIntroEndsAt] = useState<number | null>(null);
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const [manualReady, setManualReady] = useState(false);
   const [orientationSettled, setOrientationSettled] = useState(false);
   const [introComplete, setIntroComplete] = useState(false);
@@ -48,6 +52,8 @@ export default function ReadyScreen() {
   const introStarted = useRef(false);
   const soundPreparationStarted = useRef(false);
   const previousGateSignature = useRef('');
+  const pausedIntroRemaining = useRef<number | null>(null);
+  const pausedCountdownRemaining = useRef<number | null>(null);
   const screenRef = useRef<View>(null);
   const { beginTransition, revealTransition } = useScreenshotTransition();
   const {
@@ -97,10 +103,74 @@ export default function ReadyScreen() {
   }, [countdownEndsAt, playSound, recordSoundCue, router]);
   const count = useRoundTimer({
     endsAt: countdownEndsAt,
-    active: introComplete && !isLeaving,
+    active: appActive && introComplete && !isLeaving,
     onExpire: handleCountdownExpire,
     onSecond: handleCountdownSecond,
   });
+
+  const beginCountdown = useCallback(() => {
+    const endsAt = Date.now() + 3000;
+    logRoundDiagnostic('get-ready completed; starting absolute 3-2-1 countdown', {
+      endsAt,
+      now: Date.now(),
+    });
+    setIntroEndsAt(null);
+    setCountdownEndsAt(endsAt);
+    setIntroComplete(true);
+  }, []);
+
+  useEffect(() => {
+    if (!appActive || introEndsAt === null || introComplete || isLeaving) return;
+    const remaining = Math.max(0, introEndsAt - Date.now());
+    const timeout = setTimeout(beginCountdown, remaining);
+    return () => clearTimeout(timeout);
+  }, [appActive, beginCountdown, introComplete, introEndsAt, isLeaving]);
+
+  useEffect(() => {
+    let previousState = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const leftForeground = previousState === 'active' && nextState !== 'active';
+      const enteredForeground = previousState !== 'active' && nextState === 'active';
+      previousState = nextState;
+      if (leftForeground) {
+        setAppActive(false);
+        if (introEndsAt !== null) {
+          pausedIntroRemaining.current = Math.max(0, introEndsAt - Date.now());
+          setIntroEndsAt(null);
+        }
+        if (countdownEndsAt !== null) {
+          pausedCountdownRemaining.current = Math.max(0, countdownEndsAt - Date.now());
+          setCountdownEndsAt(null);
+        }
+        void pauseRecording();
+      } else if (enteredForeground) {
+        const now = Date.now();
+        setAppActive(true);
+        if (pausedIntroRemaining.current !== null) {
+          setIntroEndsAt(now + pausedIntroRemaining.current);
+          pausedIntroRemaining.current = null;
+        }
+        if (pausedCountdownRemaining.current !== null) {
+          setCountdownEndsAt(now + pausedCountdownRemaining.current);
+          pausedCountdownRemaining.current = null;
+        }
+        if (introStarted.current) {
+          void resumeRecording();
+        } else if (recordingPreparation === 'ready') {
+          setRecordingPreparation('preparing');
+          void prepareRecording().then(setRecordingPreparation);
+        }
+      }
+    });
+    return () => subscription.remove();
+  }, [
+    countdownEndsAt,
+    introEndsAt,
+    pauseRecording,
+    prepareRecording,
+    recordingPreparation,
+    resumeRecording,
+  ]);
 
   useEffect(() => {
     const details = {
@@ -157,12 +227,13 @@ export default function ReadyScreen() {
   }, [prepareRecording]);
 
   useEffect(() => {
+    if (width <= height) return;
     const timeout = setTimeout(() => {
       logRoundDiagnostic('ready screen orientation transition settled');
       setOrientationSettled(true);
     }, READY_TRANSITION_MS);
     return () => clearTimeout(timeout);
-  }, []);
+  }, [height, width]);
 
   useEffect(() => {
     if (orientationSettled) revealTransition('ready');
@@ -174,6 +245,7 @@ export default function ReadyScreen() {
       !orientationSettled ||
       !recordingPrepared ||
       !soundsPrepared ||
+      !appActive ||
       isLeaving ||
       introStarted.current
     ) return;
@@ -182,7 +254,6 @@ export default function ReadyScreen() {
       recordingPreparation,
     });
     let active = true;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     const startIntro = async () => {
       const started = await startRecording();
       logRoundDiagnostic('ready intro recording start resolved', {
@@ -210,23 +281,15 @@ export default function ReadyScreen() {
         setSoundPreparationFailed(true);
         return;
       }
-      timeout = setTimeout(() => {
-        const endsAt = Date.now() + 3000;
-        logRoundDiagnostic('get-ready completed; starting absolute 3-2-1 countdown', {
-          endsAt,
-          now: Date.now(),
-        });
-        setCountdownEndsAt(endsAt);
-        setIntroComplete(true);
-      }, GET_READY_SOUND_MS);
+      setIntroEndsAt(Date.now() + GET_READY_SOUND_MS);
     };
     void startIntro();
     return () => {
       active = false;
-      if (timeout) clearTimeout(timeout);
     };
   }, [
     isLeaving,
+    appActive,
     orientationSettled,
     playSound,
     positionReady,
@@ -299,7 +362,12 @@ export default function ReadyScreen() {
         quality: 0.95,
         result: 'tmpfile',
       });
-      await beginTransition({ destination: 'deck', direction: 'right', uri });
+      await beginTransition({
+        destination: 'deck',
+        direction: 'right',
+        orientationChange: true,
+        uri,
+      });
     } catch {
       // If capture is unavailable, navigation still completes normally.
     }

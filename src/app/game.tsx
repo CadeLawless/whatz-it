@@ -35,6 +35,9 @@ export default function GameScreen() {
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const roundStarted = useRef(false);
   const finishSoundPlayed = useRef(false);
+  const timerPausedForBackground = useRef(false);
+  const recordingPausedForBackground = useRef(false);
+  const [foregroundResumeGeneration, setForegroundResumeGeneration] = useState(0);
   const screenRef = useRef<View>(null);
   const resultsTransitionStarted = useRef(false);
   const { isReady: soundsReady, play: playSound } = useRoundSounds();
@@ -46,8 +49,12 @@ export default function GameScreen() {
     advanceCard,
     finishRound,
     isRecording,
+    pauseRecording,
+    pauseRound,
     recordOverlayEvent,
     recordSoundCue,
+    resumeRecording,
+    resumeRound,
     startRound,
     stopRecording,
   } = useRound();
@@ -177,7 +184,12 @@ export default function GameScreen() {
           }),
           RESULTS_SCREENSHOT_TIMEOUT_MS,
         );
-        await beginTransition({ destination: 'results', direction: 'left', uri });
+        await beginTransition({
+          destination: 'results',
+          direction: 'left',
+          orientationChange: true,
+          uri,
+        });
       } catch {
         // If capture is unavailable, navigation still completes normally.
       }
@@ -190,13 +202,38 @@ export default function GameScreen() {
   }, [beginTransition, round.status, router]);
 
   useEffect(() => {
+    let previousState = AppState.currentState;
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState !== 'active' && (round.status === 'playing' || round.status === 'feedback')) {
-        finishRound();
+      const leftForeground = previousState === 'active' && nextState !== 'active';
+      const enteredForeground = previousState !== 'active' && nextState === 'active';
+      previousState = nextState;
+      if (leftForeground && round.status !== 'ready') {
+        if (round.status === 'playing' || round.status === 'feedback') {
+          timerPausedForBackground.current = true;
+          pauseRound();
+        }
+        recordingPausedForBackground.current = true;
+        void pauseRecording();
+      } else if (enteredForeground) {
+        if (timerPausedForBackground.current) {
+          timerPausedForBackground.current = false;
+          resumeRound();
+        }
+        if (recordingPausedForBackground.current) {
+          recordingPausedForBackground.current = false;
+          setForegroundResumeGeneration((generation) => generation + 1);
+        }
       }
     });
     return () => subscription.remove();
-  }, [finishRound, round.status]);
+  }, [pauseRecording, pauseRound, resumeRound, round.status]);
+
+  useEffect(() => {
+    if (foregroundResumeGeneration === 0) return;
+    // This runs after the resume reducer has committed, so the new camera
+    // segment starts against the exact card and clock now on screen.
+    void resumeRecording();
+  }, [foregroundResumeGeneration, resumeRecording]);
 
   if (!deck || !currentCard) return null;
 

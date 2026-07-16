@@ -12,6 +12,11 @@ export type RoundAudioCue = {
   uri: string;
 };
 
+export type RoundVideoSegment = {
+  videoUri: string;
+  audioUri: string | null;
+};
+
 type WhatzItVideoExportNativeModule = {
   overlayExportVersion?: number;
   exportOverlayVideo(
@@ -33,6 +38,7 @@ type WhatzItVideoExportNativeModule = {
     cues: RoundAudioCue[],
     cueVolume: number,
   ): Promise<string>;
+  stitchRoundVideoSegments?(segments: RoundVideoSegment[]): Promise<string>;
   prepareRecordingAudio(): Promise<void>;
   reassertRecordingHaptics(): Promise<boolean>;
   playRoundHaptic(cue: string, countdownValue: number | null): Promise<string>;
@@ -43,6 +49,8 @@ type WhatzItVideoExportNativeModule = {
   prepareSystemSound(inputUri: string): Promise<void>;
   playSystemSound(inputUri: string): Promise<void>;
   stopSystemSound(inputUri: string): Promise<void>;
+  beginOrientationSnapshotTransition?(snapshotUri: string | null): Promise<boolean>;
+  finishOrientationSnapshotTransition?(direction: 'left' | 'right'): Promise<boolean>;
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
@@ -69,6 +77,18 @@ export function supportsSilentAwareSystemSounds() {
 
 export function supportsSilentSwitchMonitoring() {
   return getIosVideoExportVersion() >= 14;
+}
+
+export function supportsOrientationSnapshotTransitions() {
+  return getIosVideoExportVersion() >= 15 && !!nativeModule.beginOrientationSnapshotTransition;
+}
+
+export function beginOrientationSnapshotTransition(snapshotUri: string | null) {
+  return nativeModule.beginOrientationSnapshotTransition?.(snapshotUri) ?? Promise.resolve(false);
+}
+
+export function finishOrientationSnapshotTransition(direction: 'left' | 'right') {
+  return nativeModule.finishOrientationSnapshotTransition?.(direction) ?? Promise.resolve(false);
 }
 
 export function exportOverlayVideo(
@@ -103,6 +123,13 @@ export function mixRoundAudio(
     cues,
     cueVolume,
   );
+}
+
+export function stitchRoundVideoSegments(segments: RoundVideoSegment[]) {
+  if (!nativeModule.stitchRoundVideoSegments) {
+    return Promise.reject(new Error('This app build cannot stitch interrupted round videos.'));
+  }
+  return nativeModule.stitchRoundVideoSegments(segments);
 }
 
 export function prepareRecordingAudio() {

@@ -21,6 +21,7 @@ import androidx.media3.effect.CanvasOverlay
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
@@ -45,12 +46,60 @@ class VideoOverlayEvent(
   @Field val timerEndsAtMs: Double? = null
 ) : Record
 
+@OptimizedRecord
+class RoundVideoSegment(
+  @Field val videoUri: String,
+  @Field val audioUri: String? = null
+) : Record
+
 @OptIn(UnstableApi::class)
 class WhatzItVideoExportModule : Module() {
   private val activeExports = ConcurrentHashMap<String, Transformer>()
 
   override fun definition() = ModuleDefinition {
     Name("WhatzItVideoExport")
+
+    AsyncFunction("beginOrientationSnapshotTransition") { _: String? -> false }
+
+    AsyncFunction("finishOrientationSnapshotTransition") { _: String -> false }
+
+    AsyncFunction("stitchRoundVideoSegments") {
+        segments: List<RoundVideoSegment>,
+        promise: Promise ->
+      val context = appContext.reactContext?.applicationContext
+      if (context == null || segments.isEmpty()) {
+        promise.reject("ERR_VIDEO_STITCH", "No application context or video segments are available.", null)
+        return@AsyncFunction
+      }
+      Handler(Looper.getMainLooper()).post {
+        val exportId = UUID.randomUUID().toString()
+        val outputFile = File(context.cacheDir, "whatz-it-stitched-$exportId.mp4")
+        val items = segments.map {
+          EditedMediaItem.Builder(MediaItem.fromUri(Uri.parse(it.videoUri))).build()
+        }
+        val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
+        val composition = Composition.Builder(listOf(sequence)).build()
+        val listener = object : Transformer.Listener {
+          override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+            activeExports.remove(exportId)
+            promise.resolve(Uri.fromFile(outputFile).toString())
+          }
+
+          override fun onError(
+            composition: Composition,
+            exportResult: ExportResult,
+            exportException: ExportException
+          ) {
+            activeExports.remove(exportId)
+            outputFile.delete()
+            promise.reject("ERR_VIDEO_STITCH", exportException.localizedMessage, exportException)
+          }
+        }
+        val transformer = Transformer.Builder(context).addListener(listener).build()
+        activeExports[exportId] = transformer
+        transformer.start(composition, outputFile.absolutePath)
+      }
+    }
 
     AsyncFunction("prepareRecordingAudio") {
       // VisionCamera configures Android's recording audio source directly.

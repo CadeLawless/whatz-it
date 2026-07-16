@@ -85,7 +85,7 @@ export default function RootLayout() {
             headerShown: false,
             gestureEnabled: false,
             animation: 'none',
-            orientation: 'portrait',
+            orientation: 'landscape_right',
           }}
         />
         <Stack.Screen
@@ -94,7 +94,7 @@ export default function RootLayout() {
             headerShown: false,
             gestureEnabled: false,
             animation: 'none',
-            orientation: 'portrait',
+            orientation: 'landscape_right',
           }}
         />
         <Stack.Screen

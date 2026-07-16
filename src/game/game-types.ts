@@ -1,4 +1,5 @@
-export type RoundStatus = 'idle' | 'ready' | 'playing' | 'feedback' | 'finished';
+export type ActiveRoundStatus = 'playing' | 'feedback';
+export type RoundStatus = 'idle' | 'ready' | ActiveRoundStatus | 'paused' | 'finished';
 
 export type CardOutcome = 'correct' | 'passed';
 export type CardResultOutcome = CardOutcome | 'neutral';
@@ -18,6 +19,8 @@ export type RoundState = {
   results: CardResult[];
   startedAt: number | null;
   endsAt: number | null;
+  pausedStatus: ActiveRoundStatus | null;
+  remainingMs: number | null;
   latestOutcome: CardOutcome | null;
 };
 
@@ -26,5 +29,7 @@ export type RoundAction =
   | { type: 'START'; now: number }
   | { type: 'ANSWER'; outcome: CardOutcome; now: number }
   | { type: 'ADVANCE' }
+  | { type: 'PAUSE'; now: number }
+  | { type: 'RESUME'; now: number }
   | { type: 'FINISH'; now: number }
   | { type: 'RESET' };

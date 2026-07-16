@@ -17,6 +17,11 @@ struct RoundAudioCueRecord: Record {
   @Field var uri: String = ""
 }
 
+struct RoundVideoSegmentRecord: Record {
+  @Field var videoUri: String = ""
+  @Field var audioUri: String? = nil
+}
+
 private struct OverlayTimerSegment {
   let start: Double
   let text: String
@@ -79,6 +84,12 @@ public final class WhatzItVideoExportModule: Module {
   private var systemSoundPools = [String: SystemSoundPool]()
   private let silentSwitchLock = NSLock()
   private var silentSwitchProbeId: SystemSoundID?
+  private var orientationOverlay: UIView?
+  private var orientationOverlayImageView: UIImageView?
+  private var orientationOverlaySourceSize: CGSize = .zero
+  private var orientationTransitionGeneration = UUID()
+  private var orientationTransitionReadyToReveal = false
+  private var pendingOrientationFinish: (direction: String, promise: Promise)?
 
   deinit {
     for pool in self.systemSoundPools.values {
@@ -95,8 +106,19 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      14
+      15
     }
+
+    AsyncFunction("beginOrientationSnapshotTransition") { (snapshotUrl: URL?) -> Bool in
+      self.beginOrientationSnapshotTransition(snapshotUrl: snapshotUrl)
+    }
+    .runOnQueue(.main)
+
+    AsyncFunction("finishOrientationSnapshotTransition") {
+      (direction: String, promise: Promise) in
+      self.finishOrientationSnapshotTransition(direction: direction, promise: promise)
+    }
+    .runOnQueue(.main)
 
     AsyncFunction("exportOverlayVideo") {
       (inputUrl: URL, audioUrl: URL?, events: [VideoOverlayEventRecord]) async throws -> String in
@@ -150,6 +172,11 @@ public final class WhatzItVideoExportModule: Module {
         try? FileManager.default.removeItem(at: outputUrl)
         throw error
       }
+    }
+
+    AsyncFunction("stitchRoundVideoSegments") {
+      (segments: [RoundVideoSegmentRecord]) async throws -> String in
+      try await Self.stitchRoundVideoSegments(segments)
     }
 
     AsyncFunction("prepareRecordingAudio") { () throws in
@@ -253,6 +280,173 @@ public final class WhatzItVideoExportModule: Module {
     AsyncFunction("stopSystemSound") { (inputUrl: URL) in
       self.disposeSystemSoundPool(inputUrl)
     }
+  }
+
+  private func beginOrientationSnapshotTransition(snapshotUrl: URL?) -> Bool {
+    guard let window = Self.activeWindow() else { return false }
+    self.removeOrientationOverlay()
+
+    let image: UIImage?
+    if let snapshotUrl {
+      image = UIImage(contentsOfFile: snapshotUrl.path)
+    } else {
+      let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+      image = renderer.image { _ in
+        window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+      }
+    }
+    guard let image else { return false }
+
+    let overlay = UIView(frame: window.bounds)
+    overlay.backgroundColor = .black
+    overlay.clipsToBounds = false
+    overlay.isUserInteractionEnabled = true
+    overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+    let imageView = UIImageView(image: image)
+    imageView.frame = overlay.bounds
+    imageView.contentMode = .scaleAspectFill
+    imageView.clipsToBounds = false
+    imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    overlay.addSubview(imageView)
+    window.addSubview(overlay)
+
+    self.orientationOverlay = overlay
+    self.orientationOverlayImageView = imageView
+    self.orientationOverlaySourceSize = overlay.bounds.size
+    self.orientationTransitionReadyToReveal = false
+    self.orientationTransitionGeneration = UUID()
+    self.watchForOrientationTransition(
+      generation: self.orientationTransitionGeneration,
+      window: window,
+      attemptsRemaining: 45
+    )
+    return true
+  }
+
+  private func watchForOrientationTransition(
+    generation: UUID,
+    window: UIWindow,
+    attemptsRemaining: Int
+  ) {
+    guard generation == self.orientationTransitionGeneration,
+      self.orientationOverlay != nil else { return }
+    guard attemptsRemaining > 0 else {
+      self.completeOrientationTransitionDetection(generation: generation)
+      return
+    }
+
+    let rootController = window.rootViewController
+    let topController = Self.topViewController(from: rootController)
+    if let coordinator = topController?.transitionCoordinator ?? rootController?.transitionCoordinator {
+      let sourceSize = self.orientationOverlaySourceSize
+      coordinator.animate(alongsideTransition: { [weak self, weak window] context in
+        guard let self, let window,
+          generation == self.orientationTransitionGeneration,
+          let overlay = self.orientationOverlay,
+          let imageView = self.orientationOverlayImageView else { return }
+        overlay.frame = window.bounds
+        imageView.bounds = CGRect(origin: .zero, size: sourceSize)
+        imageView.center = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.midY)
+        imageView.transform = context.targetTransform.inverted()
+      }) { [weak self, weak window] context in
+        guard let self, let window,
+          generation == self.orientationTransitionGeneration,
+          let overlay = self.orientationOverlay,
+          let imageView = self.orientationOverlayImageView else { return }
+        overlay.frame = window.bounds
+        imageView.bounds = CGRect(origin: .zero, size: sourceSize)
+        imageView.center = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.midY)
+        imageView.transform = context.targetTransform.inverted()
+        self.completeOrientationTransitionDetection(generation: generation)
+      }
+      return
+    }
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self, weak window] in
+      guard let self, let window else { return }
+      self.watchForOrientationTransition(
+        generation: generation,
+        window: window,
+        attemptsRemaining: attemptsRemaining - 1
+      )
+    }
+  }
+
+  private func finishOrientationSnapshotTransition(direction: String, promise: Promise) {
+    guard self.orientationOverlay != nil else {
+      promise.resolve(false)
+      return
+    }
+    if !self.orientationTransitionReadyToReveal {
+      self.pendingOrientationFinish = (direction, promise)
+      return
+    }
+    self.animateOrientationOverlayAway(direction: direction, promise: promise)
+  }
+
+  private func completeOrientationTransitionDetection(generation: UUID) {
+    guard generation == self.orientationTransitionGeneration else { return }
+    self.orientationTransitionReadyToReveal = true
+    guard let pending = self.pendingOrientationFinish else { return }
+    self.pendingOrientationFinish = nil
+    self.animateOrientationOverlayAway(
+      direction: pending.direction,
+      promise: pending.promise
+    )
+  }
+
+  private func animateOrientationOverlayAway(direction: String, promise: Promise) {
+    guard let overlay = self.orientationOverlay else {
+      promise.resolve(false)
+      return
+    }
+    self.orientationTransitionGeneration = UUID()
+    let distance = max(overlay.bounds.width, overlay.bounds.height) * 1.15
+    let translation = direction == "right" ? distance : -distance
+    UIView.animate(
+      withDuration: 0.38,
+      delay: 0,
+      options: [.curveEaseOut, .beginFromCurrentState],
+      animations: {
+        overlay.transform = CGAffineTransform(translationX: translation, y: 0)
+      },
+      completion: { [weak self] _ in
+        self?.removeOrientationOverlay()
+        promise.resolve(true)
+      }
+    )
+  }
+
+  private func removeOrientationOverlay() {
+    self.pendingOrientationFinish?.promise.resolve(false)
+    self.pendingOrientationFinish = nil
+    self.orientationOverlay?.removeFromSuperview()
+    self.orientationOverlay = nil
+    self.orientationOverlayImageView = nil
+    self.orientationOverlaySourceSize = .zero
+    self.orientationTransitionReadyToReveal = false
+  }
+
+  private static func activeWindow() -> UIWindow? {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    return scenes
+      .flatMap(\.windows)
+      .first(where: { $0.isKeyWindow })
+      ?? scenes.flatMap(\.windows).first(where: { !$0.isHidden })
+  }
+
+  private static func topViewController(from root: UIViewController?) -> UIViewController? {
+    if let presented = root?.presentedViewController {
+      return topViewController(from: presented)
+    }
+    if let navigation = root as? UINavigationController {
+      return topViewController(from: navigation.visibleViewController)
+    }
+    if let tab = root as? UITabBarController {
+      return topViewController(from: tab.selectedViewController)
+    }
+    return root
   }
 
   private func prepareSystemSound(_ inputUrl: URL) throws {
@@ -637,6 +831,92 @@ public final class WhatzItVideoExportModule: Module {
       duration: CMTimeMinimum(videoDuration, composition.duration)
     )
     try await run(exporter)
+  }
+
+  private static func stitchRoundVideoSegments(
+    _ segments: [RoundVideoSegmentRecord]
+  ) async throws -> String {
+    guard segments.count > 1 else {
+      guard let first = segments.first else {
+        throw VideoExportError.missingVideoTrack
+      }
+      return first.videoUri
+    }
+
+    let composition = AVMutableComposition()
+    guard let outputVideoTrack = composition.addMutableTrack(
+      withMediaType: .video,
+      preferredTrackID: kCMPersistentTrackID_Invalid
+    ) else {
+      throw VideoExportError.missingVideoTrack
+    }
+    var outputAudioTrack: AVMutableCompositionTrack?
+    var cursor = CMTime.zero
+    var firstTransform: CGAffineTransform?
+
+    for segment in segments {
+      guard let videoUrl = URL(string: segment.videoUri) else {
+        throw VideoExportError.missingVideoTrack
+      }
+      let videoAsset = AVURLAsset(url: videoUrl)
+      guard let sourceVideoTrack = try await videoAsset.loadTracks(withMediaType: .video).first else {
+        throw VideoExportError.missingVideoTrack
+      }
+      let videoRange = try await sourceVideoTrack.load(.timeRange)
+      guard videoRange.duration.isValid, videoRange.duration > .zero else {
+        throw VideoExportError.missingVideoTrack
+      }
+      try outputVideoTrack.insertTimeRange(videoRange, of: sourceVideoTrack, at: cursor)
+      if firstTransform == nil {
+        firstTransform = try await sourceVideoTrack.load(.preferredTransform)
+      }
+
+      let audioAsset: AVAsset
+      if let audioUri = segment.audioUri, let audioUrl = URL(string: audioUri) {
+        audioAsset = AVURLAsset(url: audioUrl)
+      } else {
+        audioAsset = videoAsset
+      }
+      if let sourceAudioTrack = try await audioAsset.loadTracks(withMediaType: .audio).first {
+        let audioRange = try await sourceAudioTrack.load(.timeRange)
+        let audioDuration = CMTimeMinimum(videoRange.duration, audioRange.duration)
+        if audioDuration.isValid, audioDuration > .zero {
+          if outputAudioTrack == nil {
+            outputAudioTrack = composition.addMutableTrack(
+              withMediaType: .audio,
+              preferredTrackID: kCMPersistentTrackID_Invalid
+            )
+          }
+          try outputAudioTrack?.insertTimeRange(
+            CMTimeRange(start: audioRange.start, duration: audioDuration),
+            of: sourceAudioTrack,
+            at: cursor
+          )
+        }
+      }
+      cursor = CMTimeAdd(cursor, videoRange.duration)
+    }
+
+    outputVideoTrack.preferredTransform = firstTransform ?? .identity
+    let outputUrl = FileManager.default.temporaryDirectory
+      .appendingPathComponent("whatz-it-stitched-\(UUID().uuidString).mp4")
+    let presets = AVAssetExportSession.exportPresets(compatibleWith: composition)
+    let preset = presets.contains(AVAssetExportPresetHighestQuality)
+      ? AVAssetExportPresetHighestQuality
+      : AVAssetExportPresetPassthrough
+    guard let exporter = AVAssetExportSession(asset: composition, presetName: preset) else {
+      throw VideoExportError.cannotCreateExporter
+    }
+    exporter.outputURL = outputUrl
+    exporter.outputFileType = .mp4
+    exporter.shouldOptimizeForNetworkUse = false
+    do {
+      try await run(exporter)
+      return outputUrl.absoluteString
+    } catch {
+      try? FileManager.default.removeItem(at: outputUrl)
+      throw error
+    }
   }
 
   private static func exportToTemporaryFile(
