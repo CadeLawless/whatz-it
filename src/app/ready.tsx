@@ -15,6 +15,7 @@ import { useRoundTimer } from '@/hooks/use-round-timer';
 import { colors, radius, spacing } from '@/theme';
 import { useRoundSounds } from '@/video/round-sound-provider';
 import type { RoundSoundId } from '@/video/round-sounds';
+import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 const GET_READY_SOUND_MS = 1898;
 const READY_TRANSITION_MS = 450;
@@ -37,15 +38,23 @@ export default function ReadyScreen() {
   const [orientationSettled, setOrientationSettled] = useState(false);
   const [introComplete, setIntroComplete] = useState(false);
   const [soundsPrepared, setSoundsPrepared] = useState(false);
+  const [soundPreparationFailed, setSoundPreparationFailed] = useState(false);
   const [recordingPreparation, setRecordingPreparation] =
     useState<RecordingPreparation | 'preparing'>('preparing');
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
   const introStarted = useRef(false);
   const soundPreparationStarted = useRef(false);
+  const previousGateSignature = useRef('');
   const screenRef = useRef<View>(null);
   const { beginTransition, revealTransition } = useScreenshotTransition();
-  const { isReady: soundsReady, play: playSound, prepareForRound } = useRoundSounds();
+  const {
+    isReady: soundsReady,
+    loadTimedOut: soundLoadTimedOut,
+    play: playSound,
+    prepareForRound,
+    retryLoading,
+  } = useRoundSounds();
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady = foreheadStatus === 'ready' || manualReady;
   const recordingPrepared =
@@ -59,15 +68,25 @@ export default function ReadyScreen() {
         remaining === 3 ? 'count-3' : remaining === 2 ? 'count-2' : 'count-1';
       recordOverlayEvent({ kind: 'countdown', text: String(remaining) });
       recordSoundCue(sound);
+      logRoundDiagnostic('ready countdown cue firing', {
+        remaining,
+        sound,
+        targetEndsAt: countdownEndsAt,
+        now: Date.now(),
+      });
       void playSound(sound);
     },
-    [playSound, recordOverlayEvent, recordSoundCue],
+    [countdownEndsAt, playSound, recordOverlayEvent, recordSoundCue],
   );
   const handleCountdownExpire = useCallback(() => {
     if (launched.current) return;
     launched.current = true;
+    logRoundDiagnostic('ready countdown expired; navigating to game', {
+      countdownEndsAt,
+      now: Date.now(),
+    });
     router.replace('/game' as Href);
-  }, [router]);
+  }, [countdownEndsAt, router]);
   const count = useRoundTimer({
     endsAt: countdownEndsAt,
     active: introComplete && !isLeaving,
@@ -76,11 +95,38 @@ export default function ReadyScreen() {
   });
 
   useEffect(() => {
+    const details = {
+      foreheadStatus,
+      introComplete,
+      introStarted: introStarted.current,
+      isLeaving,
+      orientationSettled,
+      positionReady,
+      recordingPreparation,
+      recordingPrepared,
+      roundStatus: round.status,
+      soundLoadTimedOut,
+      soundPreparationFailed,
+      soundsPrepared,
+      soundsReady,
+    };
+    const signature = JSON.stringify(details);
+    if (signature === previousGateSignature.current) return;
+    previousGateSignature.current = signature;
+    logRoundDiagnostic('ready screen gate state changed', details);
+  });
+
+  useEffect(() => {
     if (!soundsReady || soundPreparationStarted.current) return;
     soundPreparationStarted.current = true;
+    logRoundDiagnostic('ready screen starting round audio preparation');
     let active = true;
     void prepareForRound().then((prepared) => {
-      if (active) setSoundsPrepared(prepared);
+      logRoundDiagnostic('ready screen received audio preparation result', { active, prepared });
+      if (!active) return;
+      setSoundsPrepared(prepared);
+      setSoundPreparationFailed(!prepared);
+      if (!prepared) soundPreparationStarted.current = false;
     });
     return () => {
       active = false;
@@ -89,7 +135,12 @@ export default function ReadyScreen() {
 
   useEffect(() => {
     let active = true;
+    logRoundDiagnostic('ready screen requesting camera and microphone preparation');
     prepareRecording().then((preparation) => {
+      logRoundDiagnostic('ready screen received recording preparation result', {
+        active,
+        preparation,
+      });
       if (active) setRecordingPreparation(preparation);
     });
     return () => {
@@ -98,7 +149,10 @@ export default function ReadyScreen() {
   }, [prepareRecording]);
 
   useEffect(() => {
-    const timeout = setTimeout(() => setOrientationSettled(true), READY_TRANSITION_MS);
+    const timeout = setTimeout(() => {
+      logRoundDiagnostic('ready screen orientation transition settled');
+      setOrientationSettled(true);
+    }, READY_TRANSITION_MS);
     return () => clearTimeout(timeout);
   }, []);
 
@@ -116,10 +170,18 @@ export default function ReadyScreen() {
       introStarted.current
     ) return;
     introStarted.current = true;
+    logRoundDiagnostic('ready intro gates passed; starting recording before audio', {
+      recordingPreparation,
+    });
     let active = true;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const startIntro = async () => {
       const started = await startRecording();
+      logRoundDiagnostic('ready intro recording start resolved', {
+        active,
+        recordingPreparation,
+        started,
+      });
       if (!active) return;
       if (recordingPreparation === 'ready' && !started) {
         introStarted.current = false;
@@ -130,14 +192,22 @@ export default function ReadyScreen() {
       // in the saved round video from its beginning.
       recordSoundCue('get-ready');
       const played = await playSound('get-ready');
+      logRoundDiagnostic('get-ready playback request completed', { active, played });
       if (!active) return;
       if (!played) {
+        warnRoundDiagnostic('get-ready playback did not start', new Error('Player rejected playback'));
         introStarted.current = false;
         setSoundsPrepared(false);
+        setSoundPreparationFailed(true);
         return;
       }
       timeout = setTimeout(() => {
-        setCountdownEndsAt(Date.now() + 3000);
+        const endsAt = Date.now() + 3000;
+        logRoundDiagnostic('get-ready completed; starting absolute 3-2-1 countdown', {
+          endsAt,
+          now: Date.now(),
+        });
+        setCountdownEndsAt(endsAt);
         setIntroComplete(true);
       }, GET_READY_SOUND_MS);
     };
@@ -162,16 +232,19 @@ export default function ReadyScreen() {
     if (isLeaving) return;
 
     if (!deck || round.status === 'idle') {
+      logRoundDiagnostic('ready screen redirecting to home', { hasDeck: !!deck, roundStatus: round.status });
       router.replace('/');
       return;
     }
 
     if (round.status === 'playing' || round.status === 'feedback') {
+      logRoundDiagnostic('ready screen redirecting to active game', { roundStatus: round.status });
       router.replace('/game' as Href);
       return;
     }
 
     if (round.status === 'finished') {
+      logRoundDiagnostic('ready screen redirecting to results', { roundStatus: round.status });
       router.replace('/results' as Href);
       return;
     }
@@ -183,8 +256,24 @@ export default function ReadyScreen() {
   const countSize = Math.max(92, Math.min(138, height * 0.34));
 
   const handleRetryCamera = async () => {
+    logRoundDiagnostic('manual camera retry requested');
+    await cancelRecording();
     setRecordingPreparation('preparing');
     setRecordingPreparation(await prepareRecording());
+  };
+
+  const handleRetryAudio = async () => {
+    logRoundDiagnostic('manual audio retry requested from ready screen');
+    if (introStarted.current) {
+      await cancelRecording();
+      setRecordingPreparation('preparing');
+      setRecordingPreparation(await prepareRecording());
+    }
+    introStarted.current = false;
+    soundPreparationStarted.current = false;
+    setSoundsPrepared(false);
+    setSoundPreparationFailed(false);
+    retryLoading();
   };
 
   const handlePlayWithoutVideo = async () => {
@@ -225,7 +314,21 @@ export default function ReadyScreen() {
             <Text style={styles.deckName}>{deck.title}</Text>
 
             <View style={styles.center}>
-              {recordingPreparation === 'error' ? (
+              {soundLoadTimedOut || soundPreparationFailed ? (
+                <>
+                  <Text style={styles.positionTitle}>AUDIO NOT READY</Text>
+                  <Text style={styles.instructions}>
+                    The round is paused so no game sounds are missed.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void handleRetryAudio()}
+                    style={styles.manualButton}
+                  >
+                    <Text style={styles.manualButtonText}>RETRY AUDIO</Text>
+                  </Pressable>
+                </>
+              ) : recordingPreparation === 'error' ? (
                 <>
                   <Text style={styles.positionTitle}>CAMERA NOT READY</Text>
                   <Text style={styles.instructions}>

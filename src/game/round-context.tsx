@@ -104,52 +104,103 @@ export function RoundProvider({ children }: PropsWithChildren) {
   }, []);
 
   const prepareRecording = useCallback(() => {
-    if (Platform.OS === 'web') return Promise.resolve<RecordingPreparation>('unavailable');
+    logVideoDiagnostic('recording preparation requested', {
+      cameraReady: cameraReady.current,
+      hasCameraRef: !!cameraRef.current,
+      hasExistingPreparation: !!preparationPromise.current,
+      platform: Platform.OS,
+    });
+    if (Platform.OS === 'web') {
+      logVideoDiagnostic('recording preparation unavailable on web');
+      return Promise.resolve<RecordingPreparation>('unavailable');
+    }
     if (cameraReady.current && cameraRef.current) {
+      logVideoDiagnostic('recording preparation reused ready camera');
       return Promise.resolve<RecordingPreparation>('ready');
     }
-    if (preparationPromise.current) return preparationPromise.current;
+    if (preparationPromise.current) {
+      logVideoDiagnostic('recording preparation joined existing request');
+      return preparationPromise.current;
+    }
 
     preparationPromise.current = (async () => {
       const permissions = await requestRoundCameraPermissions();
-      if (recordingCancelled.current) return 'unavailable' as const;
-      if (!permissions.cameraGranted) return 'permission-denied' as const;
+      logVideoDiagnostic('recording permissions returned to round context', permissions);
+      if (recordingCancelled.current) {
+        logVideoDiagnostic('recording preparation abandoned because round was cancelled');
+        return 'unavailable' as const;
+      }
+      if (!permissions.cameraGranted) {
+        logVideoDiagnostic('recording preparation stopped because camera permission was denied');
+        return 'permission-denied' as const;
+      }
 
       setMicrophoneEnabled(permissions.microphoneGranted);
       setCameraEnabled(true);
-      if (cameraReady.current) return 'ready' as const;
+      logVideoDiagnostic('camera enabled; waiting for native started callback', {
+        microphoneEnabled: permissions.microphoneGranted,
+      });
+      if (cameraReady.current) {
+        logVideoDiagnostic('camera became ready before wait began');
+        return 'ready' as const;
+      }
       const ready = await new Promise<boolean>((resolve) => {
         const timeout = setTimeout(() => {
           cameraReadyResolver.current = null;
+          warnVideoDiagnostic(
+            'camera readiness wait timed out',
+            new Error('Camera did not report ready within 12 seconds'),
+          );
           resolve(false);
         }, 12000);
         cameraReadyResolver.current = (value) => {
           clearTimeout(timeout);
+          logVideoDiagnostic('camera readiness resolver completed', { value });
           resolve(value);
         };
       });
       // Keep a slow camera mounted so its eventual onStarted event can make Retry work.
+      logVideoDiagnostic('recording preparation completed camera wait', { ready });
       return ready ? ('ready' as const) : ('error' as const);
     })()
-      .catch(() => {
+      .catch((error) => {
+        warnVideoDiagnostic('recording preparation failed', error);
         cameraReady.current = false;
         setCameraEnabled(false);
         return 'error' as const;
       })
       .finally(() => {
+        logVideoDiagnostic('recording preparation request settled');
         preparationPromise.current = null;
       });
     return preparationPromise.current;
   }, []);
 
   const startRecording = useCallback(async () => {
-    if (!cameraReady.current || !cameraRef.current || recordingActive.current) return false;
+    logVideoDiagnostic('round recording start requested from context', {
+      cameraReady: cameraReady.current,
+      hasCameraRef: !!cameraRef.current,
+      recordingActive: recordingActive.current,
+      roundDurationSeconds: round.durationSeconds,
+    });
+    if (!cameraReady.current || !cameraRef.current || recordingActive.current) {
+      warnVideoDiagnostic('round recording start rejected by context guard', new Error('Recording prerequisites failed'), {
+        cameraReady: cameraReady.current,
+        hasCameraRef: !!cameraRef.current,
+        recordingActive: recordingActive.current,
+      });
+      return false;
+    }
     const startedAt = await cameraRef.current.startRecording(round.durationSeconds + 30);
-    if (startedAt === null) return false;
+    if (startedAt === null) {
+      warnVideoDiagnostic('native round recording returned no start time', new Error('Recording failed to start'));
+      return false;
+    }
     recordingEvents.current = [];
     recordingSoundCues.current = [];
     recordingStartedAt.current = startedAt;
     recordingActive.current = true;
+    logVideoDiagnostic('round recording marked active in context', { startedAt });
     return true;
   }, [round.durationSeconds]);
 

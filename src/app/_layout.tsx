@@ -8,15 +8,19 @@ import { colors } from '@/theme';
 import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';
+import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 export default function RootLayout() {
   useEffect(() => {
+    logRoundDiagnostic('root audio mode configuration started');
     setAudioModeAsync({
       allowsRecording: false,
       interruptionMode: 'mixWithOthers',
       playsInSilentMode: true,
       shouldRouteThroughEarpiece: false,
-    }).catch(() => undefined);
+    })
+      .then(() => logRoundDiagnostic('root audio mode configuration completed'))
+      .catch((error) => warnRoundDiagnostic('root audio mode configuration failed', error));
   }, []);
 
   return (

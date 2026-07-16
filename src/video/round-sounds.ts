@@ -1,7 +1,12 @@
 import { Asset } from 'expo-asset';
 import { preload, type AudioPlayer } from 'expo-audio';
 
-import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
+import {
+  logRoundDiagnostic,
+  logVideoDiagnostic,
+  warnRoundDiagnostic,
+  warnVideoDiagnostic,
+} from '@/video/video-diagnostics';
 
 export type RoundSoundId =
   | 'get-ready'
@@ -36,7 +41,11 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
 // Begin native decoder/buffer preparation as soon as the app bundle loads.
 // The persistent sound provider still verifies that every player is loaded
 // before allowing a round to begin.
-for (const source of Object.values(ROUND_SOUND_SOURCES)) preload(source);
+for (const [sound, source] of Object.entries(ROUND_SOUND_SOURCES)) {
+  void preload(source)
+    .then(() => logRoundDiagnostic('native audio preload completed', { sound }))
+    .catch((error) => warnRoundDiagnostic('native audio preload failed', error, { sound }));
+}
 
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
 const ROUND_SOUND_VOLUME = 1;
@@ -50,6 +59,15 @@ export function preloadRoundSounds(sounds: RoundSoundId[]) {
 }
 
 export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
+  logRoundDiagnostic('audio playback function entered', {
+    sound,
+    currentTime: player.currentTime,
+    duration: player.duration,
+    isBuffering: player.isBuffering,
+    isLoaded: player.isLoaded,
+    paused: player.paused,
+    playing: player.playing,
+  });
   if (!player.isLoaded) {
     warnVideoDiagnostic('round cue skipped because its player is not loaded', undefined, { sound });
     return false;
@@ -57,10 +75,25 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
 
   try {
     if (player.playing) player.pause();
-    if (player.currentTime > 0.005) await player.seekTo(0);
+    if (player.currentTime > 0.005) {
+      const seekStartedAt = Date.now();
+      logRoundDiagnostic('audio cue rewind started', { sound, from: player.currentTime });
+      await player.seekTo(0);
+      logRoundDiagnostic('audio cue rewind completed', {
+        sound,
+        elapsedMs: Date.now() - seekStartedAt,
+        currentTime: player.currentTime,
+      });
+    }
     if (!player.isLoaded) return false;
     player.volume = ROUND_SOUND_VOLUME;
     player.play();
+    logRoundDiagnostic('native audio play invoked', {
+      sound,
+      currentTime: player.currentTime,
+      duration: player.duration,
+      playing: player.playing,
+    });
     logVideoDiagnostic('round cue playback started', {
       sound,
       volume: ROUND_SOUND_VOLUME,
