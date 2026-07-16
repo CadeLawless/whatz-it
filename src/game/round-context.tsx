@@ -32,6 +32,7 @@ import {
 import {
   resolveRoundAudioCues,
   ROUND_VIDEO_SOUND_VOLUME,
+  stopRoundSoundsAfterRound,
   type RoundSoundId,
   type RoundVideoSoundCue,
 } from '@/video/round-sounds';
@@ -218,6 +219,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     recordingStartedAt.current = null;
     setCameraEnabled(false);
     setMicrophoneEnabled(false);
+    stopRoundSoundsAfterRound();
     setAudioModeAsync({
       allowsRecording: false,
       interruptionMode: 'mixWithOthers',

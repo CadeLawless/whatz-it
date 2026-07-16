@@ -25,9 +25,8 @@ export async function triggerRoundHaptic(
   { cameraActive, countdownValue }: RoundHapticOptions,
 ) {
   const startedAt = Date.now();
-  // Always use the same iOS feedback-generator path. System vibration patterns
-  // can vary with the Ring/Silent switch, and Expo haptics are suppressed while
-  // the camera is active.
+  // Always use the original camera-active native path on iOS so microphone
+  // permission and recording state cannot select a different vibration set.
   const useIosNativeHaptics = Platform.OS === 'ios';
   const requestedPattern = describeRequestedPattern(cue, countdownValue);
   const feedbackPath = useIosNativeHaptics ? 'ios-native-feedback-generator' : 'expo-haptics';
@@ -155,7 +154,7 @@ function describeRequestedPattern(cue: RoundHapticCue, countdownValue?: 1 | 2 | 
     case 'card-flip':
       return 'Medium impact';
     case 'correct':
-      return 'one strong feedback pulse';
+      return 'one long system vibration at system-controlled strength';
     case 'pass':
       return 'Medium impact';
     case 'get-ready':
@@ -165,7 +164,7 @@ function describeRequestedPattern(cue: RoundHapticCue, countdownValue?: 1 | 2 | 
     case 'final-countdown':
       return 'Rigid impact';
     case 'times-up':
-      return 'three strong feedback pulses';
+      return 'three long system vibrations at system-controlled strength';
   }
 }
 

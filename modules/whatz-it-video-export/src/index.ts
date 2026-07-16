@@ -39,6 +39,7 @@ type WhatzItVideoExportNativeModule = {
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
   cancelMicrophoneRecording(): Promise<void>;
+  probeSilentSwitch(): Promise<boolean>;
   prepareSystemSound(inputUri: string): Promise<void>;
   playSystemSound(inputUri: string): Promise<void>;
   stopSystemSound(inputUri: string): Promise<void>;
@@ -64,6 +65,10 @@ export function supportsRoundAudioMix() {
 
 export function supportsSilentAwareSystemSounds() {
   return getIosVideoExportVersion() >= 13;
+}
+
+export function supportsSilentSwitchMonitoring() {
+  return getIosVideoExportVersion() >= 14;
 }
 
 export function exportOverlayVideo(
@@ -122,6 +127,10 @@ export function stopMicrophoneRecording() {
 
 export function cancelMicrophoneRecording() {
   return nativeModule.cancelMicrophoneRecording();
+}
+
+export function probeSilentSwitch() {
+  return nativeModule.probeSilentSwitch();
 }
 
 export function playSystemSound(inputUri: string) {

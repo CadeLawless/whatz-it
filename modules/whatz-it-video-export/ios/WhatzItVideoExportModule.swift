@@ -77,6 +77,8 @@ public final class WhatzItVideoExportModule: Module {
   private var microphoneRecordingUrl: URL?
   private let systemSoundsLock = NSLock()
   private var systemSoundPools = [String: SystemSoundPool]()
+  private let silentSwitchLock = NSLock()
+  private var silentSwitchProbeId: SystemSoundID?
 
   deinit {
     for pool in self.systemSoundPools.values {
@@ -84,13 +86,16 @@ public final class WhatzItVideoExportModule: Module {
         AudioServicesDisposeSystemSoundID(soundId)
       }
     }
+    if let silentSwitchProbeId = self.silentSwitchProbeId {
+      AudioServicesDisposeSystemSoundID(silentSwitchProbeId)
+    }
   }
 
   public func definition() -> ModuleDefinition {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      13
+      14
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -230,6 +235,12 @@ public final class WhatzItVideoExportModule: Module {
       NSLog("[RoundAudioNative] Microphone capture cancelled")
     }
 
+    AsyncFunction("probeSilentSwitch") { () async throws -> Bool in
+      let soundId = try self.prepareSilentSwitchProbe()
+      let elapsed = await Self.measureSystemSoundDuration(soundId)
+      return Self.durationIndicatesSilentSwitch(elapsed)
+    }
+
     AsyncFunction("prepareSystemSound") { (inputUrl: URL) throws in
       try self.prepareSystemSound(inputUrl)
     }
@@ -291,6 +302,81 @@ public final class WhatzItVideoExportModule: Module {
       for soundId in soundIds {
         AudioServicesDisposeSystemSoundID(soundId)
       }
+    }
+  }
+
+  private func prepareSilentSwitchProbe() throws -> SystemSoundID {
+    self.silentSwitchLock.lock()
+    defer { self.silentSwitchLock.unlock() }
+    if let soundId = self.silentSwitchProbeId { return soundId }
+
+    let probeUrl = FileManager.default.temporaryDirectory
+      .appendingPathComponent("whatz-it-silent-switch-probe.wav")
+    if !FileManager.default.fileExists(atPath: probeUrl.path) {
+      try Self.writeSilentSwitchProbe(to: probeUrl)
+    }
+
+    var soundId: SystemSoundID = 0
+    let creationStatus = AudioServicesCreateSystemSoundID(probeUrl as CFURL, &soundId)
+    guard creationStatus == kAudioServicesNoError else {
+      throw VideoExportError.systemSoundCreationFailed(creationStatus)
+    }
+    var isUiSound: UInt32 = 1
+    let propertyStatus = AudioServicesSetProperty(
+      kAudioServicesPropertyIsUISound,
+      UInt32(MemoryLayout<SystemSoundID>.size),
+      &soundId,
+      UInt32(MemoryLayout<UInt32>.size),
+      &isUiSound
+    )
+    guard propertyStatus == kAudioServicesNoError else {
+      AudioServicesDisposeSystemSoundID(soundId)
+      throw VideoExportError.systemSoundCreationFailed(propertyStatus)
+    }
+    self.silentSwitchProbeId = soundId
+    return soundId
+  }
+
+  private static func measureSystemSoundDuration(_ soundId: SystemSoundID) async -> TimeInterval {
+    let startedAt = ProcessInfo.processInfo.systemUptime
+    return await withCheckedContinuation { continuation in
+      AudioServicesPlaySystemSoundWithCompletion(soundId) {
+        continuation.resume(returning: ProcessInfo.processInfo.systemUptime - startedAt)
+      }
+    }
+  }
+
+  private static func durationIndicatesSilentSwitch(_ elapsed: TimeInterval) -> Bool {
+    // The probe contains 120 ms of silence. A UI sound suppressed by the
+    // Ring/Silent switch completes almost immediately; an allowed sound keeps
+    // its full timeline even though every sample is silent.
+    elapsed < 0.08
+  }
+
+  private static func writeSilentSwitchProbe(to url: URL) throws {
+    let sampleRate: UInt32 = 8_000
+    let frameCount: UInt32 = 960
+    var data = Data()
+    data.append(contentsOf: "RIFF".utf8)
+    appendLittleEndian(UInt32(36) + frameCount, to: &data)
+    data.append(contentsOf: "WAVEfmt ".utf8)
+    appendLittleEndian(UInt32(16), to: &data)
+    appendLittleEndian(UInt16(1), to: &data)
+    appendLittleEndian(UInt16(1), to: &data)
+    appendLittleEndian(sampleRate, to: &data)
+    appendLittleEndian(sampleRate, to: &data)
+    appendLittleEndian(UInt16(1), to: &data)
+    appendLittleEndian(UInt16(8), to: &data)
+    data.append(contentsOf: "data".utf8)
+    appendLittleEndian(frameCount, to: &data)
+    data.append(contentsOf: repeatElement(UInt8(128), count: Int(frameCount)))
+    try data.write(to: url, options: .atomic)
+  }
+
+  private static func appendLittleEndian<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
+    var littleEndian = value.littleEndian
+    withUnsafeBytes(of: &littleEndian) { bytes in
+      data.append(contentsOf: bytes)
     }
   }
 
@@ -405,7 +491,7 @@ public final class WhatzItVideoExportModule: Module {
     case "card-flip":
       scheduleImpact(.medium)
     case "correct":
-      scheduleImpact(.heavy)
+      scheduleSystemVibration()
     case "pass":
       scheduleImpact(.medium)
     case "get-ready":
@@ -419,9 +505,9 @@ public final class WhatzItVideoExportModule: Module {
     case "final-countdown":
       scheduleImpact(.rigid)
     case "times-up":
-      scheduleImpact(.heavy)
-      scheduleImpact(.heavy, after: 0.18)
-      scheduleImpact(.heavy, after: 0.36)
+      scheduleSystemVibration()
+      scheduleSystemVibration(after: 0.52)
+      scheduleSystemVibration(after: 1.04)
     default:
       return false
     }
@@ -436,6 +522,12 @@ public final class WhatzItVideoExportModule: Module {
       let generator = UIImpactFeedbackGenerator(style: style)
       generator.prepare()
       generator.impactOccurred()
+    }
+  }
+
+  private static func scheduleSystemVibration(after delay: TimeInterval = 0) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+      AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
     }
   }
 
