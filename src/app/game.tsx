@@ -307,7 +307,7 @@ export default function GameScreen() {
             </View>
           )}
 
-          {round.status !== 'finished' && (
+          {round.status !== 'finished' && round.status !== 'feedback' && (
             <View pointerEvents="box-none" style={styles.closeButton}>
               <CloseButton
                 accessibilityLabel="Finish round early"

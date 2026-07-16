@@ -149,6 +149,26 @@ public final class WhatzItVideoExportModule: Module {
       }
     }
 
+    AsyncFunction("reassertRecordingHaptics") { () throws -> Bool in
+      let audioSession = AVAudioSession.sharedInstance()
+      try audioSession.setAllowHapticsAndSystemSoundsDuringRecording(true)
+      do {
+        _ = try self.prepareRoundHapticEngine()
+      } catch {
+        self.roundHapticEngine = nil
+        NSLog(
+          "[RoundHapticsNative] Core Haptics reassertion failed; system vibration remains available error=%@",
+          error.localizedDescription
+        )
+      }
+      let enabled = audioSession.allowHapticsAndSystemSoundsDuringRecording
+      NSLog(
+        "[RoundHapticsNative] Recording haptics flag reasserted after microphone start enabled=%@",
+        enabled.description
+      )
+      return enabled
+    }
+
     AsyncFunction("playRoundHaptic") { (cue: String, countdownValue: Int?) throws -> String in
       guard try self.prepareRoundHapticEngine() else {
         NSLog("[RoundHapticsNative] Core Haptics is unsupported; requesting system vibration fallback cue=%@", cue)
@@ -265,10 +285,11 @@ public final class WhatzItVideoExportModule: Module {
     let player = try engine.makePlayer(with: pattern)
     try player.start(atTime: CHHapticTimeImmediate)
     NSLog(
-      "[RoundHapticsNative] Core Haptics pattern started cue=%@ countdownValue=%@ eventCount=%ld",
+      "[RoundHapticsNative] Core Haptics pattern started cue=%@ countdownValue=%@ eventCount=%ld recordingPermission=%@",
       cue,
       countdownValue.map { String($0) } ?? "nil",
-      events.count
+      events.count,
+      AVAudioSession.sharedInstance().allowHapticsAndSystemSoundsDuringRecording.description
     )
   }
 
