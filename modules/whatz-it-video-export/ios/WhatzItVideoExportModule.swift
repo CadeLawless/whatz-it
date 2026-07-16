@@ -28,6 +28,11 @@ private struct OverlayTimelineFrame {
   let image: CGImage
 }
 
+private struct SystemSoundPool {
+  let soundIds: [SystemSoundID]
+  var nextIndex = 0
+}
+
 private enum VideoExportError: Error, LocalizedError {
   case missingVideoTrack
   case missingAudioTrack
@@ -70,14 +75,22 @@ public final class WhatzItVideoExportModule: Module {
   private var microphoneEngine: AVAudioEngine?
   private var microphoneRecorder: AVAudioRecorder?
   private var microphoneRecordingUrl: URL?
-  private let soundIdsLock = NSLock()
-  private var activeSoundIds = Set<SystemSoundID>()
+  private let systemSoundsLock = NSLock()
+  private var systemSoundPools = [String: SystemSoundPool]()
+
+  deinit {
+    for pool in self.systemSoundPools.values {
+      for soundId in pool.soundIds {
+        AudioServicesDisposeSystemSoundID(soundId)
+      }
+    }
+  }
 
   public func definition() -> ModuleDefinition {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      12
+      13
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -217,22 +230,92 @@ public final class WhatzItVideoExportModule: Module {
       NSLog("[RoundAudioNative] Microphone capture cancelled")
     }
 
+    AsyncFunction("prepareSystemSound") { (inputUrl: URL) throws in
+      try self.prepareSystemSound(inputUrl)
+    }
+
     AsyncFunction("playSystemSound") { (inputUrl: URL) throws in
-      var soundId: SystemSoundID = 0
-      let status = AudioServicesCreateSystemSoundID(inputUrl as CFURL, &soundId)
-      guard status == kAudioServicesNoError else {
-        throw VideoExportError.systemSoundCreationFailed(status)
+      let soundId = try self.nextSystemSoundId(inputUrl)
+      AudioServicesPlaySystemSound(soundId)
+    }
+
+    AsyncFunction("stopSystemSound") { (inputUrl: URL) in
+      self.disposeSystemSoundPool(inputUrl)
+    }
+  }
+
+  private func prepareSystemSound(_ inputUrl: URL) throws {
+    let key = inputUrl.absoluteString
+    self.systemSoundsLock.lock()
+    let isPrepared = self.systemSoundPools[key] != nil
+    self.systemSoundsLock.unlock()
+    if isPrepared { return }
+
+    var soundIds = [SystemSoundID]()
+    do {
+      // Two IDs allow the one-second countdown tick to overlap its short tail
+      // without restarting the prior instance.
+      for _ in 0..<2 {
+        var soundId: SystemSoundID = 0
+        let creationStatus = AudioServicesCreateSystemSoundID(inputUrl as CFURL, &soundId)
+        guard creationStatus == kAudioServicesNoError else {
+          throw VideoExportError.systemSoundCreationFailed(creationStatus)
+        }
+        var isUiSound: UInt32 = 1
+        let propertyStatus = AudioServicesSetProperty(
+          kAudioServicesPropertyIsUISound,
+          UInt32(MemoryLayout<SystemSoundID>.size),
+          &soundId,
+          UInt32(MemoryLayout<UInt32>.size),
+          &isUiSound
+        )
+        guard propertyStatus == kAudioServicesNoError else {
+          AudioServicesDisposeSystemSoundID(soundId)
+          throw VideoExportError.systemSoundCreationFailed(propertyStatus)
+        }
+        soundIds.append(soundId)
       }
-      self.soundIdsLock.lock()
-      self.activeSoundIds.insert(soundId)
-      self.soundIdsLock.unlock()
-      AudioServicesPlaySystemSoundWithCompletion(soundId) { [weak self] in
+    } catch {
+      for soundId in soundIds {
         AudioServicesDisposeSystemSoundID(soundId)
-        guard let self else { return }
-        self.soundIdsLock.lock()
-        self.activeSoundIds.remove(soundId)
-        self.soundIdsLock.unlock()
       }
+      throw error
+    }
+
+    self.systemSoundsLock.lock()
+    if self.systemSoundPools[key] == nil {
+      self.systemSoundPools[key] = SystemSoundPool(soundIds: soundIds)
+      self.systemSoundsLock.unlock()
+    } else {
+      self.systemSoundsLock.unlock()
+      for soundId in soundIds {
+        AudioServicesDisposeSystemSoundID(soundId)
+      }
+    }
+  }
+
+  private func nextSystemSoundId(_ inputUrl: URL) throws -> SystemSoundID {
+    try self.prepareSystemSound(inputUrl)
+    let key = inputUrl.absoluteString
+    self.systemSoundsLock.lock()
+    defer { self.systemSoundsLock.unlock() }
+    guard var pool = self.systemSoundPools[key], !pool.soundIds.isEmpty else {
+      throw VideoExportError.systemSoundCreationFailed(kAudioServicesSystemSoundUnspecifiedError)
+    }
+    let soundId = pool.soundIds[pool.nextIndex % pool.soundIds.count]
+    pool.nextIndex += 1
+    self.systemSoundPools[key] = pool
+    return soundId
+  }
+
+  private func disposeSystemSoundPool(_ inputUrl: URL) {
+    let key = inputUrl.absoluteString
+    self.systemSoundsLock.lock()
+    let pool = self.systemSoundPools.removeValue(forKey: key)
+    self.systemSoundsLock.unlock()
+    guard let pool else { return }
+    for soundId in pool.soundIds {
+      AudioServicesDisposeSystemSoundID(soundId)
     }
   }
 

@@ -1,5 +1,6 @@
 import { Asset } from 'expo-asset';
 import { preload, type AudioPlayer } from 'expo-audio';
+import { Platform } from 'react-native';
 
 import {
   logRoundDiagnostic,
@@ -64,6 +65,16 @@ export function preloadRoundSounds(sounds: RoundSoundId[]) {
   return Promise.all(sounds.map(resolveRoundSoundUri));
 }
 
+export async function prepareRoundSoundsForPlayback() {
+  if (Platform.OS !== 'ios') return;
+  const sounds = Object.keys(ROUND_SOUND_SOURCES) as RoundSoundId[];
+  const uris = await preloadRoundSounds(sounds);
+  const { prepareSystemSound, supportsSilentAwareSystemSounds } =
+    await import('whatz-it-video-export');
+  if (!supportsSilentAwareSystemSounds()) return;
+  await Promise.all(uris.map(prepareSystemSound));
+}
+
 export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   logRoundDiagnostic('audio playback function entered', {
     sound,
@@ -80,6 +91,27 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   }
 
   try {
+    if (Platform.OS === 'ios') {
+      const { playSystemSound, stopSystemSound, supportsSilentAwareSystemSounds } =
+        await import('whatz-it-video-export');
+      if (supportsSilentAwareSystemSounds()) {
+        if (sound === 'round-end') {
+          await stopSystemSound(await resolveRoundSoundUri('final-tick'));
+        }
+        const uri = await resolveRoundSoundUri(sound);
+        await playSystemSound(uri);
+        logRoundDiagnostic('silent-aware iOS round cue dispatched', {
+          sound,
+          playbackPath: 'system-ui-sound',
+        });
+        logVideoDiagnostic('round cue playback started', {
+          sound,
+          playbackPath: 'system-ui-sound',
+        });
+        return true;
+      }
+    }
+
     const volume = ROUND_SOUND_VOLUMES[sound] ?? DEFAULT_ROUND_SOUND_VOLUME;
     if (player.playing) player.pause();
     if (player.currentTime > 0.005) {

@@ -18,6 +18,7 @@ import {
 import {
   getRoundSoundSource,
   playRoundSound,
+  prepareRoundSoundsForPlayback,
   rewindRoundSoundPlayer,
   type RoundSoundId,
 } from '@/video/round-sounds';
@@ -235,6 +236,8 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     try {
       await setIsAudioActiveAsync(true);
       logRoundDiagnostic('audio session activated for round');
+      await prepareRoundSoundsForPlayback();
+      logRoundDiagnostic('platform round sound playback prepared');
       tickIndex.current = 0;
       const players = [...Object.values(regularPlayers), ...tickPlayers];
       const results = await Promise.all(players.map(rewindRoundSoundPlayer));

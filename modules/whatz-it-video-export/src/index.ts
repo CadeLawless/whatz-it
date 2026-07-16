@@ -39,7 +39,9 @@ type WhatzItVideoExportNativeModule = {
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
   cancelMicrophoneRecording(): Promise<void>;
+  prepareSystemSound(inputUri: string): Promise<void>;
   playSystemSound(inputUri: string): Promise<void>;
+  stopSystemSound(inputUri: string): Promise<void>;
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
@@ -58,6 +60,10 @@ export function supportsReliableIosAudioExport() {
 
 export function supportsRoundAudioMix() {
   return getIosVideoExportVersion() >= 11;
+}
+
+export function supportsSilentAwareSystemSounds() {
+  return getIosVideoExportVersion() >= 13;
 }
 
 export function exportOverlayVideo(
@@ -120,4 +126,12 @@ export function cancelMicrophoneRecording() {
 
 export function playSystemSound(inputUri: string) {
   return nativeModule.playSystemSound(inputUri);
+}
+
+export function prepareSystemSound(inputUri: string) {
+  return nativeModule.prepareSystemSound(inputUri);
+}
+
+export function stopSystemSound(inputUri: string) {
+  return nativeModule.stopSystemSound(inputUri);
 }
