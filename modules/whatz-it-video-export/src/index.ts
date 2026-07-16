@@ -12,6 +12,11 @@ export type RoundAudioCue = {
   uri: string;
 };
 
+export type RoundVideoSegment = {
+  videoUri: string;
+  audioUri: string | null;
+};
+
 type WhatzItVideoExportNativeModule = {
   overlayExportVersion?: number;
   exportOverlayVideo(
@@ -31,14 +36,21 @@ type WhatzItVideoExportNativeModule = {
     microphoneUri: string,
     microphoneOffsetMs: number,
     cues: RoundAudioCue[],
+    cueVolume: number,
   ): Promise<string>;
+  stitchRoundVideoSegments?(segments: RoundVideoSegment[]): Promise<string>;
   prepareRecordingAudio(): Promise<void>;
   reassertRecordingHaptics(): Promise<boolean>;
   playRoundHaptic(cue: string, countdownValue: number | null): Promise<string>;
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
   cancelMicrophoneRecording(): Promise<void>;
+  probeSilentSwitch(): Promise<boolean>;
+  prepareSystemSound(inputUri: string): Promise<void>;
   playSystemSound(inputUri: string): Promise<void>;
+  stopSystemSound(inputUri: string): Promise<void>;
+  beginOrientationSnapshotTransition?(snapshotUri: string | null): Promise<boolean>;
+  finishOrientationSnapshotTransition?(direction: 'left' | 'right'): Promise<boolean>;
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
@@ -53,6 +65,30 @@ export function supportsFixedIosOverlayExport() {
 
 export function supportsReliableIosAudioExport() {
   return getIosVideoExportVersion() >= 3;
+}
+
+export function supportsRoundAudioMix() {
+  return getIosVideoExportVersion() >= 11;
+}
+
+export function supportsSilentAwareSystemSounds() {
+  return getIosVideoExportVersion() >= 13;
+}
+
+export function supportsSilentSwitchMonitoring() {
+  return getIosVideoExportVersion() >= 14;
+}
+
+export function supportsOrientationSnapshotTransitions() {
+  return getIosVideoExportVersion() >= 15 && !!nativeModule.beginOrientationSnapshotTransition;
+}
+
+export function beginOrientationSnapshotTransition(snapshotUri: string | null) {
+  return nativeModule.beginOrientationSnapshotTransition?.(snapshotUri) ?? Promise.resolve(false);
+}
+
+export function finishOrientationSnapshotTransition(direction: 'left' | 'right') {
+  return nativeModule.finishOrientationSnapshotTransition?.(direction) ?? Promise.resolve(false);
 }
 
 export function exportOverlayVideo(
@@ -78,8 +114,22 @@ export function mixRoundAudio(
   microphoneUri: string,
   microphoneOffsetMs: number,
   cues: RoundAudioCue[],
+  cueVolume: number,
 ) {
-  return nativeModule.mixRoundAudio(videoUri, microphoneUri, microphoneOffsetMs, cues);
+  return nativeModule.mixRoundAudio(
+    videoUri,
+    microphoneUri,
+    microphoneOffsetMs,
+    cues,
+    cueVolume,
+  );
+}
+
+export function stitchRoundVideoSegments(segments: RoundVideoSegment[]) {
+  if (!nativeModule.stitchRoundVideoSegments) {
+    return Promise.reject(new Error('This app build cannot stitch interrupted round videos.'));
+  }
+  return nativeModule.stitchRoundVideoSegments(segments);
 }
 
 export function prepareRecordingAudio() {
@@ -106,6 +156,18 @@ export function cancelMicrophoneRecording() {
   return nativeModule.cancelMicrophoneRecording();
 }
 
+export function probeSilentSwitch() {
+  return nativeModule.probeSilentSwitch();
+}
+
 export function playSystemSound(inputUri: string) {
   return nativeModule.playSystemSound(inputUri);
+}
+
+export function prepareSystemSound(inputUri: string) {
+  return nativeModule.prepareSystemSound(inputUri);
+}
+
+export function stopSystemSound(inputUri: string) {
+  return nativeModule.stopSystemSound(inputUri);
 }

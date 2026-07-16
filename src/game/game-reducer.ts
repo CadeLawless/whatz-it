@@ -9,6 +9,8 @@ export const initialRoundState: RoundState = {
   results: [],
   startedAt: null,
   endsAt: null,
+  pausedStatus: null,
+  remainingMs: null,
   latestOutcome: null,
 };
 
@@ -55,6 +57,57 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
         status: 'playing',
         currentCardIndex: nextIndex,
         latestOutcome: null,
+      };
+    }
+    case 'PAUSE': {
+      if (state.status !== 'playing' && state.status !== 'feedback') return state;
+      return {
+        ...state,
+        status: 'paused',
+        pausedStatus: state.status,
+        remainingMs: Math.max(0, (state.endsAt ?? action.now) - action.now),
+        endsAt: null,
+      };
+    }
+    case 'RESUME': {
+      if (state.status !== 'paused' || !state.pausedStatus) return state;
+      const remainingMs = Math.max(0, state.remainingMs ?? 0);
+      if (remainingMs === 0) {
+        return {
+          ...state,
+          status: 'finished',
+          pausedStatus: null,
+          remainingMs: null,
+          latestOutcome: null,
+        };
+      }
+      if (state.pausedStatus === 'feedback') {
+        const nextIndex = state.currentCardIndex + 1;
+        if (nextIndex >= state.cardOrder.length) {
+          return {
+            ...state,
+            status: 'finished',
+            pausedStatus: null,
+            remainingMs: null,
+            latestOutcome: null,
+          };
+        }
+        return {
+          ...state,
+          status: 'playing',
+          currentCardIndex: nextIndex,
+          endsAt: action.now + remainingMs,
+          pausedStatus: null,
+          remainingMs: null,
+          latestOutcome: null,
+        };
+      }
+      return {
+        ...state,
+        status: state.pausedStatus,
+        endsAt: action.now + remainingMs,
+        pausedStatus: null,
+        remainingMs: null,
       };
     }
     case 'FINISH': {

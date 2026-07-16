@@ -1,4 +1,4 @@
-import { RecordingPresets, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
+import { setAudioModeAsync } from 'expo-audio';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import {
@@ -8,7 +8,13 @@ import {
   useCameraDevice,
   useVideoOutput,
 } from 'react-native-vision-camera';
-import { prepareRecordingAudio, reassertRecordingHaptics } from 'whatz-it-video-export';
+import {
+  cancelMicrophoneRecording,
+  prepareRecordingAudio,
+  reassertRecordingHaptics,
+  startMicrophoneRecording,
+  stopMicrophoneRecording,
+} from 'whatz-it-video-export';
 
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
@@ -71,10 +77,9 @@ async function prepareRoundRecordingAudio() {
 export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
   function RoundCamera({ enabled, microphoneEnabled, onError, onReady }, ref) {
     const device = useCameraDevice('front');
-    const microphoneRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
     const videoOutput = useVideoOutput({
-      // iOS microphone audio is recorded independently by expo-audio.
-      // This avoids VisionCamera's intermittently missing iOS audio track.
+      // iOS microphone audio is recorded independently with native voice
+      // processing and a file-recorder fallback, then preserved during export.
       enableAudio: microphoneEnabled && Platform.OS !== 'ios',
       fileType: 'mp4',
     });
@@ -87,39 +92,20 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       if (Platform.OS !== 'ios') return microphoneEnabled;
       if (microphonePreparedRef.current) return true;
       try {
-        const statusBefore = microphoneRecorder.getStatus();
-        logVideoDiagnostic('microphone preparation started', {
-          statusBefore,
-        });
-        if (statusBefore.isRecording) {
-          logVideoDiagnostic('stale microphone recording stopped before preparation', {
-            statusBefore,
-            uri: microphoneRecorder.uri,
-          });
-          await microphoneRecorder.stop();
-        }
+        logVideoDiagnostic('microphone preparation started');
         await prepareRoundRecordingAudio();
         if (!microphoneEnabled) {
           logVideoDiagnostic('recording haptics prepared without microphone capture');
           return false;
         }
-        if (!microphoneRecorder.getStatus().canRecord) {
-          await microphoneRecorder.prepareToRecordAsync();
-        }
         microphonePreparedRef.current = true;
-        logVideoDiagnostic('microphone preparation completed', {
-          statusAfter: microphoneRecorder.getStatus(),
-          uri: microphoneRecorder.uri,
-        });
+        logVideoDiagnostic('native microphone capture preparation completed');
         return true;
       } catch (error) {
-        warnVideoDiagnostic('microphone preparation failed', error, {
-          status: microphoneRecorder.getStatus(),
-          uri: microphoneRecorder.uri,
-        });
+        warnVideoDiagnostic('microphone preparation failed', error);
         return false;
       }
-    }, [microphoneEnabled, microphoneRecorder]);
+    }, [microphoneEnabled]);
 
     useImperativeHandle(
       ref,
@@ -154,15 +140,8 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             const videoStartedAt = Date.now();
             if (Platform.OS === 'ios' && microphonePrepared) {
               try {
-                microphoneRecorder.record();
-                const microphoneUri = microphoneRecorder.uri;
-                const microphoneStatus = microphoneRecorder.getStatus();
-                if (!microphoneStatus.isRecording || !microphoneUri) {
-                  throw new Error('The prepared microphone recorder did not enter recording state.');
-                }
-                // expo-audio may reconfigure AVAudioSession as recording begins.
-                // Reapply Apple's opt-in after that final transition so the flag
-                // is definitely true when Get Ready and the round haptics fire.
+                const microphoneUri = await startMicrophoneRecording();
+                const microphoneStartedAt = Date.now();
                 let recordingHapticsEnabled = false;
                 try {
                   recordingHapticsEnabled = await reassertRecordingHaptics();
@@ -174,27 +153,17 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                 }
                 microphoneRef.current = {
                   uri: microphoneUri,
-                  offsetMs: Math.max(0, Date.now() - videoStartedAt),
+                  offsetMs: Math.max(0, microphoneStartedAt - videoStartedAt),
                 };
                 logVideoDiagnostic('microphone recording started', {
                   offsetMs: microphoneRef.current.offsetMs,
                   recordingHapticsEnabled,
-                  status: microphoneStatus,
                   uri: microphoneUri,
                 });
               } catch (error) {
                 // A microphone failure must not discard an otherwise valid video.
-                warnVideoDiagnostic('microphone recording failed; continuing with video only', error, {
-                  status: microphoneRecorder.getStatus(),
-                  uri: microphoneRecorder.uri,
-                });
-                if (microphoneRecorder.getStatus().isRecording) {
-                  try {
-                    await microphoneRecorder.stop();
-                  } catch {
-                    // The recorder may already have stopped while cleaning up the failed start.
-                  }
-                }
+                warnVideoDiagnostic('microphone recording failed; continuing with video only', error);
+                await cancelMicrophoneRecording().catch(() => undefined);
                 microphoneRef.current = null;
                 microphonePreparedRef.current = false;
               }
@@ -220,13 +189,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             } catch {
               // The recorder may already have stopped while cleaning up a failed start.
             }
-            if (Platform.OS === 'ios' && microphoneRecorder.getStatus().isRecording) {
-              try {
-                await microphoneRecorder.stop();
-              } catch {
-                // There may be no microphone recorder to stop.
-              }
-            }
+            if (Platform.OS === 'ios') await cancelMicrophoneRecording().catch(() => undefined);
             recorderRef.current = null;
             resultPromiseRef.current = null;
             microphoneRef.current = null;
@@ -240,7 +203,6 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           if (!recorder || !result) return null;
           try {
             logVideoDiagnostic('recording stop requested', {
-              microphoneStatus: microphoneRecorder.getStatus(),
               microphoneUri: microphoneRef.current?.uri,
               videoRecorderActive: recorder.isRecording,
             });
@@ -249,14 +211,12 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             if (Platform.OS === 'ios') {
               const microphoneCapture = microphoneRef.current;
               try {
-                if (microphoneRecorder.getStatus().isRecording) {
-                  await microphoneRecorder.stop();
-                }
-                microphoneUri = microphoneCapture?.uri;
+                microphoneUri = microphoneCapture
+                  ? await stopMicrophoneRecording()
+                  : undefined;
               } catch (error) {
                 warnVideoDiagnostic('microphone recording failed to stop cleanly', error, {
-                  status: microphoneRecorder.getStatus(),
-                  uri: microphoneCapture?.uri ?? microphoneRecorder.uri,
+                  uri: microphoneCapture?.uri,
                 });
               }
             }
@@ -267,7 +227,6 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             logVideoDiagnostic('recording stopped', {
               microphoneFileExists: microphoneFile?.exists ?? false,
               microphoneFileSize: microphoneFile?.size ?? 0,
-              microphoneStatus: microphoneRecorder.getStatus(),
               microphoneUri,
               videoFileExists: videoFile.exists,
               videoFileSize: videoFile.size,
@@ -293,15 +252,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             // Continue so the independently recorded microphone file is also removed.
           }
           try {
-            if (Platform.OS === 'ios' && microphoneRecorder.getStatus().isRecording) {
-              await microphoneRecorder.stop();
-              const microphoneUri = microphoneRecorder.uri;
-              if (microphoneUri) {
-                const { File } = await import('expo-file-system');
-                const file = new File(microphoneUri);
-                if (file.exists) file.delete();
-              }
-            }
+            if (Platform.OS === 'ios') await cancelMicrophoneRecording();
           } catch {
             // There may be no native microphone recorder left to cancel.
           } finally {
@@ -312,7 +263,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           }
         },
       }),
-      [device, enabled, microphoneEnabled, microphoneRecorder, prepareMicrophone, videoOutput],
+      [device, enabled, microphoneEnabled, prepareMicrophone, videoOutput],
     );
 
     if (!enabled || !device) return null;

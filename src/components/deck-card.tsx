@@ -30,7 +30,9 @@ export function DeckCard({ deck }: DeckCardProps) {
         {deck.coverImage ? (
           <Image
             accessibilityLabel={deck.title}
+            cachePolicy="memory-disk"
             contentFit="cover"
+            priority="high"
             source={deck.coverImage}
             style={styles.coverImage}
           />

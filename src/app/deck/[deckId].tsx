@@ -98,6 +98,7 @@ export default function DeckDetailsScreen() {
       await beginTransition({
         destination: 'ready',
         direction: 'left',
+        orientationChange: true,
         uri,
       });
     } catch {

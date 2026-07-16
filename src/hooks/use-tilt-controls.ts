@@ -5,6 +5,7 @@ import { DeviceMotion } from 'expo-sensors';
 import type { TiltAction } from '@/game/tilt-detector';
 import {
   createTiltDetectorState,
+  normalizeLandscapeTilt,
   updateTiltDetector,
 } from '@/game/tilt-detector';
 
@@ -77,9 +78,11 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
       setStatus('calibrating');
       try {
         subscription = DeviceMotion.addListener((measurement) => {
-          // The portrait-locked landscape canvas reverses the visual direction
-          // of gamma: toward the floor is Correct, toward the ceiling is Pass.
-          const angle = -measurement.rotation.gamma;
+          const angle = normalizeLandscapeTilt(
+            measurement.rotation.gamma,
+            measurement.orientation,
+          );
+          if (angle === null) return;
           const result = updateTiltDetector(
             detector.current,
             angle,

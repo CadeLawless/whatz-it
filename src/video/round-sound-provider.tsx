@@ -18,7 +18,9 @@ import {
 import {
   getRoundSoundSource,
   playRoundSound,
+  prepareRoundSoundsForPlayback,
   rewindRoundSoundPlayer,
+  subscribeToSilentSwitch,
   type RoundSoundId,
 } from '@/video/round-sounds';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
@@ -200,6 +202,23 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     void tick2.seekTo(0);
   }, [tick2, tick2Status.didJustFinish]);
 
+  useEffect(
+    () =>
+      subscribeToSilentSwitch((silentSwitchOn) => {
+        if (!silentSwitchOn) return;
+        let stoppedPlayerCount = 0;
+        for (const player of [...Object.values(regularPlayers), ...tickPlayers]) {
+          if (!player.playing) continue;
+          player.pause();
+          stoppedPlayerCount += 1;
+        }
+        logRoundDiagnostic('active live cues stopped after silent switch enabled', {
+          stoppedPlayerCount,
+        });
+      }),
+    [regularPlayers, tickPlayers],
+  );
+
   const play = useCallback(
     (sound: RoundSoundId) => {
       logRoundDiagnostic('audio cue requested from provider', {
@@ -235,6 +254,8 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     try {
       await setIsAudioActiveAsync(true);
       logRoundDiagnostic('audio session activated for round');
+      await prepareRoundSoundsForPlayback();
+      logRoundDiagnostic('platform round sound playback prepared');
       tickIndex.current = 0;
       const players = [...Object.values(regularPlayers), ...tickPlayers];
       const results = await Promise.all(players.map(rewindRoundSoundPlayer));

@@ -25,11 +25,11 @@ export async function triggerRoundHaptic(
   { cameraActive, countdownValue }: RoundHapticOptions,
 ) {
   const startedAt = Date.now();
-  const useIosCameraNativeHaptics = Platform.OS === 'ios' && cameraActive;
+  // Always use the original camera-active native path on iOS so microphone
+  // permission and recording state cannot select a different vibration set.
+  const useIosNativeHaptics = Platform.OS === 'ios';
   const requestedPattern = describeRequestedPattern(cue, countdownValue);
-  const feedbackPath = useIosCameraNativeHaptics
-    ? 'ios-native-feedback-generator'
-    : 'expo-haptics';
+  const feedbackPath = useIosNativeHaptics ? 'ios-native-feedback-generator' : 'expo-haptics';
 
   logRoundDiagnostic('round haptic cue requested', {
     cameraActive,
@@ -41,7 +41,7 @@ export async function triggerRoundHaptic(
   });
 
   try {
-    if (useIosCameraNativeHaptics) {
+    if (useIosNativeHaptics) {
       try {
         const nativePath = await playRoundHaptic(cue, countdownValue ?? null);
         logRoundDiagnostic('iOS camera-safe native feedback started', {
@@ -50,16 +50,20 @@ export async function triggerRoundHaptic(
           requestedPattern,
         });
       } catch (nativeError) {
-        warnRoundDiagnostic(
-          'iOS native feedback failed; using system vibration fallback',
-          nativeError,
-          { cue, requestedPattern },
-        );
-        dispatchIosCameraFallback(cue, countdownValue);
-        logRoundDiagnostic('iOS system vibration fallback dispatched', {
-          actualPattern: describeIosFallback(cue, countdownValue),
+        warnRoundDiagnostic('iOS native feedback failed; using fallback feedback', nativeError, {
+          cameraActive,
           cue,
+          requestedPattern,
         });
+        if (cameraActive) {
+          dispatchIosCameraFallback(cue, countdownValue);
+          logRoundDiagnostic('iOS camera vibration fallback dispatched', {
+            actualPattern: describeIosFallback(cue, countdownValue),
+            cue,
+          });
+        } else {
+          await performStyledHaptic(cue, countdownValue);
+        }
       }
     } else {
       await performStyledHaptic(cue, countdownValue);

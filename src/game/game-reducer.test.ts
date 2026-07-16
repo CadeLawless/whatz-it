@@ -11,6 +11,7 @@ import {
 import { shuffle } from './shuffle';
 import {
   createTiltDetectorState,
+  DEFAULT_TILT_CONFIG,
   isForeheadPosition,
   normalizeLandscapeTilt,
   unwrapTiltAngle,
@@ -96,6 +97,41 @@ describe('roundReducer', () => {
 
     assert.equal(finished.results.length, 1);
     assert.equal(finished.results[0].outcome, 'correct');
+  });
+
+  it('freezes and restores the round clock across backgrounding', () => {
+    const playing = {
+      ...initialRoundState,
+      status: 'playing' as const,
+      deckId: 'animals',
+      cardOrder: ['one', 'two'],
+      endsAt: 11_000,
+    };
+    const paused = roundReducer(playing, { type: 'PAUSE', now: 4_000 });
+    const resumed = roundReducer(paused, { type: 'RESUME', now: 20_000 });
+
+    assert.equal(paused.status, 'paused');
+    assert.equal(paused.remainingMs, 7_000);
+    assert.equal(paused.endsAt, null);
+    assert.equal(resumed.status, 'playing');
+    assert.equal(resumed.endsAt, 27_000);
+  });
+
+  it('moves past feedback when a backgrounded round resumes', () => {
+    const feedback = {
+      ...initialRoundState,
+      status: 'feedback' as const,
+      deckId: 'animals',
+      cardOrder: ['one', 'two'],
+      endsAt: 11_000,
+      latestOutcome: 'correct' as const,
+    };
+    const paused = roundReducer(feedback, { type: 'PAUSE', now: 4_000 });
+    const resumed = roundReducer(paused, { type: 'RESUME', now: 20_000 });
+
+    assert.equal(resumed.status, 'playing');
+    assert.equal(resumed.currentCardIndex, 1);
+    assert.equal(resumed.latestOutcome, null);
   });
 });
 
@@ -192,6 +228,26 @@ describe('tilt detector', () => {
     result = updateTiltDetector(result.state, 0, stableConfig, false);
     assert.equal(result.rearmed, true);
     assert.equal(result.state.armed, true);
+  });
+
+  it('accepts a slightly wider return-to-center range by default', () => {
+    const quickConfig = {
+      ...DEFAULT_TILT_CONFIG,
+      calibrationSamples: 2,
+      calibrationMovementTolerance: 1,
+      smoothingFactor: 1,
+      confirmationSamples: 1,
+      baselineAdjustmentFactor: 0,
+    };
+    let result = updateTiltDetector(createTiltDetectorState(), 0, quickConfig);
+    result = updateTiltDetector(result.state, 0, quickConfig);
+    result = updateTiltDetector(result.state, 0.6, quickConfig);
+    assert.equal(result.action, 'correct');
+
+    result = updateTiltDetector(result.state, 0.23, quickConfig);
+    assert.equal(result.rearmed, false);
+    result = updateTiltDetector(result.state, 0.23, quickConfig);
+    assert.equal(result.rearmed, true);
   });
 
   it('normalizes left-landscape readings', () => {

@@ -5,7 +5,7 @@ export const decks: Deck[] = [
     id: 'animal-antics',
     title: 'Animal Antics',
     description: 'Lions, tigers, and bears, oh my!',
-    coverImage: require('../../assets/images/decks/animal-antics.png'),
+    coverImage: require('../../assets/images/decks/animal-antics.webp'),
     version: 1,
     cards: [
       { id: 'animal-001', text: 'Penguin' },
@@ -202,7 +202,7 @@ export const decks: Deck[] = [
     id: 'snack-attack',
     title: 'Snack Attack',
     description: 'Your pantry\'s greatest hits.',
-    coverImage: require('../../assets/images/decks/snack-attack.png'),
+    coverImage: require('../../assets/images/decks/snack-attack.webp'),
     version: 1,
     cards: [
       { id: 'snack-001', text: 'Oreos' },
@@ -395,7 +395,7 @@ export const decks: Deck[] = [
     id: 'celebrity-shuffle',
     title: 'Celebrity Shuffle',
     description: 'Hollywood Legends, famous musicians, sports heroes, and internet superstars.',
-    coverImage: require('../../assets/images/decks/celebrity-shuffle.png'),
+    coverImage: require('../../assets/images/decks/celebrity-shuffle.webp'),
     version: 1,
     cards: [
       { id: 'star-001', text: 'Tom Hanks' },
@@ -708,7 +708,7 @@ export const decks: Deck[] = [
     id: 'movie-mania',
     title: 'Movie Mania',
     description: 'Movie lovers, this one\'s for you.',
-    coverImage: require('../../assets/images/decks/movie-mania.png'),
+    coverImage: require('../../assets/images/decks/movie-mania.webp'),
     version: 1,
     cards: [
       { id: 'movie-001', text: 'Titanic' },
@@ -1032,7 +1032,7 @@ export const decks: Deck[] = [
     id: 'music-mix',
     title: 'Music Mix',
     description: 'Popular songs from across the decades.',
-    coverImage: require('../../assets/images/decks/name-that-tune.png'),
+    coverImage: require('../../assets/images/decks/name-that-tune.webp'),
     version: 1,
     cards: [
       { id: 'song-001', text: '"Shake It Off" by Taylor Swift' },
@@ -1313,7 +1313,7 @@ export const decks: Deck[] = [
     id: 'binge-worthy',
     title: 'Binge Worthy',
     description: 'The most popular sitcoms, dramas, and reality TV shows.',
-    coverImage: require('../../assets/images/decks/binge-worthy.png'),
+    coverImage: require('../../assets/images/decks/binge-worthy.webp'),
     version: 1,
     cards: [
       { id: 'show-001', text: 'Friends' },
@@ -1537,7 +1537,7 @@ export const decks: Deck[] = [
     id: 'gone-viral',
     title: 'Gone Viral',
     description: 'Internet legends, memes, trends, and viral moments.',
-    coverImage: require('../../assets/images/decks/internet-famous.png'),
+    coverImage: require('../../assets/images/decks/internet-famous.webp'),
     version: 1,
     cards: [
       { id: 'internet-001', text: 'TikTok' },
@@ -1691,7 +1691,7 @@ export const decks: Deck[] = [
     id: '90s-kids',
     title: '90s Kids',
     description: 'Warning: Core memories from the 90\'s and 2000\'s.',
-    coverImage: require('../../assets/images/decks/90s-kids.png'),
+    coverImage: require('../../assets/images/decks/90s-kids.webp'),
     version: 1,
     cards: [
       { id: '90s-kids-001', text: 'Tamagotchi' },
@@ -1887,7 +1887,7 @@ export const decks: Deck[] = [
     id: 'fictional-who-am-i',
     title: 'Fictional Who Am I?',
     description: 'Legendary fictional characters across books, screens, and games.',
-    coverImage: require('../../assets/images/decks/fictional-who-am-i.png'),
+    coverImage: require('../../assets/images/decks/fictional-who-am-i.webp'),
     version: 1,
     cards: [
       { id: 'fictional-001', text: 'Mario' },
@@ -2173,7 +2173,7 @@ export const decks: Deck[] = [
     id: 'road-trip',
     title: 'Road Trip',
     description: 'Everything to do with an American road trip.',
-    coverImage: require('../../assets/images/decks/road-trip.png'),
+    coverImage: require('../../assets/images/decks/road-trip.webp'),
     version: 1,
     cards: [
       { id: 'road-001', text: 'Route 66' },
@@ -2371,7 +2371,7 @@ export const decks: Deck[] = [
     id: 'fast-food',
     title: 'Fast Food',
     description: 'America\'s favorite fast food places.',
-    coverImage: require('../../assets/images/decks/fast-food.png'),
+    coverImage: require('../../assets/images/decks/fast-food.webp'),
     version: 1,
     cards: [
       { id: 'fast-food-001', text: 'McDonald\'s' },
@@ -2486,7 +2486,7 @@ export const decks: Deck[] = [
     id: 'sports-icons',
     title: 'Sports Icons',
     description: 'The greatest athletes of all time.',
-    coverImage: require('../../assets/images/decks/sports-icons.png'),
+    coverImage: require('../../assets/images/decks/sports-icons.webp'),
     version: 1,
     cards: [
       { id: 'sports-icon-001', text: 'Michael Jordan' },
@@ -2694,7 +2694,7 @@ export const decks: Deck[] = [
     id: 'act-it-out',
     title: 'Act It Out',
     description: 'No words allowed, bring your best performance!',
-    coverImage: require('../../assets/images/decks/act-it-out.png'),
+    coverImage: require('../../assets/images/decks/act-it-out.webp'),
     version: 1,
     cards: [
       { id: 'act-001', text: 'Brushing Teeth' },
@@ -2867,7 +2867,7 @@ export const decks: Deck[] = [
     id: 'history-buff',
     title: 'History Buff',
     description: 'Legendary people, places, and moments that shaped history.',
-    coverImage: require('../../assets/images/decks/history-buff.png'),
+    coverImage: require('../../assets/images/decks/history-buff.webp'),
     version: 1,
     cards: [
       { id: 'history-001', text: 'George Washington' },
@@ -3076,7 +3076,7 @@ export const decks: Deck[] = [
     id: 'kidding-around',
     title: 'Kidding Around',
     description: 'Kid-sized fun with animals, toys, treats, and more.',
-    coverImage: require('../../assets/images/decks/kidding-around.png'),
+    coverImage: require('../../assets/images/decks/kidding-around.webp'),
     version: 1,
     cards: [
       { id: 'kid-001', text: 'Puppy' },
