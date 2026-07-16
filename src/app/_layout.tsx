@@ -85,7 +85,7 @@ export default function RootLayout() {
             headerShown: false,
             gestureEnabled: false,
             animation: 'none',
-            orientation: 'landscape_right',
+            orientation: 'portrait',
           }}
         />
         <Stack.Screen

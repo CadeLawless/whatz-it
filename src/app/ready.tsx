@@ -1,4 +1,4 @@
-import { type Href, useRouter } from 'expo-router';
+import { type Href, useNavigation, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -13,6 +13,7 @@ import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { useRoundTimer } from '@/hooks/use-round-timer';
 import { colors, radius, spacing } from '@/theme';
+import { changeOrientationWithScreenshotShield } from '@/utils/orientation-screenshot-shield';
 import { triggerRoundHaptic } from '@/utils/round-haptics';
 import { useRoundSounds } from '@/video/round-sound-provider';
 import type { RoundSoundId } from '@/video/round-sounds';
@@ -22,7 +23,8 @@ const GET_READY_SOUND_MS = 2410;
 const READY_TRANSITION_MS = 450;
 
 export default function ReadyScreen() {
-  const { height, width } = useLandscapeDimensions();
+  const { height } = useLandscapeDimensions();
+  const navigation = useNavigation();
   const router = useRouter();
   const {
     cancelRecording,
@@ -41,6 +43,7 @@ export default function ReadyScreen() {
   const [introEndsAt, setIntroEndsAt] = useState<number | null>(null);
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const [manualReady, setManualReady] = useState(false);
+  const [transitionReady, setTransitionReady] = useState(false);
   const [orientationSettled, setOrientationSettled] = useState(false);
   const [introComplete, setIntroComplete] = useState(false);
   const [soundsPrepared, setSoundsPrepared] = useState(false);
@@ -227,17 +230,33 @@ export default function ReadyScreen() {
   }, [prepareRecording]);
 
   useEffect(() => {
-    if (width <= height) return;
     const timeout = setTimeout(() => {
-      logRoundDiagnostic('ready screen orientation transition settled');
-      setOrientationSettled(true);
+      logRoundDiagnostic('ready screen screenshot transition ready');
+      setTransitionReady(true);
     }, READY_TRANSITION_MS);
     return () => clearTimeout(timeout);
-  }, [height, width]);
+  }, []);
 
   useEffect(() => {
-    if (orientationSettled) revealTransition('ready');
-  }, [orientationSettled, revealTransition]);
+    if (!transitionReady) return;
+    let active = true;
+    const finishOrientationTransition = async () => {
+      await revealTransition('ready');
+      if (!active) return;
+      await changeOrientationWithScreenshotShield({
+        screenRef,
+        setScreenOrientation: (orientation) => navigation.setOptions({ orientation }),
+        target: 'landscape',
+      });
+      if (!active) return;
+      logRoundDiagnostic('ready screen native landscape orientation settled');
+      setOrientationSettled(true);
+    };
+    void finishOrientationTransition();
+    return () => {
+      active = false;
+    };
+  }, [navigation, revealTransition, transitionReady]);
 
   useEffect(() => {
     if (
@@ -356,6 +375,11 @@ export default function ReadyScreen() {
   const handleCancel = async () => {
     setIsLeaving(true);
     await cancelRecording();
+    await changeOrientationWithScreenshotShield({
+      screenRef,
+      setScreenOrientation: (orientation) => navigation.setOptions({ orientation }),
+      target: 'portrait',
+    });
     try {
       const uri = await captureRef(screenRef, {
         format: 'jpg',
@@ -365,7 +389,6 @@ export default function ReadyScreen() {
       await beginTransition({
         destination: 'deck',
         direction: 'right',
-        orientationChange: true,
         uri,
       });
     } catch {

@@ -1,7 +1,6 @@
 import { useEventListener } from 'expo';
 import { type AudioPlayer, setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { Image } from 'expo-image';
-import { useNavigation } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   useVideoPlayer,
@@ -18,14 +17,13 @@ import {
   type StyleProp,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
-import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
+import { LandscapeViewport } from '@/components/landscape-viewport';
 import { formatRoundClock } from '@/game/round-duration';
 import { colors, radius, spacing } from '@/theme';
 import type { RoundVideo, RoundVideoEvent } from '@/video/round-videos';
@@ -67,9 +65,6 @@ export function RoundVideoPlayer({
   onDelete,
 }: RoundVideoPlayerProps) {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
-  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
-  const { beginTransition, revealTransition } = useScreenshotTransition();
   const [expanded, setExpanded] = useState(false);
   const [saveNotice, setSaveNotice] = useState<VideoSaveNotice | null>(null);
   const [deletePromptVisible, setDeletePromptVisible] = useState(false);
@@ -266,26 +261,11 @@ export function RoundVideoPlayer({
       if (scrubCompletionTimerRef.current !== null) {
         clearTimeout(scrubCompletionTimerRef.current);
       }
-      if (expandedRef.current) navigation.setOptions({ orientation: 'portrait' });
     },
-    [navigation],
+    [],
   );
 
-  useEffect(() => {
-    if (Platform.OS === 'web') return;
-    if (expanded && windowWidth > windowHeight) {
-      void revealTransition('video');
-    } else if (!expanded && windowHeight >= windowWidth) {
-      void revealTransition('video-return');
-    }
-  }, [expanded, revealTransition, windowHeight, windowWidth]);
-
   const openExpanded = async () => {
-    await beginTransition({
-      destination: 'video',
-      direction: 'left',
-      orientationChange: true,
-    });
     expandedRef.current = true;
     const startTime = staticThumbnail ? 0 : player.currentTime;
     if (staticThumbnail) {
@@ -295,7 +275,6 @@ export function RoundVideoPlayer({
     }
     previousVideoTime.current = startTime;
     setExpanded(true);
-    navigation.setOptions({ orientation: 'landscape_right' });
     showControls();
     await setPlaybackAudioMode().catch(() => undefined);
     if (separateAudioUri) {
@@ -310,12 +289,7 @@ export function RoundVideoPlayer({
     }
   };
 
-  const closeExpanded = async () => {
-    await beginTransition({
-      destination: 'video-return',
-      direction: 'right',
-      orientationChange: true,
-    });
+  const closeExpanded = () => {
     clearControlsTimer();
     clearScrubPreviewTimer();
     clearScrubCompletion();
@@ -334,8 +308,6 @@ export function RoundVideoPlayer({
       player.play();
     }
     setExpanded(false);
-    navigation.setOptions({ orientation: 'portrait' });
-    if (Platform.OS === 'ios') await revealTransition('video-return');
     restoreAppAudioMode();
   };
 
@@ -356,9 +328,9 @@ export function RoundVideoPlayer({
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      await closeExpanded();
       await onDelete(video);
       setDeletePromptVisible(false);
+      closeExpanded();
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -553,12 +525,13 @@ export function RoundVideoPlayer({
             ? cancelDelete()
             : saveNotice
               ? setSaveNotice(null)
-              : void closeExpanded()
+              : closeExpanded()
         }
         statusBarTranslucent
         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
         visible={expanded}
       >
+        <LandscapeViewport>
           <View style={styles.modalRoot}>
             <StatusBar hidden animated={false} />
             <View
@@ -739,6 +712,7 @@ export function RoundVideoPlayer({
               visible={saveNotice !== null}
             />
           </View>
+        </LandscapeViewport>
       </Modal>
     </>
   );

@@ -2,7 +2,6 @@ import { StatusBar } from 'expo-status-bar';
 import {
   Animated,
   Easing,
-  Platform,
   StyleSheet,
   useWindowDimensions,
   View,
@@ -17,31 +16,17 @@ import {
 } from 'react';
 import { releaseCapture } from 'react-native-view-shot';
 
-import {
-  beginOrientationSnapshotTransition,
-  finishOrientationSnapshotTransition,
-  supportsOrientationSnapshotTransitions,
-} from 'whatz-it-video-export';
-
-export type ScreenshotDestination =
-  | 'home'
-  | 'deck'
-  | 'ready'
-  | 'results'
-  | 'video'
-  | 'video-return';
+export type ScreenshotDestination = 'home' | 'deck' | 'ready' | 'results';
 type SlideDirection = 'left' | 'right';
 
 type ScreenshotTransition = {
   destination: ScreenshotDestination;
   direction: SlideDirection;
-  uri?: string;
-  orientationChange?: boolean;
-  nativeOverlay?: boolean;
+  uri: string;
 };
 
 type ScreenshotTransitionContextValue = {
-  beginTransition: (transition: Omit<ScreenshotTransition, 'nativeOverlay'>) => Promise<void>;
+  beginTransition: (transition: ScreenshotTransition) => Promise<void>;
   revealTransition: (destination: ScreenshotDestination) => Promise<void>;
 };
 
@@ -57,27 +42,10 @@ export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
   const [translateX] = useState(() => new Animated.Value(0));
 
   const beginTransition = useCallback(
-    async (nextTransition: Omit<ScreenshotTransition, 'nativeOverlay'>) => {
+    (nextTransition: ScreenshotTransition) => {
       translateX.setValue(0);
       isRevealing.current = false;
       revealPromise.current = null;
-
-      if (
-        nextTransition.orientationChange &&
-        Platform.OS === 'ios' &&
-        supportsOrientationSnapshotTransitions()
-      ) {
-        const nativeOverlay = await beginOrientationSnapshotTransition(
-          nextTransition.uri ?? null,
-        ).catch(() => false);
-        if (nativeOverlay) {
-          const nativeTransition = { ...nextTransition, nativeOverlay: true };
-          transitionRef.current = nativeTransition;
-          return;
-        }
-      }
-
-      if (!nextTransition.uri) return;
       transitionRef.current = nextTransition;
       setTransition(nextTransition);
 
@@ -103,19 +71,6 @@ export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
       if (isRevealing.current) return revealPromise.current ?? Promise.resolve();
       isRevealing.current = true;
 
-      if (current.nativeOverlay) {
-        const promise = finishOrientationSnapshotTransition(current.direction)
-          .catch(() => false)
-          .then(() => {
-            transitionRef.current = null;
-            isRevealing.current = false;
-            revealPromise.current = null;
-            if (current.uri) releaseCapture(current.uri);
-          });
-        revealPromise.current = promise;
-        return promise;
-      }
-
       const promise = new Promise<void>((resolve) => {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
@@ -132,7 +87,7 @@ export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
 
               // Let React remove the overlay before releasing its image. Resetting
               // the animation here can briefly redraw it at its starting point.
-              if (current.uri) setTimeout(() => releaseCapture(current.uri!), 0);
+              setTimeout(() => releaseCapture(current.uri), 0);
               resolve();
             });
           });
@@ -158,7 +113,7 @@ export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
               fadeDuration={0}
               onLoad={() => imageReady.current?.()}
               resizeMode="cover"
-              source={{ uri: transition.uri! }}
+              source={{ uri: transition.uri }}
               style={styles.snapshot}
             />
           </Animated.View>

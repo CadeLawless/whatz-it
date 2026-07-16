@@ -84,12 +84,12 @@ public final class WhatzItVideoExportModule: Module {
   private var systemSoundPools = [String: SystemSoundPool]()
   private let silentSwitchLock = NSLock()
   private var silentSwitchProbeId: SystemSoundID?
-  private var orientationOverlay: UIView?
-  private var orientationOverlayImageView: UIImageView?
-  private var orientationOverlaySourceSize: CGSize = .zero
-  private var orientationTransitionGeneration = UUID()
-  private var orientationTransitionReadyToReveal = false
-  private var pendingOrientationFinish: (direction: String, promise: Promise)?
+  private var orientationShieldOverlay: UIView?
+  private var orientationShieldImageView: UIImageView?
+  private var orientationShieldSourceSize: CGSize = .zero
+  private var orientationShieldGeneration = UUID()
+  private var orientationShieldReady = false
+  private var pendingOrientationShieldFinish: Promise?
 
   deinit {
     for pool in self.systemSoundPools.values {
@@ -106,17 +106,16 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      15
+      16
     }
 
-    AsyncFunction("beginOrientationSnapshotTransition") { (snapshotUrl: URL?) -> Bool in
-      self.beginOrientationSnapshotTransition(snapshotUrl: snapshotUrl)
+    AsyncFunction("beginOrientationScreenshotShield") { (snapshotUrl: URL?) -> Bool in
+      self.beginOrientationScreenshotShield(snapshotUrl: snapshotUrl)
     }
     .runOnQueue(.main)
 
-    AsyncFunction("finishOrientationSnapshotTransition") {
-      (direction: String, promise: Promise) in
-      self.finishOrientationSnapshotTransition(direction: direction, promise: promise)
+    AsyncFunction("finishOrientationScreenshotShield") { (promise: Promise) in
+      self.finishOrientationScreenshotShield(promise: promise)
     }
     .runOnQueue(.main)
 
@@ -282,9 +281,9 @@ public final class WhatzItVideoExportModule: Module {
     }
   }
 
-  private func beginOrientationSnapshotTransition(snapshotUrl: URL?) -> Bool {
+  private func beginOrientationScreenshotShield(snapshotUrl: URL?) -> Bool {
     guard let window = Self.activeWindow() else { return false }
-    self.removeOrientationOverlay()
+    self.removeOrientationScreenshotShield(pendingResult: false)
 
     let image: UIImage?
     if let snapshotUrl {
@@ -292,80 +291,79 @@ public final class WhatzItVideoExportModule: Module {
     } else {
       let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
       image = renderer.image { _ in
-        window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
       }
     }
     guard let image else { return false }
 
     let overlay = UIView(frame: window.bounds)
     overlay.backgroundColor = .black
-    overlay.clipsToBounds = false
+    overlay.clipsToBounds = true
     overlay.isUserInteractionEnabled = true
     overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
     let imageView = UIImageView(image: image)
-    imageView.frame = overlay.bounds
-    imageView.contentMode = .scaleAspectFill
-    imageView.clipsToBounds = false
-    imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    imageView.bounds = CGRect(origin: .zero, size: overlay.bounds.size)
+    imageView.center = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.midY)
+    imageView.contentMode = .scaleToFill
     overlay.addSubview(imageView)
     window.addSubview(overlay)
 
-    self.orientationOverlay = overlay
-    self.orientationOverlayImageView = imageView
-    self.orientationOverlaySourceSize = overlay.bounds.size
-    self.orientationTransitionReadyToReveal = false
-    self.orientationTransitionGeneration = UUID()
-    self.watchForOrientationTransition(
-      generation: self.orientationTransitionGeneration,
+    self.orientationShieldOverlay = overlay
+    self.orientationShieldImageView = imageView
+    self.orientationShieldSourceSize = overlay.bounds.size
+    self.orientationShieldReady = false
+    self.orientationShieldGeneration = UUID()
+    self.watchForOrientationShieldTransition(
+      generation: self.orientationShieldGeneration,
       window: window,
-      attemptsRemaining: 45
+      attemptsRemaining: 60
     )
     return true
   }
 
-  private func watchForOrientationTransition(
+  private func watchForOrientationShieldTransition(
     generation: UUID,
     window: UIWindow,
     attemptsRemaining: Int
   ) {
-    guard generation == self.orientationTransitionGeneration,
-      self.orientationOverlay != nil else { return }
+    guard generation == self.orientationShieldGeneration,
+      self.orientationShieldOverlay != nil else { return }
     guard attemptsRemaining > 0 else {
-      self.completeOrientationTransitionDetection(generation: generation)
+      self.completeOrientationShieldTransition(generation: generation)
       return
     }
 
     let rootController = window.rootViewController
     let topController = Self.topViewController(from: rootController)
     if let coordinator = topController?.transitionCoordinator ?? rootController?.transitionCoordinator {
-      let sourceSize = self.orientationOverlaySourceSize
+      let sourceSize = self.orientationShieldSourceSize
       coordinator.animate(alongsideTransition: { [weak self, weak window] context in
         guard let self, let window,
-          generation == self.orientationTransitionGeneration,
-          let overlay = self.orientationOverlay,
-          let imageView = self.orientationOverlayImageView else { return }
+          generation == self.orientationShieldGeneration,
+          let overlay = self.orientationShieldOverlay,
+          let imageView = self.orientationShieldImageView else { return }
         overlay.frame = window.bounds
         imageView.bounds = CGRect(origin: .zero, size: sourceSize)
         imageView.center = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.midY)
         imageView.transform = context.targetTransform.inverted()
       }) { [weak self, weak window] context in
         guard let self, let window,
-          generation == self.orientationTransitionGeneration,
-          let overlay = self.orientationOverlay,
-          let imageView = self.orientationOverlayImageView else { return }
+          generation == self.orientationShieldGeneration,
+          let overlay = self.orientationShieldOverlay,
+          let imageView = self.orientationShieldImageView else { return }
         overlay.frame = window.bounds
         imageView.bounds = CGRect(origin: .zero, size: sourceSize)
         imageView.center = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.midY)
         imageView.transform = context.targetTransform.inverted()
-        self.completeOrientationTransitionDetection(generation: generation)
+        self.completeOrientationShieldTransition(generation: generation)
       }
       return
     }
 
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self, weak window] in
       guard let self, let window else { return }
-      self.watchForOrientationTransition(
+      self.watchForOrientationShieldTransition(
         generation: generation,
         window: window,
         attemptsRemaining: attemptsRemaining - 1
@@ -373,59 +371,40 @@ public final class WhatzItVideoExportModule: Module {
     }
   }
 
-  private func finishOrientationSnapshotTransition(direction: String, promise: Promise) {
-    guard self.orientationOverlay != nil else {
+  private func finishOrientationScreenshotShield(promise: Promise) {
+    guard self.orientationShieldOverlay != nil else {
       promise.resolve(false)
       return
     }
-    if !self.orientationTransitionReadyToReveal {
-      self.pendingOrientationFinish = (direction, promise)
+    if !self.orientationShieldReady {
+      self.pendingOrientationShieldFinish?.resolve(false)
+      self.pendingOrientationShieldFinish = promise
       return
     }
-    self.animateOrientationOverlayAway(direction: direction, promise: promise)
+    self.removeOrientationScreenshotShield()
+    promise.resolve(true)
   }
 
-  private func completeOrientationTransitionDetection(generation: UUID) {
-    guard generation == self.orientationTransitionGeneration else { return }
-    self.orientationTransitionReadyToReveal = true
-    guard let pending = self.pendingOrientationFinish else { return }
-    self.pendingOrientationFinish = nil
-    self.animateOrientationOverlayAway(
-      direction: pending.direction,
-      promise: pending.promise
-    )
+  private func completeOrientationShieldTransition(generation: UUID) {
+    guard generation == self.orientationShieldGeneration else { return }
+    self.orientationShieldReady = true
+    guard let pending = self.pendingOrientationShieldFinish else { return }
+    self.pendingOrientationShieldFinish = nil
+    self.removeOrientationScreenshotShield()
+    pending.resolve(true)
   }
 
-  private func animateOrientationOverlayAway(direction: String, promise: Promise) {
-    guard let overlay = self.orientationOverlay else {
-      promise.resolve(false)
-      return
+  private func removeOrientationScreenshotShield(pendingResult: Bool? = nil) {
+    self.orientationShieldGeneration = UUID()
+    if let pendingResult {
+      self.pendingOrientationShieldFinish?.resolve(pendingResult)
     }
-    self.orientationTransitionGeneration = UUID()
-    let distance = max(overlay.bounds.width, overlay.bounds.height) * 1.15
-    let translation = direction == "right" ? distance : -distance
-    UIView.animate(
-      withDuration: 0.38,
-      delay: 0,
-      options: [.curveEaseOut, .beginFromCurrentState],
-      animations: {
-        overlay.transform = CGAffineTransform(translationX: translation, y: 0)
-      },
-      completion: { [weak self] _ in
-        self?.removeOrientationOverlay()
-        promise.resolve(true)
-      }
-    )
-  }
-
-  private func removeOrientationOverlay() {
-    self.pendingOrientationFinish?.promise.resolve(false)
-    self.pendingOrientationFinish = nil
-    self.orientationOverlay?.removeFromSuperview()
-    self.orientationOverlay = nil
-    self.orientationOverlayImageView = nil
-    self.orientationOverlaySourceSize = .zero
-    self.orientationTransitionReadyToReveal = false
+    self.pendingOrientationShieldFinish = nil
+    self.orientationShieldOverlay?.removeFromSuperview()
+    self.orientationShieldOverlay = nil
+    self.orientationShieldImageView = nil
+    self.orientationShieldSourceSize = .zero
+    self.orientationShieldReady = false
   }
 
   private static func activeWindow() -> UIWindow? {

@@ -1,5 +1,5 @@
 import { useKeepAwake } from 'expo-keep-awake';
-import { type Href, useRouter } from 'expo-router';
+import { type Href, useNavigation, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -22,6 +22,7 @@ import { formatRoundClock } from '@/game/round-duration';
 import { useRoundTimer } from '@/hooks/use-round-timer';
 import { useTiltControls } from '@/hooks/use-tilt-controls';
 import { colors, radius, spacing, typography } from '@/theme';
+import { changeOrientationWithScreenshotShield } from '@/utils/orientation-screenshot-shield';
 import { triggerRoundHaptic } from '@/utils/round-haptics';
 import { useRoundSounds } from '@/video/round-sound-provider';
 
@@ -32,6 +33,7 @@ const RESULTS_SCREENSHOT_TIMEOUT_MS = 2_000;
 export default function GameScreen() {
   useKeepAwake();
   const { width, height } = useLandscapeDimensions();
+  const navigation = useNavigation();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const roundStarted = useRef(false);
   const finishSoundPlayed = useRef(false);
@@ -175,6 +177,12 @@ export default function GameScreen() {
       if (!active) return;
       await waitForRoundStop(stopRecordingRef.current());
       if (!active) return;
+      await changeOrientationWithScreenshotShield({
+        screenRef,
+        setScreenOrientation: (orientation) => navigation.setOptions({ orientation }),
+        target: 'portrait',
+      });
+      if (!active) return;
       try {
         const uri = await withTimeout(
           captureRef(screenRef, {
@@ -187,7 +195,6 @@ export default function GameScreen() {
         await beginTransition({
           destination: 'results',
           direction: 'left',
-          orientationChange: true,
           uri,
         });
       } catch {
@@ -199,7 +206,7 @@ export default function GameScreen() {
     return () => {
       active = false;
     };
-  }, [beginTransition, round.status, router]);
+  }, [beginTransition, navigation, round.status, router]);
 
   useEffect(() => {
     let previousState = AppState.currentState;

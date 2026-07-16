@@ -49,8 +49,8 @@ type WhatzItVideoExportNativeModule = {
   prepareSystemSound(inputUri: string): Promise<void>;
   playSystemSound(inputUri: string): Promise<void>;
   stopSystemSound(inputUri: string): Promise<void>;
-  beginOrientationSnapshotTransition?(snapshotUri: string | null): Promise<boolean>;
-  finishOrientationSnapshotTransition?(direction: 'left' | 'right'): Promise<boolean>;
+  beginOrientationScreenshotShield?(snapshotUri: string | null): Promise<boolean>;
+  finishOrientationScreenshotShield?(): Promise<boolean>;
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
@@ -79,16 +79,16 @@ export function supportsSilentSwitchMonitoring() {
   return getIosVideoExportVersion() >= 14;
 }
 
-export function supportsOrientationSnapshotTransitions() {
-  return getIosVideoExportVersion() >= 15 && !!nativeModule.beginOrientationSnapshotTransition;
+export function supportsOrientationScreenshotShield() {
+  return getIosVideoExportVersion() >= 16 && !!nativeModule.beginOrientationScreenshotShield;
 }
 
-export function beginOrientationSnapshotTransition(snapshotUri: string | null) {
-  return nativeModule.beginOrientationSnapshotTransition?.(snapshotUri) ?? Promise.resolve(false);
+export function beginOrientationScreenshotShield(snapshotUri: string | null) {
+  return nativeModule.beginOrientationScreenshotShield?.(snapshotUri) ?? Promise.resolve(false);
 }
 
-export function finishOrientationSnapshotTransition(direction: 'left' | 'right') {
-  return nativeModule.finishOrientationSnapshotTransition?.(direction) ?? Promise.resolve(false);
+export function finishOrientationScreenshotShield() {
+  return nativeModule.finishOrientationScreenshotShield?.() ?? Promise.resolve(false);
 }
 
 export function exportOverlayVideo(
