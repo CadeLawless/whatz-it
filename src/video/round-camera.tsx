@@ -8,7 +8,7 @@ import {
   useCameraDevice,
   useVideoOutput,
 } from 'react-native-vision-camera';
-import { prepareRecordingAudio } from 'whatz-it-video-export';
+import { prepareRecordingAudio, reassertRecordingHaptics } from 'whatz-it-video-export';
 
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
@@ -156,12 +156,25 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                 if (!microphoneStatus.isRecording || !microphoneUri) {
                   throw new Error('The prepared microphone recorder did not enter recording state.');
                 }
+                // expo-audio may reconfigure AVAudioSession as recording begins.
+                // Reapply Apple's opt-in after that final transition so the flag
+                // is definitely true when Get Ready and the round haptics fire.
+                let recordingHapticsEnabled = false;
+                try {
+                  recordingHapticsEnabled = await reassertRecordingHaptics();
+                } catch (error) {
+                  warnVideoDiagnostic(
+                    'recording haptics flag could not be reasserted; microphone recording will continue',
+                    error,
+                  );
+                }
                 microphoneRef.current = {
                   uri: microphoneUri,
                   offsetMs: Math.max(0, Date.now() - videoStartedAt),
                 };
                 logVideoDiagnostic('microphone recording started', {
                   offsetMs: microphoneRef.current.offsetMs,
+                  recordingHapticsEnabled,
                   status: microphoneStatus,
                   uri: microphoneUri,
                 });

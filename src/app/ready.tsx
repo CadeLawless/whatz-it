@@ -13,6 +13,7 @@ import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { useRoundTimer } from '@/hooks/use-round-timer';
 import { colors, radius, spacing } from '@/theme';
+import { triggerRoundHaptic } from '@/utils/round-haptics';
 import { useRoundSounds } from '@/video/round-sound-provider';
 import type { RoundSoundId } from '@/video/round-sounds';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
@@ -25,6 +26,7 @@ export default function ReadyScreen() {
   const router = useRouter();
   const {
     cancelRecording,
+    isRecording,
     prepareRecording,
     recordOverlayEvent,
     recordSoundCue,
@@ -74,9 +76,13 @@ export default function ReadyScreen() {
         targetEndsAt: countdownEndsAt,
         now: Date.now(),
       });
+      void triggerRoundHaptic('initial-countdown', {
+        cameraActive: isRecording,
+        countdownValue: remaining as 1 | 2 | 3,
+      });
       void playSound(sound);
     },
-    [countdownEndsAt, playSound, recordOverlayEvent, recordSoundCue],
+    [countdownEndsAt, isRecording, playSound, recordOverlayEvent, recordSoundCue],
   );
   const handleCountdownExpire = useCallback(() => {
     if (launched.current) return;
@@ -190,6 +196,7 @@ export default function ReadyScreen() {
       }
       // Recording must be active before the first note so Get Ready is present
       // in the saved round video from its beginning.
+      void triggerRoundHaptic('get-ready', { cameraActive: started });
       recordSoundCue('get-ready');
       const played = await playSound('get-ready');
       logRoundDiagnostic('get-ready playback request completed', { active, played });

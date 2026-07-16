@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import { type Href, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -23,8 +22,8 @@ import { formatRoundClock } from '@/game/round-duration';
 import { useRoundTimer } from '@/hooks/use-round-timer';
 import { useTiltControls } from '@/hooks/use-tilt-controls';
 import { colors, radius, spacing, typography } from '@/theme';
+import { triggerRoundHaptic } from '@/utils/round-haptics';
 import { useRoundSounds } from '@/video/round-sound-provider';
-import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 const ROUND_END_SCREEN_MS = 2495;
 
@@ -45,6 +44,7 @@ export default function GameScreen() {
     answerCard,
     advanceCard,
     finishRound,
+    isRecording,
     recordOverlayEvent,
     recordSoundCue,
     startRound,
@@ -58,10 +58,11 @@ export default function GameScreen() {
   const handleTimerSecond = useCallback(
     (remaining: number) => {
       if (remaining < 1 || remaining > 10) return;
+      void triggerRoundHaptic('final-countdown', { cameraActive: isRecording });
       recordSoundCue('final-tick');
       void playSound('final-tick');
     },
-    [playSound, recordSoundCue],
+    [isRecording, playSound, recordSoundCue],
   );
 
   useEffect(() => {
@@ -78,21 +79,22 @@ export default function GameScreen() {
       if (outcome === 'correct') {
         recordSoundCue('correct');
         void playSound('correct');
-        void triggerAnswerHaptic('correct');
+        void triggerRoundHaptic('correct', { cameraActive: isRecording });
       } else {
         recordSoundCue('pass');
         void playSound('pass');
-        void triggerAnswerHaptic('passed');
+        void triggerRoundHaptic('pass', { cameraActive: isRecording });
       }
       answerCard(outcome);
     },
-    [answerCard, playSound, recordSoundCue],
+    [answerCard, isRecording, playSound, recordSoundCue],
   );
   const handleRearmed = useCallback(() => {
+    void triggerRoundHaptic('card-flip', { cameraActive: isRecording });
     recordSoundCue('flip');
     void playSound('flip');
     advanceCard();
-  }, [advanceCard, playSound, recordSoundCue]);
+  }, [advanceCard, isRecording, playSound, recordSoundCue]);
   const tiltStatus = useTiltControls({
     enabled:
       round.status === 'ready' || round.status === 'playing' || round.status === 'feedback',
@@ -154,6 +156,7 @@ export default function GameScreen() {
     if (round.status !== 'finished') return;
     if (!finishSoundPlayed.current) {
       finishSoundPlayed.current = true;
+      void triggerRoundHaptic('times-up', { cameraActive: isRecording });
       recordSoundCue('round-end');
       void playSound('round-end');
     }
@@ -181,7 +184,7 @@ export default function GameScreen() {
     return () => {
       active = false;
     };
-  }, [beginTransition, playSound, recordSoundCue, round.status, router]);
+  }, [beginTransition, isRecording, playSound, recordSoundCue, round.status, router]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -230,22 +233,12 @@ export default function GameScreen() {
             ]}
           >
             {round.status !== 'finished' && (
-              <>
-                <View pointerEvents="box-none" style={styles.closeButton}>
-                  <CloseButton
-                    accessibilityLabel="Finish round early"
-                    disabled={false}
-                    onPress={handleFinishEarly}
-                  />
-                </View>
-
-                <View style={styles.topRow}>
-                  <Text pointerEvents="none" style={styles.timer}>
-                    {formatRoundClock(round.status === 'ready' ? round.durationSeconds : remainingSeconds)}
-                  </Text>
-                  <Text style={styles.deckName}>{deck.title}</Text>
-                </View>
-              </>
+              <View style={styles.topRow}>
+                <Text pointerEvents="none" style={styles.timer}>
+                  {formatRoundClock(round.status === 'ready' ? round.durationSeconds : remainingSeconds)}
+                </Text>
+                <Text style={styles.deckName}>{deck.title}</Text>
+              </View>
             )}
 
             <View style={styles.cardArea}>
@@ -314,6 +307,16 @@ export default function GameScreen() {
             </View>
           )}
 
+          {round.status !== 'finished' && round.status !== 'feedback' && (
+            <View pointerEvents="box-none" style={styles.closeButton}>
+              <CloseButton
+                accessibilityLabel="Finish round early"
+                disabled={false}
+                onPress={handleFinishEarly}
+              />
+            </View>
+          )}
+
           {finishPromptVisible && round.status !== 'finished' && (
             <View accessibilityViewIsModal style={styles.promptOverlay}>
               <View style={styles.promptCard}>
@@ -346,29 +349,6 @@ export default function GameScreen() {
   );
 }
 
-async function triggerAnswerHaptic(outcome: 'correct' | 'passed') {
-  const startedAt = Date.now();
-  logRoundDiagnostic('answer haptic requested', {
-    outcome,
-    pattern: outcome === 'correct' ? 'success-notification' : 'light-impact',
-  });
-  try {
-    if (outcome === 'correct') {
-      // Success notification is a longer, more celebratory pattern.
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } else {
-      // A light impact gives Pass one quick, unmistakable tap.
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    logRoundDiagnostic('answer haptic completed', {
-      elapsedMs: Date.now() - startedAt,
-      outcome,
-    });
-  } catch (error) {
-    warnRoundDiagnostic('answer haptic failed', error, { outcome });
-  }
-}
-
 function getCardFontSize(text: string, width: number, height: number) {
   const lengthSize = text.length <= 16 ? 68 : text.length <= 28 ? 56 : text.length <= 44 ? 46 : 38;
   const viewportSize = Math.max(36, Math.min(68, height * 0.18, width * 0.09));
@@ -389,7 +369,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     overflow: 'hidden',
   },
-  closeButton: { position: 'absolute', top: 14, left: 14, zIndex: 12 },
+  closeButton: { position: 'absolute', top: 30, left: 30, zIndex: 70 },
   topRow: {
     height: 72,
     flexShrink: 0,

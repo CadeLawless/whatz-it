@@ -33,6 +33,8 @@ type WhatzItVideoExportNativeModule = {
     cues: RoundAudioCue[],
   ): Promise<string>;
   prepareRecordingAudio(): Promise<void>;
+  reassertRecordingHaptics(): Promise<boolean>;
+  playRoundHaptic(cue: string, countdownValue: number | null): Promise<string>;
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
   cancelMicrophoneRecording(): Promise<void>;
@@ -82,6 +84,14 @@ export function mixRoundAudio(
 
 export function prepareRecordingAudio() {
   return nativeModule.prepareRecordingAudio();
+}
+
+export function reassertRecordingHaptics() {
+  return nativeModule.reassertRecordingHaptics();
+}
+
+export function playRoundHaptic(cue: string, countdownValue: number | null) {
+  return nativeModule.playRoundHaptic(cue, countdownValue);
 }
 
 export function startMicrophoneRecording() {

@@ -46,6 +46,7 @@ type RoundContextValue = {
   finishRound: () => void;
   resetRound: () => void;
   currentVideo: RoundVideo | null;
+  isRecording: boolean;
   deleteCurrentVideo: () => Promise<void>;
   retryCurrentVideoExport: () => Promise<RoundVideo | null>;
   prepareRecording: () => Promise<RecordingPreparation>;
@@ -62,6 +63,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
   const [round, dispatch] = useReducer(roundReducer, initialRoundState);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [currentVideo, setCurrentVideo] = useState<RoundVideo | null>(null);
   const seenCardsByDeck = useRef(new Map<string, Set<string>>());
   const cameraRef = useRef<RoundCameraRef>(null);
@@ -200,6 +202,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     recordingSoundCues.current = [];
     recordingStartedAt.current = startedAt;
     recordingActive.current = true;
+    setIsRecording(true);
     logVideoDiagnostic('round recording marked active in context', { startedAt });
     return true;
   }, [round.durationSeconds]);
@@ -207,6 +210,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
   const finishCameraSession = useCallback(() => {
     cameraReady.current = false;
     recordingActive.current = false;
+    setIsRecording(false);
     recordingStartedAt.current = null;
     setCameraEnabled(false);
     setMicrophoneEnabled(false);
@@ -313,6 +317,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     () => ({
       round,
       currentVideo,
+      isRecording,
       deleteCurrentVideo,
       retryCurrentVideoExport,
       prepareRecording,
@@ -335,6 +340,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
         recordingEvents.current = [];
         recordingSoundCues.current = [];
         recordingStartedAt.current = null;
+        setIsRecording(false);
         setCurrentVideo(null);
         dispatch({
           type: 'CONFIGURE',
@@ -388,13 +394,17 @@ export function RoundProvider({ children }: PropsWithChildren) {
         recordOverlayEvent({ kind: 'times-up', text: "TIME'S UP!" });
         dispatch({ type: 'FINISH', now: Date.now() });
       },
-      resetRound: () => dispatch({ type: 'RESET' }),
+      resetRound: () => {
+        setIsRecording(false);
+        dispatch({ type: 'RESET' });
+      },
     }),
     [
       cancelRecording,
       currentVideo,
       deleteCurrentVideo,
       getRecordingTimerEndsAtMs,
+      isRecording,
       prepareRecording,
       recordOverlayEvent,
       recordSoundCue,

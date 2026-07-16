@@ -1,5 +1,6 @@
 import AudioToolbox
 import AVFoundation
+import CoreHaptics
 import ExpoModulesCore
 import ImageIO
 import QuartzCore
@@ -36,6 +37,8 @@ private enum VideoExportError: Error, LocalizedError {
   case microphoneAlreadyRecording
   case microphoneNotRecording
   case microphoneStartFailed
+  case coreHapticsUnavailable
+  case unknownHapticCue(String)
   case systemSoundCreationFailed(OSStatus)
   case exportFailed(String)
 
@@ -55,6 +58,10 @@ private enum VideoExportError: Error, LocalizedError {
       return "There is no active microphone recording to stop."
     case .microphoneStartFailed:
       return "The microphone recorder could not be started."
+    case .coreHapticsUnavailable:
+      return "Core Haptics is unavailable on this device."
+    case .unknownHapticCue(let cue):
+      return "Unknown round haptic cue: \(cue)."
     case .systemSoundCreationFailed(let status):
       return "The round sound could not be prepared (status \(status))."
     case .exportFailed(let message):
@@ -68,6 +75,7 @@ public final class WhatzItVideoExportModule: Module {
   private var microphoneRecordingUrl: URL?
   private let soundIdsLock = NSLock()
   private var activeSoundIds = Set<SystemSoundID>()
+  private var roundHapticEngine: CHHapticEngine?
 
   public func definition() -> ModuleDefinition {
     Name("WhatzItVideoExport")
@@ -130,6 +138,44 @@ public final class WhatzItVideoExportModule: Module {
 
     AsyncFunction("prepareRecordingAudio") { () throws in
       try Self.configureRecordingAudioSession()
+      do {
+        _ = try self.prepareRoundHapticEngine()
+      } catch {
+        self.roundHapticEngine = nil
+        NSLog(
+          "[RoundHapticsNative] Core Haptics preparation failed; recording will continue with vibration fallback error=%@",
+          error.localizedDescription
+        )
+      }
+    }
+
+    AsyncFunction("reassertRecordingHaptics") { () throws -> Bool in
+      let audioSession = AVAudioSession.sharedInstance()
+      try audioSession.setAllowHapticsAndSystemSoundsDuringRecording(true)
+      do {
+        _ = try self.prepareRoundHapticEngine()
+      } catch {
+        self.roundHapticEngine = nil
+        NSLog(
+          "[RoundHapticsNative] Core Haptics reassertion failed; system vibration remains available error=%@",
+          error.localizedDescription
+        )
+      }
+      let enabled = audioSession.allowHapticsAndSystemSoundsDuringRecording
+      NSLog(
+        "[RoundHapticsNative] Recording haptics flag reasserted after microphone start enabled=%@",
+        enabled.description
+      )
+      return enabled
+    }
+
+    AsyncFunction("playRoundHaptic") { (cue: String, countdownValue: Int?) throws -> String in
+      guard try self.prepareRoundHapticEngine() else {
+        NSLog("[RoundHapticsNative] Core Haptics is unsupported; requesting system vibration fallback cue=%@", cue)
+        throw VideoExportError.coreHapticsUnavailable
+      }
+      try self.playRoundHaptic(cue: cue, countdownValue: countdownValue)
+      return "core-haptics"
     }
 
     AsyncFunction("startMicrophoneRecording") { () throws -> String in
@@ -192,6 +238,109 @@ public final class WhatzItVideoExportModule: Module {
         self.soundIdsLock.unlock()
       }
     }
+  }
+
+  private func prepareRoundHapticEngine() throws -> Bool {
+    guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+      return false
+    }
+    if let engine = self.roundHapticEngine {
+      try engine.start()
+      return true
+    }
+
+    let engine = try CHHapticEngine(audioSession: AVAudioSession.sharedInstance())
+    engine.playsHapticsOnly = true
+    engine.isAutoShutdownEnabled = false
+    engine.stoppedHandler = { reason in
+      NSLog("[RoundHapticsNative] Core Haptics engine stopped reason=%ld", reason.rawValue)
+    }
+    engine.resetHandler = { [weak self, weak engine] in
+      do {
+        try engine?.start()
+        NSLog("[RoundHapticsNative] Core Haptics engine restarted after reset")
+      } catch {
+        NSLog("[RoundHapticsNative] Core Haptics restart failed error=%@", error.localizedDescription)
+        self?.roundHapticEngine = nil
+      }
+    }
+    try engine.start()
+    self.roundHapticEngine = engine
+    NSLog(
+      "[RoundHapticsNative] Core Haptics engine ready recordingPermission=%@",
+      AVAudioSession.sharedInstance().allowHapticsAndSystemSoundsDuringRecording.description
+    )
+    return true
+  }
+
+  private func playRoundHaptic(cue: String, countdownValue: Int?) throws {
+    guard let engine = self.roundHapticEngine else {
+      throw VideoExportError.coreHapticsUnavailable
+    }
+    let events = Self.roundHapticEvents(cue: cue, countdownValue: countdownValue)
+    guard !events.isEmpty else {
+      throw VideoExportError.unknownHapticCue(cue)
+    }
+    let pattern = try CHHapticPattern(events: events, parameters: [])
+    let player = try engine.makePlayer(with: pattern)
+    try player.start(atTime: CHHapticTimeImmediate)
+    NSLog(
+      "[RoundHapticsNative] Core Haptics pattern started cue=%@ countdownValue=%@ eventCount=%ld recordingPermission=%@",
+      cue,
+      countdownValue.map { String($0) } ?? "nil",
+      events.count,
+      AVAudioSession.sharedInstance().allowHapticsAndSystemSoundsDuringRecording.description
+    )
+  }
+
+  private static func roundHapticEvents(cue: String, countdownValue: Int?) -> [CHHapticEvent] {
+    switch cue {
+    case "card-flip":
+      return [transient(intensity: 0.34, sharpness: 0.48, at: 0)]
+    case "correct":
+      return successEvents(startingAt: 0)
+    case "pass":
+      return [transient(intensity: 0.42, sharpness: 0.12, at: 0)]
+    case "get-ready":
+      return [
+        transient(intensity: 0.62, sharpness: 0.5, at: 0),
+        transient(intensity: 0.62, sharpness: 0.5, at: 0.08),
+      ]
+    case "initial-countdown":
+      let count = max(1, min(3, 4 - (countdownValue ?? 3)))
+      return (0..<count).map { index in
+        transient(intensity: 0.34, sharpness: 0.48, at: Double(index) * 0.08)
+      }
+    case "final-countdown":
+      return [transient(intensity: 0.72, sharpness: 0.95, at: 0)]
+    case "times-up":
+      return [transient(intensity: 1, sharpness: 0.45, at: 0)] + successEvents(startingAt: 0.1)
+    default:
+      return []
+    }
+  }
+
+  private static func successEvents(startingAt start: TimeInterval) -> [CHHapticEvent] {
+    [
+      transient(intensity: 0.38, sharpness: 0.45, at: start),
+      transient(intensity: 0.58, sharpness: 0.5, at: start + 0.08),
+      transient(intensity: 0.88, sharpness: 0.58, at: start + 0.18),
+    ]
+  }
+
+  private static func transient(
+    intensity: Float,
+    sharpness: Float,
+    at time: TimeInterval
+  ) -> CHHapticEvent {
+    CHHapticEvent(
+      eventType: .hapticTransient,
+      parameters: [
+        CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+        CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness),
+      ],
+      relativeTime: time
+    )
   }
 
   private static func configureRecordingAudioSession() throws {
