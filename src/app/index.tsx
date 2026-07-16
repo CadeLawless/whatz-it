@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  type LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
 import Animated, {
   Easing,
   interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -27,7 +29,6 @@ import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { decks, getDeckById } from '@/data/decks';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
-import { spacing } from '@/theme';
 import {
   deleteRoundVideo,
   isRoundVideoReadyToSave,
@@ -42,6 +43,7 @@ export default function DeckLibraryScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const libraryTop = useRef(0);
   const sectionOffsets = useRef({ decks: 0, videos: 0 });
+  const sectionHeadingOffsets = useRef({ decks: 0, videos: 0 });
   const isPortrait = usePortraitScreen();
   const { revealTransition } = useScreenshotTransition();
   const [decksExpanded, setDecksExpanded] = useState(true);
@@ -91,30 +93,37 @@ export default function DeckLibraryScreen() {
     }, []),
   );
 
-  const scrollToExpandedSection = (section: 'decks' | 'videos') => {
+  const scrollToExpandedSection = useCallback((section: 'decks' | 'videos') => {
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollTo({
-          animated: true,
-          y: Math.max(
-            0,
-            libraryTop.current + sectionOffsets.current[section] - spacing.lg,
-          ),
-        });
+      scrollViewRef.current?.scrollTo({
+        animated: true,
+        y: Math.max(
+          0,
+          libraryTop.current +
+            sectionOffsets.current[section] +
+            sectionHeadingOffsets.current[section],
+        ),
       });
     });
-  };
+  }, []);
+
+  const handleDecksExpanded = useCallback(
+    () => scrollToExpandedSection('decks'),
+    [scrollToExpandedSection],
+  );
+  const handleVideosExpanded = useCallback(
+    () => scrollToExpandedSection('videos'),
+    [scrollToExpandedSection],
+  );
 
   const toggleDecks = () => {
     const expanded = !decksExpanded;
     setDecksExpanded(expanded);
-    if (expanded) scrollToExpandedSection('decks');
   };
 
   const toggleVideos = () => {
     const expanded = !videosExpanded;
     setVideosExpanded(expanded);
-    if (expanded) scrollToExpandedSection('videos');
   };
 
   const handleSave = async (video: RoundVideo): Promise<VideoSaveNotice> => {
@@ -244,10 +253,16 @@ export default function DeckLibraryScreen() {
             <SectionHeading
               expanded={decksExpanded}
               label="MY DECKS"
+              onLayout={(event) => {
+                sectionHeadingOffsets.current.decks = event.nativeEvent.layout.y;
+              }}
               onPress={toggleDecks}
             />
 
-            <CollapsibleContent expanded={decksExpanded}>
+            <CollapsibleContent
+              expanded={decksExpanded}
+              onExpansionComplete={handleDecksExpanded}
+            >
               <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
                 {decks.map((deck) => (
                   <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
@@ -269,10 +284,16 @@ export default function DeckLibraryScreen() {
             <SectionHeading
               expanded={videosExpanded}
               label="MY VIDEOS"
+              onLayout={(event) => {
+                sectionHeadingOffsets.current.videos = event.nativeEvent.layout.y;
+              }}
               onPress={toggleVideos}
             />
 
-            <CollapsibleContent expanded={videosExpanded}>
+            <CollapsibleContent
+              expanded={videosExpanded}
+              onExpansionComplete={handleVideosExpanded}
+            >
               {videos.length === 0 ? (
                 <Text style={styles.emptyVideos}>Your last 10 round videos will appear here.</Text>
               ) : (
@@ -397,16 +418,31 @@ export default function DeckLibraryScreen() {
 
 const COLLAPSE_DURATION = 280;
 
-function CollapsibleContent({ expanded, children }: { expanded: boolean; children: ReactNode }) {
+function CollapsibleContent({
+  expanded,
+  children,
+  onExpansionComplete,
+}: {
+  expanded: boolean;
+  children: ReactNode;
+  onExpansionComplete?: () => void;
+}) {
   const [contentHeight, setContentHeight] = useState(0);
   const progress = useSharedValue(expanded ? 1 : 0);
+  const previousExpanded = useRef(expanded);
 
   useEffect(() => {
+    const shouldNotifyExpansion = expanded && !previousExpanded.current;
+    previousExpanded.current = expanded;
     progress.value = withTiming(expanded ? 1 : 0, {
       duration: COLLAPSE_DURATION,
       easing: Easing.out(Easing.cubic),
+    }, (finished) => {
+      if (finished && shouldNotifyExpansion && onExpansionComplete) {
+        runOnJS(onExpansionComplete)();
+      }
     });
-  }, [expanded, progress]);
+  }, [expanded, onExpansionComplete, progress]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     height: contentHeight * progress.value,
@@ -434,16 +470,19 @@ function CollapsibleContent({ expanded, children }: { expanded: boolean; childre
 function SectionHeading({
   expanded,
   label,
+  onLayout,
   onPress,
 }: {
   expanded: boolean;
   label: string;
+  onLayout?: (event: LayoutChangeEvent) => void;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ expanded }}
+      onLayout={onLayout}
       onPress={onPress}
       style={({ pressed }) => [styles.sectionHeading, pressed && styles.headingPressed]}
     >
