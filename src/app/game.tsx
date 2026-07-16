@@ -24,6 +24,7 @@ import { useRoundTimer } from '@/hooks/use-round-timer';
 import { useTiltControls } from '@/hooks/use-tilt-controls';
 import { colors, radius, spacing, typography } from '@/theme';
 import { useRoundSounds } from '@/video/round-sound-provider';
+import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 const ROUND_END_SCREEN_MS = 2495;
 
@@ -77,11 +78,11 @@ export default function GameScreen() {
       if (outcome === 'correct') {
         recordSoundCue('correct');
         void playSound('correct');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+        void triggerAnswerHaptic('correct');
       } else {
         recordSoundCue('pass');
         void playSound('pass');
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+        void triggerAnswerHaptic('passed');
       }
       answerCard(outcome);
     },
@@ -343,6 +344,29 @@ export default function GameScreen() {
       </LandscapeViewport>
     </View>
   );
+}
+
+async function triggerAnswerHaptic(outcome: 'correct' | 'passed') {
+  const startedAt = Date.now();
+  logRoundDiagnostic('answer haptic requested', {
+    outcome,
+    pattern: outcome === 'correct' ? 'success-notification' : 'light-impact',
+  });
+  try {
+    if (outcome === 'correct') {
+      // Success notification is a longer, more celebratory pattern.
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      // A light impact gives Pass one quick, unmistakable tap.
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    logRoundDiagnostic('answer haptic completed', {
+      elapsedMs: Date.now() - startedAt,
+      outcome,
+    });
+  } catch (error) {
+    warnRoundDiagnostic('answer haptic failed', error, { outcome });
+  }
 }
 
 function getCardFontSize(text: string, width: number, height: number) {
