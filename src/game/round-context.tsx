@@ -162,7 +162,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     setAudioModeAsync({
       allowsRecording: false,
       interruptionMode: 'mixWithOthers',
-      playsInSilentMode: false,
+      playsInSilentMode: true,
       shouldRouteThroughEarpiece: false,
     }).catch(() => undefined);
   }, []);

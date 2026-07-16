@@ -1,7 +1,6 @@
-import { useAudioPlayer } from 'expo-audio';
 import { type Href, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
@@ -12,17 +11,13 @@ import { useScreenshotTransition } from '@/components/screenshot-transition-prov
 import { getDeckById } from '@/data/decks';
 import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
+import { useRoundTimer } from '@/hooks/use-round-timer';
 import { colors, radius, spacing } from '@/theme';
-import {
-  getRoundSoundSource,
-  playRoundSound,
-  preloadRoundSounds,
-  type RoundSoundId,
-} from '@/video/round-sounds';
+import { useRoundSounds } from '@/video/round-sound-provider';
+import type { RoundSoundId } from '@/video/round-sounds';
 
 const GET_READY_SOUND_MS = 1898;
 const READY_TRANSITION_MS = 450;
-const ROUND_AUDIO_PLAYER_OPTIONS = { keepAudioSessionActive: true } as const;
 
 export default function ReadyScreen() {
   const { height } = useLandscapeDimensions();
@@ -37,31 +32,60 @@ export default function ReadyScreen() {
     startRecording,
   } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
-  const [count, setCount] = useState(3);
+  const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
   const [manualReady, setManualReady] = useState(false);
   const [orientationSettled, setOrientationSettled] = useState(false);
   const [introComplete, setIntroComplete] = useState(false);
+  const [soundsPrepared, setSoundsPrepared] = useState(false);
   const [recordingPreparation, setRecordingPreparation] =
     useState<RecordingPreparation | 'preparing'>('preparing');
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
   const introStarted = useRef(false);
+  const soundPreparationStarted = useRef(false);
   const screenRef = useRef<View>(null);
   const { beginTransition, revealTransition } = useScreenshotTransition();
-  const getReadyPlayer = useAudioPlayer(getRoundSoundSource('get-ready'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const count3Player = useAudioPlayer(getRoundSoundSource('count-3'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const count2Player = useAudioPlayer(getRoundSoundSource('count-2'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const count1Player = useAudioPlayer(getRoundSoundSource('count-1'), ROUND_AUDIO_PLAYER_OPTIONS);
+  const { isReady: soundsReady, play: playSound, prepareForRound } = useRoundSounds();
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady = foreheadStatus === 'ready' || manualReady;
   const recordingPrepared =
     recordingPreparation === 'ready' ||
     recordingPreparation === 'permission-denied' ||
     recordingPreparation === 'unavailable';
+  const handleCountdownSecond = useCallback(
+    (remaining: number) => {
+      if (remaining < 1 || remaining > 3) return;
+      const sound: RoundSoundId =
+        remaining === 3 ? 'count-3' : remaining === 2 ? 'count-2' : 'count-1';
+      recordOverlayEvent({ kind: 'countdown', text: String(remaining) });
+      recordSoundCue(sound);
+      void playSound(sound);
+    },
+    [playSound, recordOverlayEvent, recordSoundCue],
+  );
+  const handleCountdownExpire = useCallback(() => {
+    if (launched.current) return;
+    launched.current = true;
+    router.replace('/game' as Href);
+  }, [router]);
+  const count = useRoundTimer({
+    endsAt: countdownEndsAt,
+    active: introComplete && !isLeaving,
+    onExpire: handleCountdownExpire,
+    onSecond: handleCountdownSecond,
+  });
 
   useEffect(() => {
-    void preloadRoundSounds(['get-ready', 'count-3', 'count-2', 'count-1']);
-  }, []);
+    if (!soundsReady || soundPreparationStarted.current) return;
+    soundPreparationStarted.current = true;
+    let active = true;
+    void prepareForRound().then((prepared) => {
+      if (active) setSoundsPrepared(prepared);
+    });
+    return () => {
+      active = false;
+    };
+  }, [prepareForRound, soundsReady]);
 
   useEffect(() => {
     let active = true;
@@ -83,39 +107,56 @@ export default function ReadyScreen() {
   }, [orientationSettled, revealTransition]);
 
   useEffect(() => {
-    if (!positionReady || !orientationSettled || !recordingPrepared || isLeaving || introStarted.current) return;
+    if (
+      !positionReady ||
+      !orientationSettled ||
+      !recordingPrepared ||
+      !soundsPrepared ||
+      isLeaving ||
+      introStarted.current
+    ) return;
     introStarted.current = true;
-    void playRoundSound(getReadyPlayer, 'get-ready');
-    const timeout = setTimeout(async () => {
+    let active = true;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const startIntro = async () => {
       const started = await startRecording();
+      if (!active) return;
       if (recordingPreparation === 'ready' && !started) {
         introStarted.current = false;
         setRecordingPreparation('error');
         return;
       }
-      setIntroComplete(true);
-    }, GET_READY_SOUND_MS);
-    return () => clearTimeout(timeout);
+      // Recording must be active before the first note so Get Ready is present
+      // in the saved round video from its beginning.
+      recordSoundCue('get-ready');
+      const played = await playSound('get-ready');
+      if (!active) return;
+      if (!played) {
+        introStarted.current = false;
+        setSoundsPrepared(false);
+        return;
+      }
+      timeout = setTimeout(() => {
+        setCountdownEndsAt(Date.now() + 3000);
+        setIntroComplete(true);
+      }, GET_READY_SOUND_MS);
+    };
+    void startIntro();
+    return () => {
+      active = false;
+      if (timeout) clearTimeout(timeout);
+    };
   }, [
-    getReadyPlayer,
     isLeaving,
     orientationSettled,
+    playSound,
     positionReady,
     recordingPreparation,
     recordingPrepared,
+    recordSoundCue,
+    soundsPrepared,
     startRecording,
   ]);
-
-  useEffect(() => {
-    if (!introComplete || isLeaving) return;
-    recordOverlayEvent({ kind: 'countdown', text: String(count) });
-    const sound: RoundSoundId = count === 3 ? 'count-3' : count === 2 ? 'count-2' : 'count-1';
-    recordSoundCue(sound);
-    void playRoundSound(
-      count === 3 ? count3Player : count === 2 ? count2Player : count1Player,
-      sound,
-    );
-  }, [count, count1Player, count2Player, count3Player, introComplete, isLeaving, recordOverlayEvent, recordSoundCue]);
 
   useEffect(() => {
     if (isLeaving) return;
@@ -135,18 +176,7 @@ export default function ReadyScreen() {
       return;
     }
 
-    if (!positionReady || !orientationSettled || !introComplete) return;
-
-    const timeout = setTimeout(() => {
-      if (count === 1 && !launched.current) {
-        launched.current = true;
-        router.replace('/game' as Href);
-        return;
-      }
-      setCount((value) => Math.max(1, value - 1));
-    }, 1000);
-    return () => clearTimeout(timeout);
-  }, [count, deck, introComplete, isLeaving, orientationSettled, positionReady, round.status, router]);
+  }, [deck, isLeaving, round.status, router]);
 
   if (!deck) return null;
 

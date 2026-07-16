@@ -1,5 +1,5 @@
 import { Asset } from 'expo-asset';
-import type { AudioPlayer } from 'expo-audio';
+import { preload, type AudioPlayer } from 'expo-audio';
 
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
@@ -33,8 +33,13 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
   'round-end': require('../../assets/sounds/round-end.wav'),
 };
 
+// Begin native decoder/buffer preparation as soon as the app bundle loads.
+// The persistent sound provider still verifies that every player is loaded
+// before allowing a round to begin.
+for (const source of Object.values(ROUND_SOUND_SOURCES)) preload(source);
+
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
-const ROUND_SOUND_VOLUME = 0.3;
+const ROUND_SOUND_VOLUME = 1;
 
 export function getRoundSoundSource(sound: RoundSoundId) {
   return ROUND_SOUND_SOURCES[sound];
@@ -45,17 +50,37 @@ export function preloadRoundSounds(sounds: RoundSoundId[]) {
 }
 
 export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
+  if (!player.isLoaded) {
+    warnVideoDiagnostic('round cue skipped because its player is not loaded', undefined, { sound });
+    return false;
+  }
+
   try {
-    await player.seekTo(0);
+    if (player.playing) player.pause();
+    if (player.currentTime > 0.005) await player.seekTo(0);
+    if (!player.isLoaded) return false;
     player.volume = ROUND_SOUND_VOLUME;
     player.play();
     logVideoDiagnostic('round cue playback started', {
       sound,
       volume: ROUND_SOUND_VOLUME,
     });
+    return true;
   } catch (error) {
     warnVideoDiagnostic('round cue playback failed', error, { sound });
     // A cue should never interrupt the round if the device cannot play it.
+    return false;
+  }
+}
+
+export async function rewindRoundSoundPlayer(player: AudioPlayer) {
+  if (!player.isLoaded) return false;
+  try {
+    if (player.playing) player.pause();
+    if (player.currentTime > 0.005) await player.seekTo(0);
+    return player.isLoaded;
+  } catch {
+    return false;
   }
 }
 
