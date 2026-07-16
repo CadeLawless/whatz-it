@@ -56,7 +56,7 @@ export function supportsReliableIosAudioExport() {
   return getIosVideoExportVersion() >= 3;
 }
 
-export function supportsVoiceProcessedMicrophone() {
+export function supportsRoundAudioMix() {
   return getIosVideoExportVersion() >= 11;
 }
 

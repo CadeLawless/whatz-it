@@ -254,9 +254,9 @@ export function RoundProvider({ children }: PropsWithChildren) {
         let temporaryAudioUri = capture.microphoneUri;
         if (Platform.OS === 'ios' && capture.microphoneUri) {
           try {
-            const { mixRoundAudio, supportsVoiceProcessedMicrophone } =
+            const { mixRoundAudio, supportsRoundAudioMix } =
               await import('whatz-it-video-export');
-            if (supportsVoiceProcessedMicrophone()) {
+            if (supportsRoundAudioMix()) {
               temporaryAudioUri = await mixRoundAudio(
                 capture.videoUri,
                 capture.microphoneUri,
@@ -264,7 +264,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
                 await resolveRoundAudioCues(soundCues),
                 ROUND_VIDEO_SOUND_VOLUME,
               );
-              logVideoDiagnostic('voice track mixed with export-volume round cues', {
+              logVideoDiagnostic('microphone track mixed with export-volume round cues', {
                 cueCount: soundCues.length,
                 cueVolume: ROUND_VIDEO_SOUND_VOLUME,
                 microphoneUri: capture.microphoneUri,

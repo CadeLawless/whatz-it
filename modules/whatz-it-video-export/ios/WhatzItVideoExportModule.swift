@@ -36,7 +36,6 @@ private enum VideoExportError: Error, LocalizedError {
   case microphoneAlreadyRecording
   case microphoneNotRecording
   case microphoneStartFailed
-  case recordingHapticsDisabled
   case unknownHapticCue(String)
   case systemSoundCreationFailed(OSStatus)
   case exportFailed(String)
@@ -57,8 +56,6 @@ private enum VideoExportError: Error, LocalizedError {
       return "There is no active microphone recording to stop."
     case .microphoneStartFailed:
       return "The microphone recorder could not be started."
-    case .recordingHapticsDisabled:
-      return "Haptics are not enabled for the active recording audio session."
     case .unknownHapticCue(let cue):
       return "Unknown round haptic cue: \(cue)."
     case .systemSoundCreationFailed(let status):
@@ -71,6 +68,7 @@ private enum VideoExportError: Error, LocalizedError {
 
 public final class WhatzItVideoExportModule: Module {
   private var microphoneEngine: AVAudioEngine?
+  private var microphoneRecorder: AVAudioRecorder?
   private var microphoneRecordingUrl: URL?
   private let soundIdsLock = NSLock()
   private var activeSoundIds = Set<SystemSoundID>()
@@ -79,7 +77,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      11
+      12
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -147,9 +145,6 @@ public final class WhatzItVideoExportModule: Module {
     }
 
     AsyncFunction("playRoundHaptic") { (cue: String, countdownValue: Int?) throws -> String in
-      guard AVAudioSession.sharedInstance().allowHapticsAndSystemSoundsDuringRecording else {
-        throw VideoExportError.recordingHapticsDisabled
-      }
       guard Self.scheduleRoundHaptic(cue: cue, countdownValue: countdownValue) else {
         throw VideoExportError.unknownHapticCue(cue)
       }
@@ -157,12 +152,92 @@ public final class WhatzItVideoExportModule: Module {
     }
 
     AsyncFunction("startMicrophoneRecording") { () throws -> String in
-      guard self.microphoneEngine == nil else {
+      guard self.microphoneEngine == nil, self.microphoneRecorder == nil else {
         throw VideoExportError.microphoneAlreadyRecording
       }
       try Self.configureRecordingAudioSession()
       let outputUrl = FileManager.default.temporaryDirectory
         .appendingPathComponent("whatz-it-microphone-\(UUID().uuidString).m4a")
+      let capturePath = try self.startMicrophoneCapture(at: outputUrl)
+      NSLog("[RoundAudioNative] Microphone capture selected path=%@ uri=%@", capturePath, outputUrl.absoluteString)
+      return outputUrl.absoluteString
+    }
+
+    AsyncFunction("stopMicrophoneRecording") { () throws -> String in
+      guard let outputUrl = self.microphoneRecordingUrl else {
+        throw VideoExportError.microphoneNotRecording
+      }
+      let capturePath: String
+      if let engine = self.microphoneEngine {
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        self.microphoneEngine = nil
+        capturePath = "voice-processing-engine"
+      } else if let recorder = self.microphoneRecorder {
+        recorder.updateMeters()
+        let duration = recorder.currentTime
+        let averagePower = recorder.averagePower(forChannel: 0)
+        let peakPower = recorder.peakPower(forChannel: 0)
+        recorder.stop()
+        NSLog(
+          "[RoundAudioNative] Fallback recorder levels duration=%.3f averagePower=%.1f peakPower=%.1f",
+          duration,
+          averagePower,
+          peakPower
+        )
+        capturePath = "audio-recorder-fallback"
+      } else {
+        throw VideoExportError.microphoneNotRecording
+      }
+      self.microphoneRecorder = nil
+      self.microphoneRecordingUrl = nil
+      let attributes = try? FileManager.default.attributesOfItem(atPath: outputUrl.path)
+      let fileSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+      NSLog(
+        "[RoundAudioNative] Microphone capture stopped path=%@ bytes=%lld uri=%@",
+        capturePath,
+        fileSize,
+        outputUrl.absoluteString
+      )
+      return outputUrl.absoluteString
+    }
+
+    AsyncFunction("cancelMicrophoneRecording") { () in
+      if let engine = self.microphoneEngine {
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+      }
+      self.microphoneRecorder?.stop()
+      if let outputUrl = self.microphoneRecordingUrl {
+        try? FileManager.default.removeItem(at: outputUrl)
+      }
+      self.microphoneEngine = nil
+      self.microphoneRecorder = nil
+      self.microphoneRecordingUrl = nil
+      NSLog("[RoundAudioNative] Microphone capture cancelled")
+    }
+
+    AsyncFunction("playSystemSound") { (inputUrl: URL) throws in
+      var soundId: SystemSoundID = 0
+      let status = AudioServicesCreateSystemSoundID(inputUrl as CFURL, &soundId)
+      guard status == kAudioServicesNoError else {
+        throw VideoExportError.systemSoundCreationFailed(status)
+      }
+      self.soundIdsLock.lock()
+      self.activeSoundIds.insert(soundId)
+      self.soundIdsLock.unlock()
+      AudioServicesPlaySystemSoundWithCompletion(soundId) { [weak self] in
+        AudioServicesDisposeSystemSoundID(soundId)
+        guard let self else { return }
+        self.soundIdsLock.lock()
+        self.activeSoundIds.remove(soundId)
+        self.soundIdsLock.unlock()
+      }
+    }
+  }
+
+  private func startMicrophoneCapture(at outputUrl: URL) throws -> String {
+    do {
       let engine = AVAudioEngine()
       let inputNode = engine.inputNode
       var tapInstalled = false
@@ -192,11 +267,7 @@ public final class WhatzItVideoExportModule: Module {
           commonFormat: inputFormat.commonFormat,
           interleaved: inputFormat.isInterleaved
         )
-        inputNode.installTap(
-          onBus: 0,
-          bufferSize: 1_024,
-          format: inputFormat
-        ) { buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: inputFormat) { buffer, _ in
           do {
             try audioFile.write(from: buffer)
           } catch {
@@ -214,62 +285,35 @@ public final class WhatzItVideoExportModule: Module {
         if tapInstalled {
           inputNode.removeTap(onBus: 0)
         }
-        try? FileManager.default.removeItem(at: outputUrl)
         throw error
       }
       self.microphoneEngine = engine
       self.microphoneRecordingUrl = outputUrl
+      return "voice-processing-engine"
+    } catch {
       NSLog(
-        "[RoundAudioNative] Voice-processed microphone started sampleRate=%.0f channels=%u uri=%@",
-        inputNode.outputFormat(forBus: 0).sampleRate,
-        inputNode.outputFormat(forBus: 0).channelCount,
-        outputUrl.absoluteString
+        "[RoundAudioNative] Voice-processing capture unavailable; starting recorder fallback error=%@",
+        error.localizedDescription
       )
-      return outputUrl.absoluteString
-    }
-
-    AsyncFunction("stopMicrophoneRecording") { () throws -> String in
-      guard let engine = self.microphoneEngine,
-            let outputUrl = self.microphoneRecordingUrl else {
-        throw VideoExportError.microphoneNotRecording
-      }
-      engine.stop()
-      engine.inputNode.removeTap(onBus: 0)
-      self.microphoneEngine = nil
-      self.microphoneRecordingUrl = nil
-      NSLog("[RoundAudioNative] Voice-processed microphone stopped uri=%@", outputUrl.absoluteString)
-      return outputUrl.absoluteString
-    }
-
-    AsyncFunction("cancelMicrophoneRecording") { () in
-      if let engine = self.microphoneEngine {
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
-      }
-      if let outputUrl = self.microphoneRecordingUrl {
+      try? FileManager.default.removeItem(at: outputUrl)
+      try Self.configureRecordingAudioSession(mode: .videoRecording)
+      let settings: [String: Any] = [
+        AVFormatIDKey: kAudioFormatMPEG4AAC,
+        AVSampleRateKey: 44_100,
+        AVNumberOfChannelsKey: 1,
+        AVEncoderBitRateKey: 128_000,
+        AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+      ]
+      let recorder = try AVAudioRecorder(url: outputUrl, settings: settings)
+      recorder.isMeteringEnabled = true
+      guard recorder.prepareToRecord(), recorder.record(), recorder.isRecording else {
+        recorder.stop()
         try? FileManager.default.removeItem(at: outputUrl)
+        throw VideoExportError.microphoneStartFailed
       }
-      self.microphoneEngine = nil
-      self.microphoneRecordingUrl = nil
-      NSLog("[RoundAudioNative] Voice-processed microphone cancelled")
-    }
-
-    AsyncFunction("playSystemSound") { (inputUrl: URL) throws in
-      var soundId: SystemSoundID = 0
-      let status = AudioServicesCreateSystemSoundID(inputUrl as CFURL, &soundId)
-      guard status == kAudioServicesNoError else {
-        throw VideoExportError.systemSoundCreationFailed(status)
-      }
-      self.soundIdsLock.lock()
-      self.activeSoundIds.insert(soundId)
-      self.soundIdsLock.unlock()
-      AudioServicesPlaySystemSoundWithCompletion(soundId) { [weak self] in
-        AudioServicesDisposeSystemSoundID(soundId)
-        guard let self else { return }
-        self.soundIdsLock.lock()
-        self.activeSoundIds.remove(soundId)
-        self.soundIdsLock.unlock()
-      }
+      self.microphoneRecorder = recorder
+      self.microphoneRecordingUrl = outputUrl
+      return "audio-recorder-fallback"
     }
   }
 
@@ -278,7 +322,7 @@ public final class WhatzItVideoExportModule: Module {
     case "card-flip":
       scheduleImpact(.medium)
     case "correct":
-      scheduleSystemVibration()
+      scheduleImpact(.heavy)
     case "pass":
       scheduleImpact(.medium)
     case "get-ready":
@@ -292,9 +336,9 @@ public final class WhatzItVideoExportModule: Module {
     case "final-countdown":
       scheduleImpact(.rigid)
     case "times-up":
-      scheduleSystemVibration()
-      scheduleSystemVibration(after: 0.52)
-      scheduleSystemVibration(after: 1.04)
+      scheduleImpact(.heavy)
+      scheduleImpact(.heavy, after: 0.18)
+      scheduleImpact(.heavy, after: 0.36)
     default:
       return false
     }
@@ -312,17 +356,13 @@ public final class WhatzItVideoExportModule: Module {
     }
   }
 
-  private static func scheduleSystemVibration(after delay: TimeInterval = 0) {
-    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-      AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
-    }
-  }
-
-  private static func configureRecordingAudioSession() throws {
+  private static func configureRecordingAudioSession(
+    mode: AVAudioSession.Mode = .videoChat
+  ) throws {
     let audioSession = AVAudioSession.sharedInstance()
     try audioSession.setCategory(
       .playAndRecord,
-      mode: .videoChat,
+      mode: mode,
       options: [.defaultToSpeaker]
     )
     try audioSession.setAllowHapticsAndSystemSoundsDuringRecording(true)

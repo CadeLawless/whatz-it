@@ -78,8 +78,8 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
   function RoundCamera({ enabled, microphoneEnabled, onError, onReady }, ref) {
     const device = useCameraDevice('front');
     const videoOutput = useVideoOutput({
-      // iOS microphone audio is recorded independently by the native
-      // voice-processing engine so device sounds can be removed before export.
+      // iOS microphone audio is recorded independently with native voice
+      // processing and a file-recorder fallback, then preserved during export.
       enableAudio: microphoneEnabled && Platform.OS !== 'ios',
       fileType: 'mp4',
     });
@@ -99,7 +99,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           return false;
         }
         microphonePreparedRef.current = true;
-        logVideoDiagnostic('voice-processed microphone preparation completed');
+        logVideoDiagnostic('native microphone capture preparation completed');
         return true;
       } catch (error) {
         warnVideoDiagnostic('microphone preparation failed', error);
@@ -159,7 +159,6 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                   offsetMs: microphoneRef.current.offsetMs,
                   recordingHapticsEnabled,
                   uri: microphoneUri,
-                  voiceProcessingEnabled: true,
                 });
               } catch (error) {
                 // A microphone failure must not discard an otherwise valid video.
