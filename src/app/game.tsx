@@ -26,6 +26,8 @@ import { triggerRoundHaptic } from '@/utils/round-haptics';
 import { useRoundSounds } from '@/video/round-sound-provider';
 
 const ROUND_END_SCREEN_MS = 2495;
+const ROUND_STOP_NAVIGATION_TIMEOUT_MS = 6_000;
+const RESULTS_SCREENSHOT_TIMEOUT_MS = 2_000;
 
 export default function GameScreen() {
   useKeepAwake();
@@ -166,14 +168,17 @@ export default function GameScreen() {
     const showResults = async () => {
       await new Promise((resolve) => setTimeout(resolve, ROUND_END_SCREEN_MS));
       if (!active) return;
-      await stopRecordingRef.current();
+      await waitForRoundStop(stopRecordingRef.current());
       if (!active) return;
       try {
-        const uri = await captureRef(screenRef, {
-          format: 'jpg',
-          quality: 0.95,
-          result: 'tmpfile',
-        });
+        const uri = await withTimeout(
+          captureRef(screenRef, {
+            format: 'jpg',
+            quality: 0.95,
+            result: 'tmpfile',
+          }),
+          RESULTS_SCREENSHOT_TIMEOUT_MS,
+        );
         await beginTransition({ destination: 'results', direction: 'left', uri });
       } catch {
         // If capture is unavailable, navigation still completes normally.
@@ -353,6 +358,25 @@ function getCardFontSize(text: string, width: number, height: number) {
   const lengthSize = text.length <= 16 ? 68 : text.length <= 28 ? 56 : text.length <= 44 ? 46 : 38;
   const viewportSize = Math.max(36, Math.min(68, height * 0.18, width * 0.09));
   return Math.round(Math.min(lengthSize, viewportSize));
+}
+
+async function waitForRoundStop(stopPromise: Promise<unknown>) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<void>((resolve) => {
+    timeout = setTimeout(resolve, ROUND_STOP_NAVIGATION_TIMEOUT_MS);
+  });
+  await Promise.race([stopPromise.then(() => undefined).catch(() => undefined), timeoutPromise]);
+  if (timeout) clearTimeout(timeout);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error('Operation timed out.')), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
 }
 
 const styles = StyleSheet.create({

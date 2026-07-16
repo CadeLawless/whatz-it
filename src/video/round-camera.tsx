@@ -134,7 +134,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                 await prepareRoundRecordingAudio();
               } catch (error) {
                 microphonePrepared = false;
-                console.warn('Microphone setup failed; recording video without audio.', error);
+                warnVideoDiagnostic('microphone setup failed; recording video without audio', error);
               }
             }
             recorder = await videoOutput.createRecorder({ maxDuration });

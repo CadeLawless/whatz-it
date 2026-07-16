@@ -37,6 +37,8 @@ import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnosti
 
 export type RecordingPreparation = 'ready' | 'permission-denied' | 'unavailable' | 'error';
 
+const CAMERA_CAPTURE_STOP_TIMEOUT_MS = 4_000;
+
 type RoundContextValue = {
   round: RoundState;
   configureRound: (deckId: string, durationSeconds: number) => boolean;
@@ -232,7 +234,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
     const events = [...recordingEvents.current];
     stoppingPromise.current = (async () => {
       try {
-        const capture = await cameraRef.current?.stopRecording();
+        const capture = await withTimeout(
+          cameraRef.current?.stopRecording() ?? Promise.resolve(null),
+          CAMERA_CAPTURE_STOP_TIMEOUT_MS,
+          'Camera recording did not stop in time.',
+        );
         if (!capture) return null;
 
         logVideoDiagnostic('round capture received', {
@@ -426,7 +432,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
             cameraReadyResolver.current = null;
         }}
         onError={(error) => {
-            console.warn('Camera session failed.', error);
+            warnVideoDiagnostic('camera session failed', error);
             cameraReady.current = false;
             setCameraEnabled(false);
             cameraReadyResolver.current?.(false);
@@ -455,4 +461,14 @@ async function cleanupTemporaryFiles(uris: (string | undefined)[]) {
       // The persisted copy is already safe; temporary cleanup must not discard the result.
     }
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
 }
