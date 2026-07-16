@@ -27,7 +27,7 @@ type ScreenshotTransition = {
 
 type ScreenshotTransitionContextValue = {
   beginTransition: (transition: ScreenshotTransition) => Promise<void>;
-  revealTransition: (destination: ScreenshotDestination) => void;
+  revealTransition: (destination: ScreenshotDestination) => Promise<void>;
 };
 
 const ScreenshotTransitionContext = createContext<ScreenshotTransitionContextValue | null>(null);
@@ -38,12 +38,14 @@ export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
   const transitionRef = useRef<ScreenshotTransition | null>(null);
   const imageReady = useRef<(() => void) | null>(null);
   const isRevealing = useRef(false);
+  const revealPromise = useRef<Promise<void> | null>(null);
   const [translateX] = useState(() => new Animated.Value(0));
 
   const beginTransition = useCallback(
     (nextTransition: ScreenshotTransition) => {
       translateX.setValue(0);
       isRevealing.current = false;
+      revealPromise.current = null;
       transitionRef.current = nextTransition;
       setTransition(nextTransition);
 
@@ -65,27 +67,34 @@ export function ScreenshotTransitionProvider({ children }: PropsWithChildren) {
   const revealTransition = useCallback(
     (destination: ScreenshotDestination) => {
       const current = transitionRef.current;
-      if (!current || current.destination !== destination || isRevealing.current) return;
+      if (!current || current.destination !== destination) return Promise.resolve();
+      if (isRevealing.current) return revealPromise.current ?? Promise.resolve();
       isRevealing.current = true;
 
-      requestAnimationFrame(() => {
+      const promise = new Promise<void>((resolve) => {
         requestAnimationFrame(() => {
-          Animated.timing(translateX, {
-            toValue: current.direction === 'right' ? width * 1.15 : -width * 1.15,
-            duration: 380,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }).start(() => {
-            transitionRef.current = null;
-            setTransition(null);
-            isRevealing.current = false;
+          requestAnimationFrame(() => {
+            Animated.timing(translateX, {
+              toValue: current.direction === 'right' ? width * 1.15 : -width * 1.15,
+              duration: 380,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }).start(() => {
+              transitionRef.current = null;
+              setTransition(null);
+              isRevealing.current = false;
+              revealPromise.current = null;
 
-            // Let React remove the overlay before releasing its image. Resetting
-            // the animation here can briefly redraw it at its starting point.
-            setTimeout(() => releaseCapture(current.uri), 0);
+              // Let React remove the overlay before releasing its image. Resetting
+              // the animation here can briefly redraw it at its starting point.
+              setTimeout(() => releaseCapture(current.uri), 0);
+              resolve();
+            });
           });
         });
       });
+      revealPromise.current = promise;
+      return promise;
     },
     [translateX, width],
   );

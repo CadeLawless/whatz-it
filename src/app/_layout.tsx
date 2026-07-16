@@ -1,7 +1,9 @@
 import { Stack } from 'expo-router';
 import { setAudioModeAsync } from 'expo-audio';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
@@ -9,8 +11,19 @@ import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
+import { loadHomeBranding } from '@/utils/home-branding';
+
+void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    void loadHomeBranding()
+      .catch(() => undefined)
+      .finally(() => setIsReady(true));
+  }, []);
+
   useEffect(() => {
     logRoundDiagnostic('root audio mode configuration started');
     setAudioModeAsync({
@@ -23,8 +36,15 @@ export default function RootLayout() {
       .catch((error) => warnRoundDiagnostic('root audio mode configuration failed', error));
   }, []);
 
+  const handleRootLayout = useCallback(() => {
+    if (isReady) SplashScreen.hide();
+  }, [isReady]);
+
+  if (!isReady) return null;
+
   return (
-    <SafeAreaProvider>
+    <View onLayout={handleRootLayout} style={styles.root}>
+      <SafeAreaProvider>
       <RoundSoundProvider>
         <ScreenshotTransitionProvider>
           <RoundProvider>
@@ -90,6 +110,11 @@ export default function RootLayout() {
           </RoundProvider>
         </ScreenshotTransitionProvider>
       </RoundSoundProvider>
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

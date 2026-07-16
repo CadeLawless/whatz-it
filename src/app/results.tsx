@@ -40,6 +40,14 @@ export default function ResultsScreen() {
   const videoReady = currentVideo ? isRoundVideoReadyToSave(currentVideo) : false;
   const videoExportFailed = currentVideo?.exportStatus === 'failed';
 
+  const returnHome = () => {
+    if (router.canDismiss()) {
+      router.dismissAll();
+    } else {
+      router.replace('/');
+    }
+  };
+
   useEffect(() => {
     if (isPortrait) revealTransition('results');
   }, [isPortrait, revealTransition]);
@@ -52,7 +60,7 @@ export default function ResultsScreen() {
     return (
       <SafeAreaView style={styles.empty}>
         <Text style={styles.emptyTitle}>No finished round yet</Text>
-        <Pressable onPress={() => router.replace('/')} style={styles.primaryButton}>
+        <Pressable onPress={returnHome} style={styles.primaryButton}>
           <Text style={styles.primaryButtonText}>PICK A DECK</Text>
         </Pressable>
       </SafeAreaView>
@@ -80,7 +88,7 @@ export default function ResultsScreen() {
       // If capture is unavailable, navigation still completes normally.
     }
     resetRound();
-    router.replace('/');
+    returnHome();
   };
 
   const handleSaveVideo = async (): Promise<VideoSaveNotice> => {

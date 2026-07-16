@@ -30,6 +30,11 @@ import { useScreenshotTransition } from '@/components/screenshot-transition-prov
 import { decks, getDeckById } from '@/data/decks';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import {
+  getLoadedHomeBranding,
+  HOME_BRANDING_SOURCES,
+  loadHomeBranding,
+} from '@/utils/home-branding';
+import {
   deleteRoundVideo,
   isRoundVideoReadyToSave,
   loadRoundVideos,
@@ -46,6 +51,7 @@ export default function DeckLibraryScreen() {
   const sectionHeadingOffsets = useRef({ decks: 0, videos: 0 });
   const isPortrait = usePortraitScreen();
   const { revealTransition } = useScreenshotTransition();
+  const branding = getLoadedHomeBranding() ?? HOME_BRANDING_SOURCES;
   const [decksExpanded, setDecksExpanded] = useState(true);
   const [videosExpanded, setVideosExpanded] = useState(true);
   const [videos, setVideos] = useState<RoundVideo[]>([]);
@@ -67,14 +73,30 @@ export default function DeckLibraryScreen() {
   const headshotWidth = Math.round(brandWidth * 0.16);
   const wordmarkWidth = Math.round(brandWidth * 0.75);
 
-  useEffect(() => {
-    if (isPortrait) revealTransition('home');
-  }, [isPortrait, revealTransition]);
-
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      loadRoundVideos().then((storedVideos) => {
+      if (!isPortrait) return () => {
+        active = false;
+      };
+
+      void (async () => {
+        try {
+          await loadHomeBranding();
+        } catch {
+          // Local require() sources remain available as a safe fallback.
+        }
+        if (!active) return;
+
+        // The captured results screen stays over the home screen until the
+        // branding is decoded and mounted. Video I/O waits until it slides away.
+        await revealTransition('home');
+        if (!active) return;
+
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (!active) return;
+
+        const storedVideos = await loadRoundVideos();
         if (!active) return;
         setVideos(storedVideos);
         storedVideos.forEach((video) => {
@@ -86,11 +108,12 @@ export default function DeckLibraryScreen() {
             );
           });
         });
-      });
+      })();
+
       return () => {
         active = false;
       };
-    }, []),
+    }, [isPortrait, revealTransition]),
   );
 
   const scrollToExpandedSection = useCallback((section: 'decks' | 'videos') => {
@@ -227,13 +250,15 @@ export default function DeckLibraryScreen() {
             <Image
               accessible={false}
               contentFit="contain"
-              source={require('../../assets/images/branding/albert-headshot.png')}
+              priority="high"
+              source={branding.headshot}
               style={{ width: headshotWidth, height: headshotWidth * 1.5 }}
             />
             <Image
               accessible={false}
               contentFit="contain"
-              source={require('../../assets/images/branding/whatz-it-wordmark.png')}
+              priority="high"
+              source={branding.wordmark}
               style={{ width: wordmarkWidth, height: wordmarkWidth / 3 }}
             />
           </View>
