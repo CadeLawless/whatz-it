@@ -84,7 +84,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
     const microphonePreparedRef = useRef(false);
 
     const prepareMicrophone = useCallback(async () => {
-      if (Platform.OS !== 'ios' || !microphoneEnabled) return microphoneEnabled;
+      if (Platform.OS !== 'ios') return microphoneEnabled;
       if (microphonePreparedRef.current) return true;
       try {
         const statusBefore = microphoneRecorder.getStatus();
@@ -99,6 +99,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           await microphoneRecorder.stop();
         }
         await prepareRoundRecordingAudio();
+        if (!microphoneEnabled) {
+          logVideoDiagnostic('recording haptics prepared without microphone capture');
+          return false;
+        }
         if (!microphoneRecorder.getStatus().canRecord) {
           await microphoneRecorder.prepareToRecordAsync();
         }
@@ -193,6 +197,18 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                 }
                 microphoneRef.current = null;
                 microphonePreparedRef.current = false;
+              }
+            } else if (Platform.OS === 'ios') {
+              try {
+                const recordingHapticsEnabled = await reassertRecordingHaptics();
+                logVideoDiagnostic('recording haptics reasserted without microphone capture', {
+                  recordingHapticsEnabled,
+                });
+              } catch (error) {
+                warnVideoDiagnostic(
+                  'recording haptics could not be reasserted without microphone capture',
+                  error,
+                );
               }
             }
             logVideoDiagnostic('video recording started', { videoStartedAt });
