@@ -52,7 +52,7 @@ const DEFAULT_ROUND_SOUND_VOLUME = 1;
 const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
   correct: 0.4,
   flip: 0.7,
-  'round-start': 0.75,
+  'round-start': 0.65,
 };
 
 export function getRoundSoundSource(sound: RoundSoundId) {
