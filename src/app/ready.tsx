@@ -87,12 +87,14 @@ export default function ReadyScreen() {
   const handleCountdownExpire = useCallback(() => {
     if (launched.current) return;
     launched.current = true;
-    logRoundDiagnostic('ready countdown expired; navigating to game', {
+    recordSoundCue('round-start');
+    void playSound('round-start');
+    logRoundDiagnostic('ready countdown expired; playing round start cue and navigating to game', {
       countdownEndsAt,
       now: Date.now(),
     });
     router.replace('/game' as Href);
-  }, [countdownEndsAt, router]);
+  }, [countdownEndsAt, playSound, recordSoundCue, router]);
   const count = useRoundTimer({
     endsAt: countdownEndsAt,
     active: introComplete && !isLeaving,

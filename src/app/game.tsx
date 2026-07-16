@@ -34,7 +34,6 @@ export default function GameScreen() {
   const { width, height } = useLandscapeDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const roundStarted = useRef(false);
-  const startSoundPlayed = useRef(false);
   const finishSoundPlayed = useRef(false);
   const screenRef = useRef<View>(null);
   const resultsTransitionStarted = useRef(false);
@@ -117,13 +116,6 @@ export default function GameScreen() {
       router.replace('/');
     }
   }, [currentCard, deck, round.status, router]);
-
-  useEffect(() => {
-    if (round.status !== 'ready' || !soundsReady || startSoundPlayed.current) return;
-    startSoundPlayed.current = true;
-    recordSoundCue('round-start');
-    void playSound('round-start');
-  }, [playSound, recordSoundCue, round.status, soundsReady]);
 
   useEffect(() => {
     if (round.status !== 'ready' || !soundsReady) return;
