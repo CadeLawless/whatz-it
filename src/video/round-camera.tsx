@@ -8,6 +8,7 @@ import {
   useCameraDevice,
   useVideoOutput,
 } from 'react-native-vision-camera';
+import { prepareRecordingAudio } from 'whatz-it-video-export';
 
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
@@ -49,11 +50,21 @@ export async function requestRoundCameraPermissions() {
 }
 
 async function prepareRoundRecordingAudio() {
+  logVideoDiagnostic('recording audio session configuration started', {
+    platform: Platform.OS,
+  });
   await setAudioModeAsync({
     allowsRecording: true,
     interruptionMode: 'doNotMix',
     playsInSilentMode: true,
     shouldRouteThroughEarpiece: false,
+  });
+  // Expo Audio configures playback/recording but does not expose iOS's
+  // setAllowHapticsAndSystemSoundsDuringRecording. Our native module enables it
+  // while preserving the play-and-record speaker session used by the round.
+  await prepareRecordingAudio();
+  logVideoDiagnostic('recording audio session configured with haptics enabled', {
+    platform: Platform.OS,
   });
 }
 

@@ -1,4 +1,3 @@
-import { useAudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import { type Href, useRouter } from 'expo-router';
@@ -24,10 +23,10 @@ import { formatRoundClock } from '@/game/round-duration';
 import { useRoundTimer } from '@/hooks/use-round-timer';
 import { useTiltControls } from '@/hooks/use-tilt-controls';
 import { colors, radius, spacing, typography } from '@/theme';
-import { getRoundSoundSource, playRoundSound, preloadRoundSounds } from '@/video/round-sounds';
+import { useRoundSounds } from '@/video/round-sound-provider';
+import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
-const ROUND_END_SCREEN_MS = 1000;
-const ROUND_AUDIO_PLAYER_OPTIONS = { keepAudioSessionActive: true } as const;
+const ROUND_END_SCREEN_MS = 2495;
 
 export default function GameScreen() {
   useKeepAwake();
@@ -35,15 +34,10 @@ export default function GameScreen() {
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const roundStarted = useRef(false);
   const startSoundPlayed = useRef(false);
-  const lastTickSecond = useRef<number | null>(null);
   const finishSoundPlayed = useRef(false);
   const screenRef = useRef<View>(null);
   const resultsTransitionStarted = useRef(false);
-  const roundStartPlayer = useAudioPlayer(getRoundSoundSource('round-start'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const finalTickPlayer = useAudioPlayer(getRoundSoundSource('final-tick'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const correctPlayer = useAudioPlayer(getRoundSoundSource('correct'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const passPlayer = useAudioPlayer(getRoundSoundSource('pass'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const roundEndPlayer = useAudioPlayer(getRoundSoundSource('round-end'), ROUND_AUDIO_PLAYER_OPTIONS);
+  const { isReady: soundsReady, play: playSound } = useRoundSounds();
   const router = useRouter();
   const { beginTransition } = useScreenshotTransition();
   const {
@@ -61,6 +55,14 @@ export default function GameScreen() {
   const currentCardId = round.cardOrder[round.currentCardIndex];
   const currentCard = deck?.cards.find((card) => card.id === currentCardId);
   const handleExpire = useCallback(() => finishRound(), [finishRound]);
+  const handleTimerSecond = useCallback(
+    (remaining: number) => {
+      if (remaining < 1 || remaining > 10) return;
+      recordSoundCue('final-tick');
+      void playSound('final-tick');
+    },
+    [playSound, recordSoundCue],
+  );
 
   useEffect(() => {
     stopRecordingRef.current = stopRecording;
@@ -69,28 +71,34 @@ export default function GameScreen() {
     endsAt: round.endsAt,
     active: round.status === 'playing' || round.status === 'feedback',
     onExpire: handleExpire,
+    onSecond: handleTimerSecond,
   });
   const handleAnswer = useCallback(
     (outcome: 'correct' | 'passed') => {
       if (outcome === 'correct') {
         recordSoundCue('correct');
-        void playRoundSound(correctPlayer, 'correct');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+        void playSound('correct');
+        void triggerAnswerHaptic('correct');
       } else {
         recordSoundCue('pass');
-        void playRoundSound(passPlayer, 'pass');
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+        void playSound('pass');
+        void triggerAnswerHaptic('passed');
       }
       answerCard(outcome);
     },
-    [answerCard, correctPlayer, passPlayer, recordSoundCue],
+    [answerCard, playSound, recordSoundCue],
   );
+  const handleRearmed = useCallback(() => {
+    recordSoundCue('flip');
+    void playSound('flip');
+    advanceCard();
+  }, [advanceCard, playSound, recordSoundCue]);
   const tiltStatus = useTiltControls({
     enabled:
       round.status === 'ready' || round.status === 'playing' || round.status === 'feedback',
     acceptingInput: round.status === 'playing',
     onAction: handleAnswer,
-    onRearmed: advanceCard,
+    onRearmed: handleRearmed,
   });
   const handleFinishEarly = useCallback(() => {
     setFinishPromptVisible(true);
@@ -101,41 +109,25 @@ export default function GameScreen() {
   }, [finishRound]);
 
   useEffect(() => {
-    void preloadRoundSounds(['round-start', 'final-tick', 'correct', 'pass', 'round-end']);
-  }, []);
-
-  useEffect(() => {
     if (!deck || !currentCard || round.status === 'idle') {
       router.replace('/');
     }
   }, [currentCard, deck, round.status, router]);
 
   useEffect(() => {
-    if (round.status !== 'ready' || startSoundPlayed.current) return;
+    if (round.status !== 'ready' || !soundsReady || startSoundPlayed.current) return;
     startSoundPlayed.current = true;
     recordSoundCue('round-start');
-    void playRoundSound(roundStartPlayer, 'round-start');
-  }, [recordSoundCue, round.status, roundStartPlayer]);
+    void playSound('round-start');
+  }, [playSound, recordSoundCue, round.status, soundsReady]);
 
   useEffect(() => {
-    if (round.status !== 'ready') return;
+    if (round.status !== 'ready' || !soundsReady) return;
     if (!roundStarted.current && (tiltStatus === 'ready' || tiltStatus === 'unavailable' || tiltStatus === 'denied')) {
       roundStarted.current = true;
       startRound();
     }
-  }, [round.status, startRound, tiltStatus]);
-
-  useEffect(() => {
-    if (round.status !== 'playing' && round.status !== 'feedback') return;
-    if (remainingSeconds < 1 || remainingSeconds > 10) {
-      lastTickSecond.current = null;
-      return;
-    }
-    if (lastTickSecond.current === remainingSeconds) return;
-    lastTickSecond.current = remainingSeconds;
-    recordSoundCue('final-tick');
-    void playRoundSound(finalTickPlayer, 'final-tick');
-  }, [finalTickPlayer, recordSoundCue, remainingSeconds, round.status]);
+  }, [round.status, soundsReady, startRound, tiltStatus]);
 
   useEffect(() => {
     if (round.status !== 'feedback') return;
@@ -163,7 +155,7 @@ export default function GameScreen() {
     if (!finishSoundPlayed.current) {
       finishSoundPlayed.current = true;
       recordSoundCue('round-end');
-      void playRoundSound(roundEndPlayer, 'round-end');
+      void playSound('round-end');
     }
     if (resultsTransitionStarted.current) return;
     resultsTransitionStarted.current = true;
@@ -189,7 +181,7 @@ export default function GameScreen() {
     return () => {
       active = false;
     };
-  }, [beginTransition, recordSoundCue, round.status, roundEndPlayer, router]);
+  }, [beginTransition, playSound, recordSoundCue, round.status, router]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -352,6 +344,29 @@ export default function GameScreen() {
       </LandscapeViewport>
     </View>
   );
+}
+
+async function triggerAnswerHaptic(outcome: 'correct' | 'passed') {
+  const startedAt = Date.now();
+  logRoundDiagnostic('answer haptic requested', {
+    outcome,
+    pattern: outcome === 'correct' ? 'success-notification' : 'light-impact',
+  });
+  try {
+    if (outcome === 'correct') {
+      // Success notification is a longer, more celebratory pattern.
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      // A light impact gives Pass one quick, unmistakable tap.
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    logRoundDiagnostic('answer haptic completed', {
+      elapsedMs: Date.now() - startedAt,
+      outcome,
+    });
+  } catch (error) {
+    warnRoundDiagnostic('answer haptic failed', error, { outcome });
+  }
 }
 
 function getCardFontSize(text: string, width: number, height: number) {

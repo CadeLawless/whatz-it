@@ -1,7 +1,6 @@
-import { useAudioPlayer } from 'expo-audio';
 import { type Href, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
@@ -12,17 +11,14 @@ import { useScreenshotTransition } from '@/components/screenshot-transition-prov
 import { getDeckById } from '@/data/decks';
 import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
+import { useRoundTimer } from '@/hooks/use-round-timer';
 import { colors, radius, spacing } from '@/theme';
-import {
-  getRoundSoundSource,
-  playRoundSound,
-  preloadRoundSounds,
-  type RoundSoundId,
-} from '@/video/round-sounds';
+import { useRoundSounds } from '@/video/round-sound-provider';
+import type { RoundSoundId } from '@/video/round-sounds';
+import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
-const GET_READY_SOUND_MS = 1050;
+const GET_READY_SOUND_MS = 1898;
 const READY_TRANSITION_MS = 450;
-const ROUND_AUDIO_PLAYER_OPTIONS = { keepAudioSessionActive: true } as const;
 
 export default function ReadyScreen() {
   const { height } = useLandscapeDimensions();
@@ -37,35 +33,114 @@ export default function ReadyScreen() {
     startRecording,
   } = useRound();
   const deck = getDeckById(round.deckId ?? undefined);
-  const [count, setCount] = useState(3);
+  const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
   const [manualReady, setManualReady] = useState(false);
   const [orientationSettled, setOrientationSettled] = useState(false);
   const [introComplete, setIntroComplete] = useState(false);
+  const [soundsPrepared, setSoundsPrepared] = useState(false);
+  const [soundPreparationFailed, setSoundPreparationFailed] = useState(false);
   const [recordingPreparation, setRecordingPreparation] =
     useState<RecordingPreparation | 'preparing'>('preparing');
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
   const introStarted = useRef(false);
+  const soundPreparationStarted = useRef(false);
+  const previousGateSignature = useRef('');
   const screenRef = useRef<View>(null);
   const { beginTransition, revealTransition } = useScreenshotTransition();
-  const getReadyPlayer = useAudioPlayer(getRoundSoundSource('get-ready'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const count3Player = useAudioPlayer(getRoundSoundSource('count-3'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const count2Player = useAudioPlayer(getRoundSoundSource('count-2'), ROUND_AUDIO_PLAYER_OPTIONS);
-  const count1Player = useAudioPlayer(getRoundSoundSource('count-1'), ROUND_AUDIO_PLAYER_OPTIONS);
+  const {
+    isReady: soundsReady,
+    loadTimedOut: soundLoadTimedOut,
+    play: playSound,
+    prepareForRound,
+    retryLoading,
+  } = useRoundSounds();
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady = foreheadStatus === 'ready' || manualReady;
   const recordingPrepared =
     recordingPreparation === 'ready' ||
     recordingPreparation === 'permission-denied' ||
     recordingPreparation === 'unavailable';
+  const handleCountdownSecond = useCallback(
+    (remaining: number) => {
+      if (remaining < 1 || remaining > 3) return;
+      const sound: RoundSoundId =
+        remaining === 3 ? 'count-3' : remaining === 2 ? 'count-2' : 'count-1';
+      recordOverlayEvent({ kind: 'countdown', text: String(remaining) });
+      recordSoundCue(sound);
+      logRoundDiagnostic('ready countdown cue firing', {
+        remaining,
+        sound,
+        targetEndsAt: countdownEndsAt,
+        now: Date.now(),
+      });
+      void playSound(sound);
+    },
+    [countdownEndsAt, playSound, recordOverlayEvent, recordSoundCue],
+  );
+  const handleCountdownExpire = useCallback(() => {
+    if (launched.current) return;
+    launched.current = true;
+    logRoundDiagnostic('ready countdown expired; navigating to game', {
+      countdownEndsAt,
+      now: Date.now(),
+    });
+    router.replace('/game' as Href);
+  }, [countdownEndsAt, router]);
+  const count = useRoundTimer({
+    endsAt: countdownEndsAt,
+    active: introComplete && !isLeaving,
+    onExpire: handleCountdownExpire,
+    onSecond: handleCountdownSecond,
+  });
 
   useEffect(() => {
-    void preloadRoundSounds(['get-ready', 'count-3', 'count-2', 'count-1']);
-  }, []);
+    const details = {
+      foreheadStatus,
+      introComplete,
+      introStarted: introStarted.current,
+      isLeaving,
+      orientationSettled,
+      positionReady,
+      recordingPreparation,
+      recordingPrepared,
+      roundStatus: round.status,
+      soundLoadTimedOut,
+      soundPreparationFailed,
+      soundsPrepared,
+      soundsReady,
+    };
+    const signature = JSON.stringify(details);
+    if (signature === previousGateSignature.current) return;
+    previousGateSignature.current = signature;
+    logRoundDiagnostic('ready screen gate state changed', details);
+  });
+
+  useEffect(() => {
+    if (!soundsReady || soundPreparationStarted.current) return;
+    soundPreparationStarted.current = true;
+    logRoundDiagnostic('ready screen starting round audio preparation');
+    let active = true;
+    void prepareForRound().then((prepared) => {
+      logRoundDiagnostic('ready screen received audio preparation result', { active, prepared });
+      if (!active) return;
+      setSoundsPrepared(prepared);
+      setSoundPreparationFailed(!prepared);
+      if (!prepared) soundPreparationStarted.current = false;
+    });
+    return () => {
+      active = false;
+    };
+  }, [prepareForRound, soundsReady]);
 
   useEffect(() => {
     let active = true;
+    logRoundDiagnostic('ready screen requesting camera and microphone preparation');
     prepareRecording().then((preparation) => {
+      logRoundDiagnostic('ready screen received recording preparation result', {
+        active,
+        preparation,
+      });
       if (active) setRecordingPreparation(preparation);
     });
     return () => {
@@ -74,7 +149,10 @@ export default function ReadyScreen() {
   }, [prepareRecording]);
 
   useEffect(() => {
-    const timeout = setTimeout(() => setOrientationSettled(true), READY_TRANSITION_MS);
+    const timeout = setTimeout(() => {
+      logRoundDiagnostic('ready screen orientation transition settled');
+      setOrientationSettled(true);
+    }, READY_TRANSITION_MS);
     return () => clearTimeout(timeout);
   }, []);
 
@@ -83,78 +161,119 @@ export default function ReadyScreen() {
   }, [orientationSettled, revealTransition]);
 
   useEffect(() => {
-    if (!positionReady || !orientationSettled || !recordingPrepared || isLeaving || introStarted.current) return;
+    if (
+      !positionReady ||
+      !orientationSettled ||
+      !recordingPrepared ||
+      !soundsPrepared ||
+      isLeaving ||
+      introStarted.current
+    ) return;
     introStarted.current = true;
-    void playRoundSound(getReadyPlayer, 'get-ready');
-    const timeout = setTimeout(async () => {
+    logRoundDiagnostic('ready intro gates passed; starting recording before audio', {
+      recordingPreparation,
+    });
+    let active = true;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const startIntro = async () => {
       const started = await startRecording();
+      logRoundDiagnostic('ready intro recording start resolved', {
+        active,
+        recordingPreparation,
+        started,
+      });
+      if (!active) return;
       if (recordingPreparation === 'ready' && !started) {
         introStarted.current = false;
         setRecordingPreparation('error');
         return;
       }
-      setIntroComplete(true);
-    }, GET_READY_SOUND_MS);
-    return () => clearTimeout(timeout);
+      // Recording must be active before the first note so Get Ready is present
+      // in the saved round video from its beginning.
+      recordSoundCue('get-ready');
+      const played = await playSound('get-ready');
+      logRoundDiagnostic('get-ready playback request completed', { active, played });
+      if (!active) return;
+      if (!played) {
+        warnRoundDiagnostic('get-ready playback did not start', new Error('Player rejected playback'));
+        introStarted.current = false;
+        setSoundsPrepared(false);
+        setSoundPreparationFailed(true);
+        return;
+      }
+      timeout = setTimeout(() => {
+        const endsAt = Date.now() + 3000;
+        logRoundDiagnostic('get-ready completed; starting absolute 3-2-1 countdown', {
+          endsAt,
+          now: Date.now(),
+        });
+        setCountdownEndsAt(endsAt);
+        setIntroComplete(true);
+      }, GET_READY_SOUND_MS);
+    };
+    void startIntro();
+    return () => {
+      active = false;
+      if (timeout) clearTimeout(timeout);
+    };
   }, [
-    getReadyPlayer,
     isLeaving,
     orientationSettled,
+    playSound,
     positionReady,
     recordingPreparation,
     recordingPrepared,
+    recordSoundCue,
+    soundsPrepared,
     startRecording,
   ]);
-
-  useEffect(() => {
-    if (!introComplete || isLeaving) return;
-    recordOverlayEvent({ kind: 'countdown', text: String(count) });
-    const sound: RoundSoundId = count === 3 ? 'count-3' : count === 2 ? 'count-2' : 'count-1';
-    recordSoundCue(sound);
-    void playRoundSound(
-      count === 3 ? count3Player : count === 2 ? count2Player : count1Player,
-      sound,
-    );
-  }, [count, count1Player, count2Player, count3Player, introComplete, isLeaving, recordOverlayEvent, recordSoundCue]);
 
   useEffect(() => {
     if (isLeaving) return;
 
     if (!deck || round.status === 'idle') {
+      logRoundDiagnostic('ready screen redirecting to home', { hasDeck: !!deck, roundStatus: round.status });
       router.replace('/');
       return;
     }
 
     if (round.status === 'playing' || round.status === 'feedback') {
+      logRoundDiagnostic('ready screen redirecting to active game', { roundStatus: round.status });
       router.replace('/game' as Href);
       return;
     }
 
     if (round.status === 'finished') {
+      logRoundDiagnostic('ready screen redirecting to results', { roundStatus: round.status });
       router.replace('/results' as Href);
       return;
     }
 
-    if (!positionReady || !orientationSettled || !introComplete) return;
-
-    const timeout = setTimeout(() => {
-      if (count === 1 && !launched.current) {
-        launched.current = true;
-        router.replace('/game' as Href);
-        return;
-      }
-      setCount((value) => Math.max(1, value - 1));
-    }, 1000);
-    return () => clearTimeout(timeout);
-  }, [count, deck, introComplete, isLeaving, orientationSettled, positionReady, round.status, router]);
+  }, [deck, isLeaving, round.status, router]);
 
   if (!deck) return null;
 
   const countSize = Math.max(92, Math.min(138, height * 0.34));
 
   const handleRetryCamera = async () => {
+    logRoundDiagnostic('manual camera retry requested');
+    await cancelRecording();
     setRecordingPreparation('preparing');
     setRecordingPreparation(await prepareRecording());
+  };
+
+  const handleRetryAudio = async () => {
+    logRoundDiagnostic('manual audio retry requested from ready screen');
+    if (introStarted.current) {
+      await cancelRecording();
+      setRecordingPreparation('preparing');
+      setRecordingPreparation(await prepareRecording());
+    }
+    introStarted.current = false;
+    soundPreparationStarted.current = false;
+    setSoundsPrepared(false);
+    setSoundPreparationFailed(false);
+    retryLoading();
   };
 
   const handlePlayWithoutVideo = async () => {
@@ -195,7 +314,21 @@ export default function ReadyScreen() {
             <Text style={styles.deckName}>{deck.title}</Text>
 
             <View style={styles.center}>
-              {recordingPreparation === 'error' ? (
+              {soundLoadTimedOut || soundPreparationFailed ? (
+                <>
+                  <Text style={styles.positionTitle}>AUDIO NOT READY</Text>
+                  <Text style={styles.instructions}>
+                    The round is paused so no game sounds are missed.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void handleRetryAudio()}
+                    style={styles.manualButton}
+                  >
+                    <Text style={styles.manualButtonText}>RETRY AUDIO</Text>
+                  </Pressable>
+                </>
+              ) : recordingPreparation === 'error' ? (
                 <>
                   <Text style={styles.positionTitle}>CAMERA NOT READY</Text>
                   <Text style={styles.instructions}>

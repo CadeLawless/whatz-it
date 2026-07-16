@@ -1,7 +1,13 @@
 import { useEventListener } from 'expo';
 import { type AudioPlayer, setAudioModeAsync, useAudioPlayer } from 'expo-audio';
+import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
-import { useVideoPlayer, type VideoPlayer, VideoView } from 'expo-video';
+import {
+  useVideoPlayer,
+  type VideoPlayer,
+  type VideoThumbnail,
+  VideoView,
+} from 'expo-video';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   type GestureResponderEvent,
@@ -33,6 +39,7 @@ type RoundVideoPlayerProps = {
   style?: StyleProp<ViewStyle>;
   isSaving?: boolean;
   saveDisabled?: boolean;
+  staticThumbnail?: boolean;
   onSave?: (video: RoundVideo) => Promise<VideoSaveNotice>;
   onDelete?: (video: RoundVideo) => Promise<void>;
 };
@@ -53,6 +60,7 @@ export function RoundVideoPlayer({
   style,
   isSaving = false,
   saveDisabled = false,
+  staticThumbnail = false,
   onSave,
   onDelete,
 }: RoundVideoPlayerProps) {
@@ -62,7 +70,8 @@ export function RoundVideoPlayer({
   const [deletePromptVisible, setDeletePromptVisible] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(!staticThumbnail);
+  const [thumbnail, setThumbnail] = useState<VideoThumbnail | null>(null);
   const [duration, setDuration] = useState(0);
   const [progressWidth, setProgressWidth] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -73,6 +82,7 @@ export function RoundVideoPlayer({
   const [playbackUri] = useState(() => video.uri);
   const expandedRef = useRef(false);
   const previousVideoTime = useRef(0);
+  const thumbnailTimeRef = useRef(0);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isScrubbingRef = useRef(false);
   const wasPlayingBeforeScrubRef = useRef(false);
@@ -93,7 +103,7 @@ export function RoundVideoPlayer({
     instance.loop = true;
     instance.muted = true;
     instance.timeUpdateEventInterval = 0.1;
-    instance.play();
+    if (!staticThumbnail) instance.play();
   });
 
   useEventListener(player, 'timeUpdate', ({ currentTime: nextTime }) => {
@@ -154,6 +164,20 @@ export function RoundVideoPlayer({
     videoSource,
   }) => {
     setDuration(duration);
+    if (staticThumbnail) {
+      const thumbnailTime = duration * 0.25;
+      thumbnailTimeRef.current = thumbnailTime;
+      player.pause();
+      seekVideoPlayer(player, thumbnailTime);
+      setCurrentTime(thumbnailTime);
+      previousVideoTime.current = thumbnailTime;
+      if (Platform.OS !== 'web') {
+        void player
+          .generateThumbnailsAsync(thumbnailTime, { maxWidth: 720 })
+          .then(([generatedThumbnail]) => setThumbnail(generatedThumbnail ?? null))
+          .catch(() => setThumbnail(null));
+      }
+    }
     const videoTrack = availableVideoTracks[0];
     if (videoTrack?.size.width > 0 && videoTrack.size.height > 0) {
       setVideoSize(videoTrack.size);
@@ -243,17 +267,25 @@ export function RoundVideoPlayer({
 
   const openExpanded = async () => {
     expandedRef.current = true;
-    previousVideoTime.current = player.currentTime;
+    const startTime = staticThumbnail ? 0 : player.currentTime;
+    if (staticThumbnail) {
+      player.pause();
+      seekVideoPlayer(player, 0);
+      setCurrentTime(0);
+    }
+    previousVideoTime.current = startTime;
     setExpanded(true);
     showControls();
     await setPlaybackAudioMode().catch(() => undefined);
     if (separateAudioUri) {
       setPlayerMuted(player, true);
-      await separateAudio.seekTo(player.currentTime).catch(() => undefined);
+      await separateAudio.seekTo(startTime).catch(() => undefined);
       separateAudio.play();
-      player.play();
+      if (staticThumbnail) player.replay();
+      else player.play();
     } else {
       enablePlayerAudio(player);
+      if (staticThumbnail) player.replay();
     }
   };
 
@@ -267,7 +299,14 @@ export function RoundVideoPlayer({
     expandedRef.current = false;
     pauseAudioPlayer(separateAudio);
     setPlayerMuted(player, true);
-    player.play();
+    if (staticThumbnail) {
+      player.pause();
+      seekVideoPlayer(player, thumbnailTimeRef.current);
+      setCurrentTime(thumbnailTimeRef.current);
+      previousVideoTime.current = thumbnailTimeRef.current;
+    } else {
+      player.play();
+    }
     setExpanded(false);
     restoreAppAudioMode();
   };
@@ -452,14 +491,23 @@ export function RoundVideoPlayer({
     <>
       {!expanded && (
         <View style={[styles.frame, style]}>
-          <VideoView
-            contentFit="cover"
-            nativeControls={false}
-            player={player}
-            style={StyleSheet.absoluteFill}
-            surfaceType="textureView"
-          />
+          {thumbnail ? (
+            <Image contentFit="cover" source={thumbnail} style={StyleSheet.absoluteFill} />
+          ) : (
+            <VideoView
+              contentFit="cover"
+              nativeControls={false}
+              player={player}
+              style={StyleSheet.absoluteFill}
+              surfaceType="textureView"
+            />
+          )}
           <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} compact />
+          {staticThumbnail && (
+            <View pointerEvents="none" style={styles.thumbnailPlayBadge}>
+              <Text style={styles.thumbnailPlayIcon}>{'\u25B6'}</Text>
+            </View>
+          )}
           <Pressable
             accessibilityHint="Opens a larger player with sound"
             accessibilityLabel="Watch round video"
@@ -854,6 +902,20 @@ function getEventPalette(kind: RoundVideoEvent['kind']) {
 
 const styles = StyleSheet.create({
   frame: { overflow: 'hidden', backgroundColor: '#111111' },
+  thumbnailPlayBadge: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 38,
+    height: 38,
+    marginTop: -19,
+    marginLeft: -19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 0, 0, 0.62)',
+  },
+  thumbnailPlayIcon: { marginLeft: 2, color: '#FFFFFF', fontSize: 17 },
   modalRoot: { flex: 1, backgroundColor: '#000000' },
   expandedFrame: { flex: 1, backgroundColor: '#000000' },
   videoChrome: { position: 'absolute', overflow: 'hidden' },

@@ -7,21 +7,27 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { colors } from '@/theme';
 import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
+import { RoundSoundProvider } from '@/video/round-sound-provider';
+import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 export default function RootLayout() {
   useEffect(() => {
+    logRoundDiagnostic('root audio mode configuration started');
     setAudioModeAsync({
       allowsRecording: false,
       interruptionMode: 'mixWithOthers',
-      playsInSilentMode: false,
+      playsInSilentMode: true,
       shouldRouteThroughEarpiece: false,
-    }).catch(() => undefined);
+    })
+      .then(() => logRoundDiagnostic('root audio mode configuration completed'))
+      .catch((error) => warnRoundDiagnostic('root audio mode configuration failed', error));
   }, []);
 
   return (
     <SafeAreaProvider>
-      <ScreenshotTransitionProvider>
-        <RoundProvider>
+      <RoundSoundProvider>
+        <ScreenshotTransitionProvider>
+          <RoundProvider>
           <StatusBar style="dark" />
           <Stack
         screenOptions={{
@@ -81,8 +87,9 @@ export default function RootLayout() {
           }}
         />
           </Stack>
-        </RoundProvider>
-      </ScreenshotTransitionProvider>
+          </RoundProvider>
+        </ScreenshotTransitionProvider>
+      </RoundSoundProvider>
     </SafeAreaProvider>
   );
 }
