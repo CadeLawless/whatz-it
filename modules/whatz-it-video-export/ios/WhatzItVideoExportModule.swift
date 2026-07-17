@@ -37,19 +37,6 @@ private struct SystemSoundPool {
   var nextIndex = 0
 }
 
-private struct CueEchoReference {
-  let samples: [Float]
-  let startFrameOffset: Int
-}
-
-private struct EchoReducedMicrophone {
-  let url: URL
-  let matchedCueCount: Int
-  let totalCueCount: Int
-  let averageCorrelation: Double
-  let isTemporary: Bool
-}
-
 private enum VideoExportError: Error, LocalizedError {
   case missingVideoTrack
   case missingAudioTrack
@@ -112,7 +99,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      15
+      16
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -212,7 +199,7 @@ public final class WhatzItVideoExportModule: Module {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         self.microphoneEngine = nil
-        capturePath = "voice-processing-engine"
+        capturePath = "video-recording-audio-engine"
       } else if let recorder = self.microphoneRecorder {
         recorder.updateMeters()
         let duration = recorder.currentTime
@@ -434,10 +421,9 @@ public final class WhatzItVideoExportModule: Module {
       let inputNode = engine.inputNode
       var tapInstalled = false
       do {
-        // Record the microphone without the call-oriented voice-processing
-        // stack. The exported audio mixer keeps this track at full volume and
-        // adds the clean round-cue tracks independently, with no side-chain
-        // ducking or gain changes applied to the microphone.
+        // Keep Apple's standard video-recording microphone mode, but avoid the
+        // call-oriented voice-processing stack. Export uses only this track at
+        // full volume, with no cue overlay, ducking, or custom cancellation.
         let inputFormat = inputNode.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
           throw VideoExportError.microphoneStartFailed
@@ -477,7 +463,7 @@ public final class WhatzItVideoExportModule: Module {
       }
       self.microphoneEngine = engine
       self.microphoneRecordingUrl = outputUrl
-      return "unprocessed-audio-engine"
+      return "video-recording-audio-engine"
     } catch {
       NSLog(
         "[RoundAudioNative] Audio-engine capture unavailable; starting recorder fallback error=%@",
@@ -563,391 +549,17 @@ public final class WhatzItVideoExportModule: Module {
     try audioSession.setActive(true)
   }
 
-  private static func prepareEchoReducedMicrophone(
-    microphoneUrl: URL,
-    microphoneOffsetMs: Double,
-    cues: [RoundAudioCueRecord]
-  ) throws -> EchoReducedMicrophone {
-    guard !cues.isEmpty else {
-      return EchoReducedMicrophone(
-        url: microphoneUrl,
-        matchedCueCount: 0,
-        totalCueCount: 0,
-        averageCorrelation: 0,
-        isTemporary: false
-      )
-    }
-
-    let microphoneFile = try AVAudioFile(forReading: microphoneUrl)
-    let microphoneFormat = microphoneFile.processingFormat
-    guard microphoneFormat.commonFormat == .pcmFormatFloat32,
-          !microphoneFormat.isInterleaved,
-          microphoneFile.length > 0,
-          microphoneFile.length <= AVAudioFramePosition(UInt32.max),
-          let microphoneBuffer = AVAudioPCMBuffer(
-            pcmFormat: microphoneFormat,
-            frameCapacity: AVAudioFrameCount(microphoneFile.length)
-          ) else {
-      throw VideoExportError.exportFailed("The microphone track could not be decoded for cue cancellation.")
-    }
-    try microphoneFile.read(into: microphoneBuffer)
-    guard microphoneBuffer.frameLength > 0,
-          let microphoneChannels = microphoneBuffer.floatChannelData else {
-      throw VideoExportError.exportFailed("The microphone track is not available as floating-point audio.")
-    }
-
-    let sampleRate = microphoneFormat.sampleRate
-    let microphoneFrameCount = Int(microphoneBuffer.frameLength)
-    let microphoneChannelCount = Int(microphoneFormat.channelCount)
-    var referenceCache = [String: CueEchoReference]()
-    var matchedCueCount = 0
-    var correlationTotal = 0.0
-
-    for (cueIndex, cue) in cues.sorted(by: { $0.atMs < $1.atMs }).enumerated() {
-      guard let cueUrl = URL(string: cue.uri) else { continue }
-      let reference: CueEchoReference
-      if let cached = referenceCache[cue.uri] {
-        reference = cached
-      } else {
-        reference = try loadCueEchoReference(cueUrl, targetSampleRate: sampleRate)
-        referenceCache[cue.uri] = reference
-      }
-      guard !reference.samples.isEmpty else { continue }
-
-      let cueFrameInMicrophone = Int(
-        (((cue.atMs - microphoneOffsetMs) / 1_000) * sampleRate).rounded()
-      )
-      let expectedReferenceStart = cueFrameInMicrophone + reference.startFrameOffset
-      guard let match = findCueEcho(
-        reference: reference.samples,
-        microphone: microphoneChannels[0],
-        microphoneFrameCount: microphoneFrameCount,
-        expectedStart: expectedReferenceStart,
-        sampleRate: sampleRate
-      ) else {
-        continue
-      }
-
-      for channel in 0..<microphoneChannelCount {
-        subtractCueEcho(
-          reference: reference.samples,
-          microphone: microphoneChannels[channel],
-          microphoneFrameCount: microphoneFrameCount,
-          startFrame: match.startFrame,
-          correlation: match.correlation
-        )
-      }
-      matchedCueCount += 1
-      correlationTotal += match.correlation
-      let detectedDelayMs = Double(match.startFrame - expectedReferenceStart) / sampleRate * 1_000
-      NSLog(
-        "[RoundAudioNative] Cue echo matched index=%ld correlation=%.3f detectedDelayMs=%.1f",
-        cueIndex,
-        match.correlation,
-        detectedDelayMs
-      )
-    }
-
-    guard matchedCueCount > 0 else {
-      return EchoReducedMicrophone(
-        url: microphoneUrl,
-        matchedCueCount: 0,
-        totalCueCount: cues.count,
-        averageCorrelation: 0,
-        isTemporary: false
-      )
-    }
-
-    let outputUrl = FileManager.default.temporaryDirectory
-      .appendingPathComponent("whatz-it-echo-reduced-\(UUID().uuidString).m4a")
-    let outputSettings: [String: Any] = [
-      AVFormatIDKey: kAudioFormatMPEG4AAC,
-      AVSampleRateKey: sampleRate,
-      AVNumberOfChannelsKey: microphoneChannelCount,
-      AVEncoderBitRateKey: 128_000,
-      AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-    ]
-    do {
-      let outputFile = try AVAudioFile(
-        forWriting: outputUrl,
-        settings: outputSettings,
-        commonFormat: .pcmFormatFloat32,
-        interleaved: false
-      )
-      try outputFile.write(from: microphoneBuffer)
-    } catch {
-      try? FileManager.default.removeItem(at: outputUrl)
-      throw error
-    }
-
-    return EchoReducedMicrophone(
-      url: outputUrl,
-      matchedCueCount: matchedCueCount,
-      totalCueCount: cues.count,
-      averageCorrelation: correlationTotal / Double(matchedCueCount),
-      isTemporary: true
-    )
-  }
-
-  private static func loadCueEchoReference(
-    _ cueUrl: URL,
-    targetSampleRate: Double
-  ) throws -> CueEchoReference {
-    let cueFile = try AVAudioFile(forReading: cueUrl)
-    guard cueFile.length > 0,
-          cueFile.length <= AVAudioFramePosition(UInt32.max),
-          let cueBuffer = AVAudioPCMBuffer(
-            pcmFormat: cueFile.processingFormat,
-            frameCapacity: AVAudioFrameCount(cueFile.length)
-          ) else {
-      throw VideoExportError.exportFailed("A round cue could not be decoded for echo cancellation.")
-    }
-    try cueFile.read(into: cueBuffer)
-    guard cueBuffer.frameLength > 0,
-          let cueChannels = cueBuffer.floatChannelData else {
-      throw VideoExportError.exportFailed("A round cue is not available as floating-point audio.")
-    }
-
-    let sourceFrameCount = Int(cueBuffer.frameLength)
-    let sourceChannelCount = Int(cueBuffer.format.channelCount)
-    var monoSamples = [Float](repeating: 0, count: sourceFrameCount)
-    let channelScale = 1 / Float(max(1, sourceChannelCount))
-    for channel in 0..<sourceChannelCount {
-      for frame in 0..<sourceFrameCount {
-        monoSamples[frame] += cueChannels[channel][frame] * channelScale
-      }
-    }
-
-    let sourceSampleRate = cueBuffer.format.sampleRate
-    let resampled: [Float]
-    if abs(sourceSampleRate - targetSampleRate) < 0.5 {
-      resampled = monoSamples
-    } else {
-      let outputFrameCount = max(
-        1,
-        Int(ceil(Double(sourceFrameCount) * targetSampleRate / sourceSampleRate))
-      )
-      var output = [Float](repeating: 0, count: outputFrameCount)
-      let sourceFramesPerOutputFrame = sourceSampleRate / targetSampleRate
-      for outputFrame in 0..<outputFrameCount {
-        let sourcePosition = Double(outputFrame) * sourceFramesPerOutputFrame
-        let lowerFrame = min(sourceFrameCount - 1, Int(sourcePosition))
-        let upperFrame = min(sourceFrameCount - 1, lowerFrame + 1)
-        let fraction = Float(sourcePosition - Double(lowerFrame))
-        output[outputFrame] =
-          monoSamples[lowerFrame] * (1 - fraction) + monoSamples[upperFrame] * fraction
-      }
-      resampled = output
-    }
-
-    guard let peak = resampled.map({ abs($0) }).max(), peak > 0.001 else {
-      throw VideoExportError.exportFailed("A round cue contains no usable audio for echo cancellation.")
-    }
-    let activityThreshold = max(0.001, peak * 0.015)
-    guard let firstActiveFrame = resampled.firstIndex(where: { abs($0) >= activityThreshold }),
-          let lastActiveFrame = resampled.lastIndex(where: { abs($0) >= activityThreshold }) else {
-      throw VideoExportError.exportFailed("A round cue contains no detectable audio activity.")
-    }
-    let leadingPadding = Int(targetSampleRate * 0.005)
-    let trailingPadding = Int(targetSampleRate * 0.12)
-    let startFrame = max(0, firstActiveFrame - leadingPadding)
-    let endFrame = min(resampled.count, lastActiveFrame + trailingPadding + 1)
-    return CueEchoReference(
-      samples: Array(resampled[startFrame..<endFrame]),
-      startFrameOffset: startFrame
-    )
-  }
-
-  private static func findCueEcho(
-    reference: [Float],
-    microphone: UnsafePointer<Float>,
-    microphoneFrameCount: Int,
-    expectedStart: Int,
-    sampleRate: Double
-  ) -> (startFrame: Int, correlation: Double)? {
-    guard reference.count < microphoneFrameCount else { return nil }
-    let earliestStart = max(0, expectedStart - Int(sampleRate * 0.04))
-    let latestStart = min(
-      microphoneFrameCount - reference.count,
-      expectedStart + Int(sampleRate * 0.28)
-    )
-    guard earliestStart <= latestStart else { return nil }
-
-    let coarseStride = max(1, Int(sampleRate / 1_000))
-    let coarseSampleStep = max(4, reference.count / 3_000)
-    var bestStart = earliestStart
-    var bestCorrelation = 0.0
-    var candidate = earliestStart
-    while candidate <= latestStart {
-      let correlation = cueCorrelation(
-        reference: reference,
-        microphone: microphone,
-        startFrame: candidate,
-        sampleStep: coarseSampleStep
-      )
-      if correlation > bestCorrelation {
-        bestCorrelation = correlation
-        bestStart = candidate
-      }
-      candidate += coarseStride
-    }
-
-    let fineStart = max(earliestStart, bestStart - coarseStride)
-    let fineEnd = min(latestStart, bestStart + coarseStride)
-    let fineSampleStep = max(2, reference.count / 6_000)
-    if fineStart <= fineEnd {
-      for fineCandidate in fineStart...fineEnd {
-        let correlation = cueCorrelation(
-          reference: reference,
-          microphone: microphone,
-          startFrame: fineCandidate,
-          sampleStep: fineSampleStep
-        )
-        if correlation > bestCorrelation {
-          bestCorrelation = correlation
-          bestStart = fineCandidate
-        }
-      }
-    }
-
-    guard bestCorrelation >= 0.12 else { return nil }
-    return (bestStart, bestCorrelation)
-  }
-
-  private static func cueCorrelation(
-    reference: [Float],
-    microphone: UnsafePointer<Float>,
-    startFrame: Int,
-    sampleStep: Int
-  ) -> Double {
-    var dotProduct = 0.0
-    var referenceEnergy = 0.0
-    var microphoneEnergy = 0.0
-    var frame = 0
-    while frame < reference.count {
-      let referenceSample = Double(reference[frame])
-      let microphoneSample = Double(microphone[startFrame + frame])
-      dotProduct += referenceSample * microphoneSample
-      referenceEnergy += referenceSample * referenceSample
-      microphoneEnergy += microphoneSample * microphoneSample
-      frame += sampleStep
-    }
-    guard referenceEnergy > 1e-8, microphoneEnergy > 1e-8 else { return 0 }
-    return abs(dotProduct) / sqrt(referenceEnergy * microphoneEnergy)
-  }
-
-  private static func subtractCueEcho(
-    reference: [Float],
-    microphone: UnsafeMutablePointer<Float>,
-    microphoneFrameCount: Int,
-    startFrame: Int,
-    correlation: Double
-  ) {
-    let filterLength = min(64, max(8, reference.count / 32))
-    var weights = [Float](repeating: 0, count: filterLength)
-    let adaptationRate: Float = 0.18
-    let energyFloor: Float = 1e-5
-
-    // Estimate the short speaker-to-microphone impulse response. Unrelated
-    // voices and room noise do not correlate with the known cue and therefore
-    // do not consistently update this filter.
-    for _ in 0..<2 {
-      for frame in 0..<reference.count {
-        let tapCount = min(filterLength, frame + 1)
-        var predicted: Float = 0
-        var inputEnergy = energyFloor
-        for tap in 0..<tapCount {
-          let input = reference[frame - tap]
-          predicted += weights[tap] * input
-          inputEnergy += input * input
-        }
-        guard inputEnergy > 5e-5 else { continue }
-        let error = microphone[startFrame + frame] - predicted
-        let normalizedUpdate = adaptationRate * error / inputEnergy
-        for tap in 0..<tapCount {
-          let updated = weights[tap] + normalizedUpdate * reference[frame - tap]
-          weights[tap] = max(-2, min(2, updated))
-        }
-      }
-    }
-
-    let predictedFrameCount = min(
-      reference.count + filterLength - 1,
-      microphoneFrameCount - startFrame
-    )
-    guard predictedFrameCount > 0 else { return }
-    var predictedEcho = [Float](repeating: 0, count: predictedFrameCount)
-    var predictedEnergy = 0.0
-    var observedEnergy = 0.0
-    for frame in 0..<predictedFrameCount {
-      let minimumTap = max(0, frame - reference.count + 1)
-      let maximumTap = min(filterLength - 1, frame)
-      if minimumTap <= maximumTap {
-        for tap in minimumTap...maximumTap {
-          predictedEcho[frame] += weights[tap] * reference[frame - tap]
-        }
-      }
-      let predictedSample = Double(predictedEcho[frame])
-      let observedSample = Double(microphone[startFrame + frame])
-      predictedEnergy += predictedSample * predictedSample
-      observedEnergy += observedSample * observedSample
-    }
-    guard predictedEnergy > 1e-8, observedEnergy > 1e-8 else { return }
-
-    let energyLimit = min(1, sqrt(observedEnergy / predictedEnergy) * 0.95)
-    let confidence = min(1, max(0.25, (correlation - 0.12) / 0.28))
-    let cancellationScale = Float(energyLimit * confidence)
-    for frame in 0..<predictedFrameCount {
-      let cleaned = microphone[startFrame + frame] - predictedEcho[frame] * cancellationScale
-      microphone[startFrame + frame] = max(-1, min(1, cleaned))
-    }
-  }
-
   private static func mixRoundAudio(
     videoUrl: URL,
     microphoneUrl: URL,
     microphoneOffsetMs: Double,
-    cues: [RoundAudioCueRecord],
-    cueVolume: Double,
+    cues _: [RoundAudioCueRecord],
+    cueVolume _: Double,
     outputUrl: URL
   ) async throws {
     let videoAsset = AVURLAsset(url: videoUrl)
     let videoDuration = try await videoAsset.load(.duration)
-    let cancellationStartedAt = ProcessInfo.processInfo.systemUptime
-    let echoReducedMicrophone: EchoReducedMicrophone
-    do {
-      echoReducedMicrophone = try prepareEchoReducedMicrophone(
-        microphoneUrl: microphoneUrl,
-        microphoneOffsetMs: microphoneOffsetMs,
-        cues: cues
-      )
-      NSLog(
-        "[RoundAudioNative] Cue echo cancellation completed matched=%ld total=%ld averageCorrelation=%.3f elapsedMs=%.0f",
-        echoReducedMicrophone.matchedCueCount,
-        echoReducedMicrophone.totalCueCount,
-        echoReducedMicrophone.averageCorrelation,
-        (ProcessInfo.processInfo.systemUptime - cancellationStartedAt) * 1_000
-      )
-    } catch {
-      echoReducedMicrophone = EchoReducedMicrophone(
-        url: microphoneUrl,
-        matchedCueCount: 0,
-        totalCueCount: cues.count,
-        averageCorrelation: 0,
-        isTemporary: false
-      )
-      NSLog(
-        "[RoundAudioNative] Cue echo cancellation failed; using raw microphone error=%@",
-        error.localizedDescription
-      )
-    }
-    defer {
-      if echoReducedMicrophone.isTemporary {
-        try? FileManager.default.removeItem(at: echoReducedMicrophone.url)
-      }
-    }
-
-    let microphoneAsset = AVURLAsset(url: echoReducedMicrophone.url)
+    let microphoneAsset = AVURLAsset(url: microphoneUrl)
     guard let microphoneSourceTrack = try await microphoneAsset.loadTracks(withMediaType: .audio).first else {
       throw VideoExportError.missingAudioTrack
     }
@@ -973,48 +585,10 @@ public final class WhatzItVideoExportModule: Module {
       at: microphoneStart
     )
 
-    var effectTracks: [AVMutableCompositionTrack] = []
-    var effectTrackEnds: [CMTime] = []
-    for cue in cues.sorted(by: { $0.atMs < $1.atMs }) {
-      guard let cueUrl = URL(string: cue.uri) else { continue }
-      let cueStart = CMTime(seconds: max(0, cue.atMs / 1_000), preferredTimescale: 600)
-      guard cueStart < videoDuration else { continue }
-      let cueAsset = AVURLAsset(url: cueUrl)
-      guard let cueSourceTrack = try await cueAsset.loadTracks(withMediaType: .audio).first else {
-        continue
-      }
-      let cueDuration = try await cueAsset.load(.duration)
-      let insertDuration = CMTimeMinimum(cueDuration, CMTimeSubtract(videoDuration, cueStart))
-      guard insertDuration.isValid, insertDuration > .zero else { continue }
-
-      var trackIndex = effectTrackEnds.firstIndex(where: { $0 <= cueStart })
-      if trackIndex == nil {
-        guard let newTrack = composition.addMutableTrack(
-          withMediaType: .audio,
-          preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else { continue }
-        effectTracks.append(newTrack)
-        effectTrackEnds.append(.zero)
-        trackIndex = effectTracks.count - 1
-      }
-      guard let index = trackIndex else { continue }
-      try effectTracks[index].insertTimeRange(
-        CMTimeRange(start: .zero, duration: insertDuration),
-        of: cueSourceTrack,
-        at: cueStart
-      )
-      effectTrackEnds[index] = CMTimeAdd(cueStart, insertDuration)
-    }
-
     let audioMix = AVMutableAudioMix()
     let microphoneParameters = AVMutableAudioMixInputParameters(track: actualMicrophoneTrack)
     microphoneParameters.setVolume(1, at: .zero)
-    let effectParameters = effectTracks.map { track in
-      let parameters = AVMutableAudioMixInputParameters(track: track)
-      parameters.setVolume(Float(max(0, min(1, cueVolume))), at: .zero)
-      return parameters
-    }
-    audioMix.inputParameters = [microphoneParameters] + effectParameters
+    audioMix.inputParameters = [microphoneParameters]
 
     guard let exporter = AVAssetExportSession(
       asset: composition,

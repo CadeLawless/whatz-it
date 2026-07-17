@@ -36,8 +36,6 @@ import {
   type RoundVideoEvent,
 } from '@/video/round-videos';
 import {
-  resolveRoundAudioCues,
-  ROUND_VIDEO_SOUND_VOLUME,
   stopRoundSoundsAfterRound,
   type RoundSoundId,
   type RoundVideoSoundCue,
@@ -374,7 +372,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
 
         const preparedSegments: { videoUri: string; audioUri: string | null }[] = [];
         for (const segment of segments) {
-          const { capture, soundCues } = segment;
+          const { capture } = segment;
           temporaryUris.push(capture.videoUri, capture.microphoneUri);
           let audioUri = capture.microphoneUri;
           if (Platform.OS === 'ios' && capture.microphoneUri) {
@@ -386,18 +384,16 @@ export function RoundProvider({ children }: PropsWithChildren) {
                   capture.videoUri,
                   capture.microphoneUri,
                   capture.microphoneOffsetMs,
-                  await resolveRoundAudioCues(soundCues),
-                  ROUND_VIDEO_SOUND_VOLUME,
+                  [],
+                  0,
                 );
                 temporaryUris.push(audioUri);
-                logVideoDiagnostic('recording segment audio mixed', {
-                  cueCount: soundCues.length,
-                  mixedAudioUri: audioUri,
+                logVideoDiagnostic('recording segment microphone aligned', {
+                  alignedAudioUri: audioUri,
                 });
               }
             } catch (error) {
-              warnVideoDiagnostic('round cue mix failed; preserving captured audio', error, {
-                cueCount: soundCues.length,
+              warnVideoDiagnostic('microphone alignment failed; preserving captured audio', error, {
                 microphoneUri: capture.microphoneUri,
               });
               audioUri = capture.microphoneUri;

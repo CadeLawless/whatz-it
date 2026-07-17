@@ -78,8 +78,8 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
   function RoundCamera({ enabled, microphoneEnabled, onError, onReady }, ref) {
     const device = useCameraDevice('front');
     const videoOutput = useVideoOutput({
-      // iOS records an unchanged microphone track. Export removes only speaker
-      // leakage correlated with known cues, then layers each clean cue once.
+      // iOS records a separate microphone track. The saved video uses only what
+      // that microphone heard, including any round cue audible from the speaker.
       enableAudio: microphoneEnabled && Platform.OS !== 'ios',
       fileType: 'mp4',
     });
