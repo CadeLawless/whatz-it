@@ -36,6 +36,8 @@ private struct OverlayTimelineFrame {
 private struct SystemSoundPool {
   let soundIds: [SystemSoundID]
   let duration: TimeInterval
+  let liveVolume: Double
+  let temporaryPlaybackUrl: URL?
   var nextIndex = 0
 }
 
@@ -89,6 +91,9 @@ public final class WhatzItVideoExportModule: Module {
       for soundId in pool.soundIds {
         AudioServicesDisposeSystemSoundID(soundId)
       }
+      if let temporaryPlaybackUrl = pool.temporaryPlaybackUrl {
+        try? FileManager.default.removeItem(at: temporaryPlaybackUrl)
+      }
     }
   }
 
@@ -96,7 +101,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      18
+      19
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -241,23 +246,26 @@ public final class WhatzItVideoExportModule: Module {
       NSLog("[RoundAudioNative] Microphone capture cancelled")
     }
 
-    AsyncFunction("prepareSystemSound") { (inputUrl: URL) throws in
-      try self.prepareSystemSound(inputUrl)
+    AsyncFunction("prepareSystemSound") { (inputUrl: URL, liveVolume: Double) throws in
+      try self.prepareSystemSound(inputUrl, liveVolume: liveVolume)
     }
 
-    AsyncFunction("playSystemSound") { (inputUrl: URL) async throws -> Bool in
-      let sound = try self.nextSystemSound(inputUrl)
+    AsyncFunction("playSystemSound") {
+      (inputUrl: URL, liveVolume: Double) async throws -> Bool in
+      let sound = try self.nextSystemSound(inputUrl, liveVolume: liveVolume)
       return await Self.playSystemSound(
         sound.id,
         expectedDuration: sound.duration,
-        source: inputUrl.lastPathComponent
+        source: inputUrl.lastPathComponent,
+        liveVolume: sound.liveVolume
       )
     }
 
   }
 
-  private func prepareSystemSound(_ inputUrl: URL) throws {
-    let key = inputUrl.absoluteString
+  private func prepareSystemSound(_ inputUrl: URL, liveVolume: Double) throws {
+    let clampedLiveVolume = Self.clampLiveVolume(liveVolume)
+    let key = Self.systemSoundKey(inputUrl, liveVolume: clampedLiveVolume)
     self.systemSoundsLock.lock()
     let isPrepared = self.systemSoundPools[key] != nil
     self.systemSoundsLock.unlock()
@@ -269,13 +277,25 @@ public final class WhatzItVideoExportModule: Module {
     guard duration > 0 else {
       throw VideoExportError.exportFailed("A round sound has no readable duration.")
     }
+    let temporaryPlaybackUrl: URL?
+    let playbackUrl: URL
+    if clampedLiveVolume < 0.999 {
+      temporaryPlaybackUrl = try Self.makeAttenuatedSystemSoundFile(
+        inputUrl,
+        liveVolume: clampedLiveVolume
+      )
+      playbackUrl = temporaryPlaybackUrl ?? inputUrl
+    } else {
+      temporaryPlaybackUrl = nil
+      playbackUrl = inputUrl
+    }
     var soundIds = [SystemSoundID]()
     do {
       // Two IDs keep consecutive requests from reusing an identifier whose
       // completion callback is still pending.
       for _ in 0..<2 {
         var soundId: SystemSoundID = 0
-        let creationStatus = AudioServicesCreateSystemSoundID(inputUrl as CFURL, &soundId)
+        let creationStatus = AudioServicesCreateSystemSoundID(playbackUrl as CFURL, &soundId)
         guard creationStatus == kAudioServicesNoError else {
           throw VideoExportError.systemSoundCreationFailed(creationStatus)
         }
@@ -297,17 +317,27 @@ public final class WhatzItVideoExportModule: Module {
       for soundId in soundIds {
         AudioServicesDisposeSystemSoundID(soundId)
       }
+      if let temporaryPlaybackUrl {
+        try? FileManager.default.removeItem(at: temporaryPlaybackUrl)
+      }
       throw error
     }
 
     self.systemSoundsLock.lock()
     if self.systemSoundPools[key] == nil {
-      self.systemSoundPools[key] = SystemSoundPool(soundIds: soundIds, duration: duration)
+      self.systemSoundPools[key] = SystemSoundPool(
+        soundIds: soundIds,
+        duration: duration,
+        liveVolume: clampedLiveVolume,
+        temporaryPlaybackUrl: temporaryPlaybackUrl
+      )
       self.systemSoundsLock.unlock()
       NSLog(
-        "[RoundAudioNative] System sound prepared source=%@ durationMs=%.0f instances=%ld",
+        "[RoundAudioNative] System sound prepared source=%@ durationMs=%.0f liveVolume=%.2f preparedAsset=%@ instances=%ld",
         inputUrl.lastPathComponent,
         duration * 1_000,
+        clampedLiveVolume,
+        temporaryPlaybackUrl == nil ? "original" : "temporary-attenuated-copy",
         soundIds.count
       )
     } else {
@@ -315,21 +345,82 @@ public final class WhatzItVideoExportModule: Module {
       for soundId in soundIds {
         AudioServicesDisposeSystemSoundID(soundId)
       }
+      if let temporaryPlaybackUrl {
+        try? FileManager.default.removeItem(at: temporaryPlaybackUrl)
+      }
     }
+  }
+
+  private static func makeAttenuatedSystemSoundFile(
+    _ inputUrl: URL,
+    liveVolume: Double
+  ) throws -> URL {
+    let inputFile = try AVAudioFile(forReading: inputUrl)
+    let processingFormat = inputFile.processingFormat
+    guard inputFile.length > 0, inputFile.length <= AVAudioFramePosition(UInt32.max) else {
+      throw VideoExportError.exportFailed("A round sound is too large to prepare for playback.")
+    }
+    let frameCount = AVAudioFrameCount(inputFile.length)
+    guard let buffer = AVAudioPCMBuffer(
+      pcmFormat: processingFormat,
+      frameCapacity: frameCount
+    ) else {
+      throw VideoExportError.exportFailed("A round sound buffer could not be created.")
+    }
+    try inputFile.read(into: buffer)
+    guard let channelData = buffer.floatChannelData else {
+      throw VideoExportError.exportFailed("A round sound could not be adjusted for live playback.")
+    }
+    let scale = Float(liveVolume)
+    let channelCount = Int(processingFormat.channelCount)
+    let sampleCount = Int(buffer.frameLength)
+    let stride = buffer.stride
+    for channel in 0..<channelCount {
+      let samples = channelData[channel]
+      for frame in 0..<sampleCount {
+        samples[frame * stride] *= scale
+      }
+    }
+
+    let outputUrl = FileManager.default.temporaryDirectory
+      .appendingPathComponent("whatz-it-live-sound-\(UUID().uuidString).wav")
+    do {
+      let outputFile = try AVAudioFile(
+        forWriting: outputUrl,
+        settings: inputFile.fileFormat.settings,
+        commonFormat: processingFormat.commonFormat,
+        interleaved: processingFormat.isInterleaved
+      )
+      try outputFile.write(from: buffer)
+      return outputUrl
+    } catch {
+      try? FileManager.default.removeItem(at: outputUrl)
+      throw error
+    }
+  }
+
+  private static func clampLiveVolume(_ liveVolume: Double) -> Double {
+    liveVolume.isFinite ? max(0.05, min(1, liveVolume)) : 1
+  }
+
+  private static func systemSoundKey(_ inputUrl: URL, liveVolume: Double) -> String {
+    "\(inputUrl.absoluteString)#live-volume=\(String(format: "%.4f", liveVolume))"
   }
 
   private static func playSystemSound(
     _ soundId: SystemSoundID,
     expectedDuration: TimeInterval,
-    source: String
+    source: String,
+    liveVolume: Double
   ) async -> Bool {
     let startedAt = ProcessInfo.processInfo.systemUptime
     let audioSession = AVAudioSession.sharedInstance()
     NSLog(
-      "[RoundAudioNative] System sound dispatched source=%@ soundId=%u expectedDurationMs=%.0f sessionCategory=%@ sessionMode=%@ outputVolume=%.2f",
+      "[RoundAudioNative] System sound dispatched source=%@ soundId=%u expectedDurationMs=%.0f liveVolume=%.2f sessionCategory=%@ sessionMode=%@ outputVolume=%.2f",
       source,
       soundId,
       expectedDuration * 1_000,
+      liveVolume,
       audioSession.category.rawValue,
       audioSession.mode.rawValue,
       audioSession.outputVolume
@@ -355,9 +446,13 @@ public final class WhatzItVideoExportModule: Module {
     return wasAudible
   }
 
-  private func nextSystemSound(_ inputUrl: URL) throws -> (id: SystemSoundID, duration: TimeInterval) {
-    try self.prepareSystemSound(inputUrl)
-    let key = inputUrl.absoluteString
+  private func nextSystemSound(
+    _ inputUrl: URL,
+    liveVolume: Double
+  ) throws -> (id: SystemSoundID, duration: TimeInterval, liveVolume: Double) {
+    let clampedLiveVolume = Self.clampLiveVolume(liveVolume)
+    try self.prepareSystemSound(inputUrl, liveVolume: clampedLiveVolume)
+    let key = Self.systemSoundKey(inputUrl, liveVolume: clampedLiveVolume)
     self.systemSoundsLock.lock()
     defer { self.systemSoundsLock.unlock() }
     guard var pool = self.systemSoundPools[key], !pool.soundIds.isEmpty else {
@@ -366,7 +461,7 @@ public final class WhatzItVideoExportModule: Module {
     let soundId = pool.soundIds[pool.nextIndex % pool.soundIds.count]
     pool.nextIndex += 1
     self.systemSoundPools[key] = pool
-    return (soundId, pool.duration)
+    return (soundId, pool.duration, pool.liveVolume)
   }
 
   private func startMicrophoneCapture(at outputUrl: URL) throws -> String {

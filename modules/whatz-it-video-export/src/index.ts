@@ -46,8 +46,8 @@ type WhatzItVideoExportNativeModule = {
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
   cancelMicrophoneRecording(): Promise<void>;
-  prepareSystemSound(inputUri: string): Promise<void>;
-  playSystemSound(inputUri: string): Promise<boolean>;
+  prepareSystemSound(inputUri: string, liveVolume?: number): Promise<void>;
+  playSystemSound(inputUri: string, liveVolume?: number): Promise<boolean>;
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
@@ -70,6 +70,10 @@ export function supportsRoundAudioMix() {
 
 export function supportsSilentAwareCueReceipts() {
   return getIosVideoExportVersion() >= 17;
+}
+
+export function supportsPerSoundLiveVolume() {
+  return getIosVideoExportVersion() >= 19;
 }
 
 export function exportOverlayVideo(
@@ -137,10 +141,14 @@ export function cancelMicrophoneRecording() {
   return nativeModule.cancelMicrophoneRecording();
 }
 
-export function playSystemSound(inputUri: string) {
-  return nativeModule.playSystemSound(inputUri);
+export function playSystemSound(inputUri: string, liveVolume = 1) {
+  return supportsPerSoundLiveVolume()
+    ? nativeModule.playSystemSound(inputUri, liveVolume)
+    : nativeModule.playSystemSound(inputUri);
 }
 
-export function prepareSystemSound(inputUri: string) {
-  return nativeModule.prepareSystemSound(inputUri);
+export function prepareSystemSound(inputUri: string, liveVolume = 1) {
+  return supportsPerSoundLiveVolume()
+    ? nativeModule.prepareSystemSound(inputUri, liveVolume)
+    : nativeModule.prepareSystemSound(inputUri);
 }

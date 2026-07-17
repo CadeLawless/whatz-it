@@ -76,10 +76,18 @@ const ROUND_LIVE_SOURCE_GAINS: Record<RoundSoundId, number> = {
   'round-end': 1.841605041,
 };
 
+// Add only the live sounds that need to be quieter. Values are clamped to
+// 0.05...1, where 1 is the full source volume. Video export does not use this
+// map, so these adjustments cannot change the finished video's cue levels.
+const DEFAULT_ROUND_SOUND_VOLUME = 1;
+export const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
+  // correct: 0.8,
+  // 'round-start': 0.7,
+};
+
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
 const playbackListeners = new Set<RoundSoundPlaybackListener>();
 const pendingPlaybackResults = new Set<Promise<void>>();
-const ROUND_LIVE_SOUND_VOLUME = 1;
 let nativeCuePlaybackPrepared = false;
 let nextPlaybackRequestId = 1;
 
@@ -117,10 +125,13 @@ export async function prepareRoundSoundsForPlayback() {
     logRoundDiagnostic('native silent-aware cue playback unavailable; using Expo fallback');
     return;
   }
-  await Promise.all(uris.map(prepareSystemSound));
+  const liveVolumes = sounds.map(getRoundLiveSoundVolume);
+  await Promise.all(
+    uris.map((uri, index) => prepareSystemSound(uri, liveVolumes[index])),
+  );
   logRoundDiagnostic('native silent-aware cue playback prepared', {
     soundCount: sounds.length,
-    liveVolume: ROUND_LIVE_SOUND_VOLUME,
+    liveVolumes: Object.fromEntries(sounds.map((sound, index) => [sound, liveVolumes[index]])),
   });
 }
 
@@ -168,8 +179,9 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   if (Platform.OS === 'ios' && nativeCuePlaybackPrepared) {
     try {
       const uri = await resolveRoundSoundUri(sound);
+      const liveVolume = getRoundLiveSoundVolume(sound);
       const { playSystemSound } = await import('whatz-it-video-export');
-      const result = playSystemSound(uri)
+      const result = playSystemSound(uri, liveVolume)
         .then((wasAudible) => {
           emitPlaybackEvent({
             phase: 'resolved',
@@ -203,7 +215,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
         requestId,
         sound,
         uri,
-        liveVolume: ROUND_LIVE_SOUND_VOLUME,
+        liveVolume,
       });
       return true;
     } catch (error) {
@@ -235,7 +247,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   }
 
   try {
-    const volume = ROUND_LIVE_SOUND_VOLUME;
+    const volume = getRoundLiveSoundVolume(sound);
     if (player.playing) player.pause();
     if (player.currentTime > 0.005) await player.seekTo(0);
     if (!player.isLoaded) {
@@ -299,6 +311,13 @@ export async function resolveRoundAudioCues(cues: RoundVideoSoundCue[]) {
 
 function emitPlaybackEvent(event: RoundSoundPlaybackEvent) {
   for (const listener of playbackListeners) listener(event);
+}
+
+function getRoundLiveSoundVolume(sound: RoundSoundId) {
+  const configuredVolume = ROUND_SOUND_VOLUMES[sound] ?? DEFAULT_ROUND_SOUND_VOLUME;
+  return Number.isFinite(configuredVolume)
+    ? Math.max(0.05, Math.min(1, configuredVolume))
+    : 1;
 }
 
 async function resolveRoundSoundUri(sound: RoundSoundId) {
