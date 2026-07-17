@@ -80,8 +80,9 @@ const ROUND_LIVE_SOURCE_GAINS: Record<RoundSoundId, number> = {
 // map, so these adjustments cannot change the finished video's cue levels.
 const DEFAULT_ROUND_SOUND_VOLUME = 1;
 export const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
-  // correct: 0.8,
-  // 'round-start': 0.7,
+  correct: 0.4,
+  flip: 0.7,
+  'round-start': 0.65,
 };
 
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
