@@ -63,12 +63,7 @@ export const ROUND_VIDEO_SOUND_VOLUME = 0.08;
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
 const playbackListeners = new Set<RoundSoundPlaybackListener>();
 const pendingPlaybackResults = new Set<Promise<void>>();
-const DEFAULT_ROUND_SOUND_VOLUME = 1;
-const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
-  correct: 0.4,
-  flip: 0.7,
-  'round-start': 0.65,
-};
+const ROUND_LIVE_SOUND_VOLUME = 1;
 let nativeCuePlaybackPrepared = false;
 let nextPlaybackRequestId = 1;
 
@@ -109,6 +104,7 @@ export async function prepareRoundSoundsForPlayback() {
   await Promise.all(uris.map(prepareSystemSound));
   logRoundDiagnostic('native silent-aware cue playback prepared', {
     soundCount: sounds.length,
+    liveVolume: ROUND_LIVE_SOUND_VOLUME,
   });
 }
 
@@ -191,6 +187,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
         requestId,
         sound,
         uri,
+        liveVolume: ROUND_LIVE_SOUND_VOLUME,
       });
       return true;
     } catch (error) {
@@ -222,7 +219,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   }
 
   try {
-    const volume = ROUND_SOUND_VOLUMES[sound] ?? DEFAULT_ROUND_SOUND_VOLUME;
+    const volume = ROUND_LIVE_SOUND_VOLUME;
     if (player.playing) player.pause();
     if (player.currentTime > 0.005) await player.seekTo(0);
     if (!player.isLoaded) {
