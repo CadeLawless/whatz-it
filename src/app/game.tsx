@@ -57,6 +57,7 @@ export default function GameScreen() {
     stopRecording,
   } = useRound();
   const stopRecordingRef = useRef(stopRecording);
+  const resumeRecordingRef = useRef(resumeRecording);
   const deck = getDeckById(round.deckId ?? undefined);
   const currentCardId = round.cardOrder[round.currentCardIndex];
   const currentCard = deck?.cards.find((card) => card.id === currentCardId);
@@ -73,6 +74,9 @@ export default function GameScreen() {
   useEffect(() => {
     stopRecordingRef.current = stopRecording;
   }, [stopRecording]);
+  useEffect(() => {
+    resumeRecordingRef.current = resumeRecording;
+  }, [resumeRecording]);
   const remainingSeconds = useRoundTimer({
     endsAt: round.endsAt,
     active: round.status === 'playing' || round.status === 'feedback',
@@ -234,8 +238,8 @@ export default function GameScreen() {
     if (foregroundResumeGeneration === 0) return;
     // This runs after the resume reducer has committed, so the new camera
     // segment starts against the exact card and clock now on screen.
-    void resumeRecording();
-  }, [foregroundResumeGeneration, resumeRecording]);
+    void resumeRecordingRef.current();
+  }, [foregroundResumeGeneration]);
 
   if (!deck || !currentCard) return null;
 

@@ -216,8 +216,17 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   }
 }
 
-export function syncRoundSoundPlayerVolume(player: AudioPlayer, sound: RoundSoundId) {
-  player.volume = getRoundLivePlayerVolume(sound).playerVolume;
+export function getCurrentRoundLiveVolumeScale() {
+  const systemOutputVolume = Platform.OS === 'ios' ? getSystemOutputVolume() : null;
+  return getRoundLiveVolumeScale(systemOutputVolume);
+}
+
+export function syncRoundSoundPlayerVolume(
+  player: AudioPlayer,
+  sound: RoundSoundId,
+  liveVolumeScale = getCurrentRoundLiveVolumeScale(),
+) {
+  player.volume = getRoundLiveSoundVolume(sound) * liveVolumeScale;
 }
 
 export async function rewindRoundSoundPlayer(player: AudioPlayer) {

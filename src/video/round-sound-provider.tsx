@@ -18,6 +18,7 @@ import { Platform } from 'react-native';
 
 import {
   getRoundSoundSource,
+  getCurrentRoundLiveVolumeScale,
   playRoundSound,
   prepareRoundSoundsForPlayback,
   rewindRoundSoundPlayer,
@@ -119,6 +120,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   );
   const tickIndex = useRef(0);
   const previousStatusKeys = useRef(new Map<string, string>());
+  const previousLiveVolumeScale = useRef<number | null>(null);
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const isReady = namedStatuses.every(([, status]) => status.isLoaded && !status.error);
   const effectiveLoadTimedOut = loadTimedOut && !isReady;
@@ -214,8 +216,16 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
       [tickPlayers[1], 'final-tick'],
     ];
     const syncLiveVolumes = () => {
-      if (!isRoundLiveVolumeControlActive()) return;
-      for (const [player, sound] of players) syncRoundSoundPlayerVolume(player, sound);
+      if (!isRoundLiveVolumeControlActive()) {
+        previousLiveVolumeScale.current = null;
+        return;
+      }
+      const liveVolumeScale = getCurrentRoundLiveVolumeScale();
+      if (previousLiveVolumeScale.current === liveVolumeScale) return;
+      previousLiveVolumeScale.current = liveVolumeScale;
+      for (const [player, sound] of players) {
+        syncRoundSoundPlayerVolume(player, sound, liveVolumeScale);
+      }
     };
     syncLiveVolumes();
     const interval = setInterval(syncLiveVolumes, 100);

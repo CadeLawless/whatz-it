@@ -357,6 +357,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
       recordingCancelled.current ||
       round.status === 'idle'
     ) return false;
+    if (recordingActive.current) {
+      logVideoDiagnostic('round recording resume reused active segment');
+      return true;
+    }
     const preparation = await prepareRecording();
     if (preparation !== 'ready') return false;
     const started = await startRecordingSegment();
