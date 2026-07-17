@@ -28,6 +28,7 @@ import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { decks, getDeckById } from '@/data/decks';
+import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import {
   getLoadedHomeBranding,
@@ -40,6 +41,7 @@ import {
   loadRoundVideos,
   prepareRoundVideoExport,
   saveRoundVideoToDevice,
+  subscribeToRoundVideoLibrary,
   type RoundVideo,
 } from '@/video/round-videos';
 
@@ -50,6 +52,7 @@ export default function DeckLibraryScreen() {
   const sectionOffsets = useRef({ decks: 0, videos: 0 });
   const sectionHeadingOffsets = useRef({ decks: 0, videos: 0 });
   const isPortrait = usePortraitScreen();
+  const { isVideoFinalizing } = useRound();
   const { revealTransition } = useScreenshotTransition();
   const branding = getLoadedHomeBranding() ?? HOME_BRANDING_SOURCES;
   const [decksExpanded, setDecksExpanded] = useState(true);
@@ -76,8 +79,15 @@ export default function DeckLibraryScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      let libraryChanged = false;
+      const unsubscribe = subscribeToRoundVideoLibrary((nextVideos) => {
+        if (!active) return;
+        libraryChanged = true;
+        setVideos(nextVideos);
+      });
       if (!isPortrait) return () => {
         active = false;
+        unsubscribe();
       };
 
       void (async () => {
@@ -98,7 +108,7 @@ export default function DeckLibraryScreen() {
 
         const storedVideos = await loadRoundVideos();
         if (!active) return;
-        setVideos(storedVideos);
+        if (!libraryChanged) setVideos(storedVideos);
         storedVideos.forEach((video) => {
           if (isRoundVideoReadyToSave(video) || video.exportStatus === 'failed') return;
           void prepareRoundVideoExport(video).then((prepared) => {
@@ -112,6 +122,7 @@ export default function DeckLibraryScreen() {
 
       return () => {
         active = false;
+        unsubscribe();
       };
     }, [isPortrait, revealTransition]),
   );
@@ -319,10 +330,23 @@ export default function DeckLibraryScreen() {
               expanded={videosExpanded}
               onExpansionComplete={handleVideosExpanded}
             >
-              {videos.length === 0 ? (
-                <Text style={styles.emptyVideos}>Your last 10 round videos will appear here.</Text>
-              ) : (
-                <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
+              <View style={styles.videoLibraryContent}>
+                {isVideoFinalizing && (
+                  <View
+                    accessibilityLabel="Preparing latest round video"
+                    accessibilityRole="progressbar"
+                    style={styles.pendingVideo}
+                  >
+                    <ActivityIndicator color="#459EFE" size="small" />
+                    <Text style={styles.pendingVideoText}>Preparing latest round video…</Text>
+                  </View>
+                )}
+                {videos.length === 0 ? (
+                  !isVideoFinalizing && (
+                    <Text style={styles.emptyVideos}>Your last 10 round videos will appear here.</Text>
+                  )
+                ) : (
+                  <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
                   {videos.map((video) => {
                     const deck = getDeckById(video.deckId);
                     const videoReady = isRoundVideoReadyToSave(video);
@@ -407,8 +431,9 @@ export default function DeckLibraryScreen() {
                       </View>
                     );
                   })}
-                </View>
-              )}
+                  </View>
+                )}
+              </View>
             </CollapsibleContent>
           </View>
         </View>
@@ -586,6 +611,17 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     paddingVertical: 12,
   },
+  videoLibraryContent: { gap: 16 },
+  pendingVideo: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  pendingVideoText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
   videoGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   videoCard: {
     overflow: 'hidden',

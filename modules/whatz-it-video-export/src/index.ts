@@ -21,6 +21,7 @@ export type RoundVideoSegment = {
 
 type WhatzItVideoExportNativeModule = {
   overlayExportVersion?: number;
+  getSystemOutputVolume?(): number;
   exportOverlayVideo(
     inputUri: string,
     audioUri: string | null,
@@ -50,6 +51,11 @@ type WhatzItVideoExportNativeModule = {
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
+
+export function getSystemOutputVolume() {
+  const volume = nativeModule.getSystemOutputVolume?.();
+  return typeof volume === 'number' && Number.isFinite(volume) ? volume : null;
+}
 
 export function getIosVideoExportVersion() {
   return nativeModule.overlayExportVersion ?? 0;

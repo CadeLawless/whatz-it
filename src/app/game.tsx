@@ -26,7 +26,6 @@ import { triggerRoundHaptic } from '@/utils/round-haptics';
 import { useRoundSounds } from '@/video/round-sound-provider';
 
 const ROUND_END_SCREEN_MS = 2495;
-const ROUND_STOP_NAVIGATION_TIMEOUT_MS = 6_000;
 const RESULTS_SCREENSHOT_TIMEOUT_MS = 2_000;
 
 export default function GameScreen() {
@@ -165,35 +164,37 @@ export default function GameScreen() {
     }
   }, [isRecording, playSound, round.status]);
 
-  // Recording shutdown changes isRecording. Keep navigation in its own effect so
-  // that state update cannot clean up and strand this transition on Time's Up.
+  // Keep recording through the full Time's Up beat so the exported video retains
+  // its ending, then finalize in the background without delaying Results.
   useEffect(() => {
     if (round.status !== 'finished') return;
     if (resultsTransitionStarted.current) return;
     resultsTransitionStarted.current = true;
     let active = true;
     const showResults = async () => {
+      const prepareTransition = (async () => {
+        try {
+          const uri = await withTimeout(
+            captureRef(screenRef, {
+              format: 'jpg',
+              quality: 0.95,
+              result: 'tmpfile',
+            }),
+            RESULTS_SCREENSHOT_TIMEOUT_MS,
+          );
+          await beginTransition({
+            destination: 'results',
+            direction: 'left',
+            uri,
+          });
+        } catch {
+          // If capture is unavailable, navigation still completes normally.
+        }
+      })();
       await new Promise((resolve) => setTimeout(resolve, ROUND_END_SCREEN_MS));
       if (!active) return;
-      await waitForRoundStop(stopRecordingRef.current());
-      if (!active) return;
-      try {
-        const uri = await withTimeout(
-          captureRef(screenRef, {
-            format: 'jpg',
-            quality: 0.95,
-            result: 'tmpfile',
-          }),
-          RESULTS_SCREENSHOT_TIMEOUT_MS,
-        );
-        await beginTransition({
-          destination: 'results',
-          direction: 'left',
-          uri,
-        });
-      } catch {
-        // If capture is unavailable, navigation still completes normally.
-      }
+      void stopRecordingRef.current().catch(() => undefined);
+      await prepareTransition;
       if (active) router.replace('/results' as Href);
     };
     showResults();
@@ -425,15 +426,6 @@ function getCardFontSize(text: string, width: number, height: number) {
 
 function getBylineFontSize(width: number, height: number) {
   return Math.round(Math.max(18, Math.min(28, height * 0.075, width * 0.04)));
-}
-
-async function waitForRoundStop(stopPromise: Promise<unknown>) {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<void>((resolve) => {
-    timeout = setTimeout(resolve, ROUND_STOP_NAVIGATION_TIMEOUT_MS);
-  });
-  await Promise.race([stopPromise.then(() => undefined).catch(() => undefined), timeoutPromise]);
-  if (timeout) clearTimeout(timeout);
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {

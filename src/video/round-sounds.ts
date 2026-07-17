@@ -1,6 +1,12 @@
 import { Asset } from 'expo-asset';
 import { preload, type AudioPlayer } from 'expo-audio';
+import { Platform } from 'react-native';
+import { getSystemOutputVolume } from 'whatz-it-video-export';
 
+import {
+  getRoundLiveVolumeScale,
+  stopRoundLiveVolumeControl,
+} from '@/video/round-live-volume';
 import {
   logRoundDiagnostic,
   logVideoDiagnostic,
@@ -124,6 +130,7 @@ export async function prepareRoundSoundsForPlayback() {
 }
 
 export function stopRoundSoundsAfterRound() {
+  stopRoundLiveVolumeControl();
   logRoundDiagnostic('round sound session stopped', {
     playbackPath: 'expo-audio',
   });
@@ -167,7 +174,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   }
 
   try {
-    const volume = getRoundLiveSoundVolume(sound);
+    const volumeState = getRoundLivePlayerVolume(sound);
     if (player.playing) player.pause();
     if (player.currentTime > 0.005) await player.seekTo(0);
     if (!player.isLoaded) {
@@ -180,7 +187,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
       });
       return false;
     }
-    player.volume = volume;
+    player.volume = volumeState.playerVolume;
     player.play();
     emitPlaybackEvent({
       phase: 'resolved',
@@ -192,7 +199,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
     logVideoDiagnostic('Expo round cue started', {
       requestId,
       sound,
-      volume,
+      ...volumeState,
       ignoresSilentSwitch: true,
     });
     return true;
@@ -207,6 +214,10 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
     warnVideoDiagnostic('round cue playback failed', error, { requestId, sound });
     return false;
   }
+}
+
+export function syncRoundSoundPlayerVolume(player: AudioPlayer, sound: RoundSoundId) {
+  player.volume = getRoundLivePlayerVolume(sound).playerVolume;
 }
 
 export async function rewindRoundSoundPlayer(player: AudioPlayer) {
@@ -239,6 +250,18 @@ function getRoundLiveSoundVolume(sound: RoundSoundId) {
   return Number.isFinite(configuredVolume)
     ? Math.max(0.05, Math.min(1, configuredVolume))
     : 1;
+}
+
+function getRoundLivePlayerVolume(sound: RoundSoundId) {
+  const baseVolume = getRoundLiveSoundVolume(sound);
+  const systemOutputVolume = Platform.OS === 'ios' ? getSystemOutputVolume() : null;
+  const liveVolumeScale = getRoundLiveVolumeScale(systemOutputVolume);
+  return {
+    baseVolume,
+    liveVolumeScale,
+    playerVolume: baseVolume * liveVolumeScale,
+    systemOutputVolume,
+  };
 }
 
 async function resolveRoundSoundUri(sound: RoundSoundId) {

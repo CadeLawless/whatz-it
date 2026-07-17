@@ -50,8 +50,28 @@ async function readStoredMetadata(): Promise<StoredRoundVideo[]> {
   }
 }
 
+type RoundVideoLibraryListener = (videos: RoundVideo[]) => void;
+
+const roundVideoLibraryListeners = new Set<RoundVideoLibraryListener>();
+
+export function subscribeToRoundVideoLibrary(listener: RoundVideoLibraryListener) {
+  roundVideoLibraryListeners.add(listener);
+  return () => roundVideoLibraryListeners.delete(listener);
+}
+
+function notifyRoundVideoLibrary(videos: RoundVideo[]) {
+  roundVideoLibraryListeners.forEach((listener) => {
+    try {
+      listener(videos);
+    } catch {
+      // A screen listener must never interrupt video persistence.
+    }
+  });
+}
+
 async function writeStoredMetadata(videos: RoundVideo[]) {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(videos.map(toStoredRoundVideo)));
+  notifyRoundVideoLibrary(videos);
 }
 
 const activeExports = new Map<string, Promise<RoundVideo>>();

@@ -14,14 +14,17 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Platform } from 'react-native';
 
 import {
   getRoundSoundSource,
   playRoundSound,
   prepareRoundSoundsForPlayback,
   rewindRoundSoundPlayer,
+  syncRoundSoundPlayerVolume,
   type RoundSoundId,
 } from '@/video/round-sounds';
+import { isRoundLiveVolumeControlActive } from '@/video/round-live-volume';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 const PLAYER_OPTIONS = {
@@ -200,6 +203,24 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     logRoundDiagnostic('rewinding completed countdown player', { name: 'final-tick-b' });
     void tick2.seekTo(0);
   }, [tick2, tick2Status.didJustFinish]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const players: [AudioPlayer, RoundSoundId][] = [
+      ...Object.entries(regularPlayers).map(
+        ([sound, player]) => [player, sound as RoundSoundId] as [AudioPlayer, RoundSoundId],
+      ),
+      [tickPlayers[0], 'final-tick'],
+      [tickPlayers[1], 'final-tick'],
+    ];
+    const syncLiveVolumes = () => {
+      if (!isRoundLiveVolumeControlActive()) return;
+      for (const [player, sound] of players) syncRoundSoundPlayerVolume(player, sound);
+    };
+    syncLiveVolumes();
+    const interval = setInterval(syncLiveVolumes, 100);
+    return () => clearInterval(interval);
+  }, [regularPlayers, tickPlayers]);
 
   const play = useCallback(
     (sound: RoundSoundId) => {

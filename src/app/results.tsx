@@ -1,6 +1,6 @@
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
@@ -18,6 +18,7 @@ export default function ResultsScreen() {
   const router = useRouter();
   const {
     currentVideo,
+    isVideoFinalizing,
     round,
     configureRound,
     deleteCurrentVideo,
@@ -144,39 +145,55 @@ export default function ResultsScreen() {
             <Text style={styles.eyebrow}>ROUND COMPLETE</Text>
             <Text style={styles.title}>Nice guessing!</Text>
             <Text style={styles.deckName}>{deck.title}</Text>
-            {currentVideo && (
+            {(isVideoFinalizing || currentVideo) && (
               <View style={styles.videoSection}>
-                <RoundVideoPlayer
-                  isSaving={isSavingVideo}
-                  key={currentVideo.id}
-                  saveDisabled={!videoReady}
-                  onDelete={() => deleteCurrentVideo()}
-                  onSave={handleSaveVideo}
-                  video={currentVideo}
-                  style={styles.video}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={isSavingVideo || (!videoReady && !videoExportFailed)}
-                  onPress={() =>
-                    void (videoExportFailed ? handleRetryExport() : handlePortraitSave())
-                  }
-                  style={({ pressed }) => [
-                    styles.saveVideoButton,
-                    !videoReady && !videoExportFailed && styles.disabled,
-                    pressed && (videoReady || videoExportFailed) && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.saveVideoText}>
-                    {videoExportFailed
-                      ? 'RETRY EXPORT'
-                      : !videoReady
-                        ? 'PREPARING VIDEO…'
-                        : isSavingVideo
-                          ? 'SAVING…'
-                          : 'SAVE VIDEO'}
-                  </Text>
-                </Pressable>
+                {currentVideo ? (
+                  <>
+                    <RoundVideoPlayer
+                      isSaving={isSavingVideo}
+                      key={currentVideo.id}
+                      saveDisabled={!videoReady}
+                      onDelete={() => deleteCurrentVideo()}
+                      onSave={handleSaveVideo}
+                      video={currentVideo}
+                      style={styles.video}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={isSavingVideo || (!videoReady && !videoExportFailed)}
+                      onPress={() =>
+                        void (videoExportFailed ? handleRetryExport() : handlePortraitSave())
+                      }
+                      style={({ pressed }) => [
+                        styles.saveVideoButton,
+                        !videoReady && !videoExportFailed && styles.disabled,
+                        pressed && (videoReady || videoExportFailed) && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.saveVideoText}>
+                        {videoExportFailed
+                          ? 'RETRY EXPORT'
+                          : !videoReady
+                            ? 'PREPARING VIDEO…'
+                            : isSavingVideo
+                              ? 'SAVING…'
+                              : 'SAVE VIDEO'}
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <View
+                    accessibilityLabel="Preparing your round video"
+                    accessibilityRole="progressbar"
+                    style={styles.videoPlaceholder}
+                  >
+                    <ActivityIndicator color={colors.play} size="large" />
+                    <Text style={styles.videoPlaceholderTitle}>Preparing your video…</Text>
+                    <Text style={styles.videoPlaceholderBody}>
+                      Your results are ready. The video will appear here automatically.
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
             <View style={styles.scoreRow}>
@@ -266,6 +283,24 @@ const styles = StyleSheet.create({
   deckName: { color: colors.muted, fontSize: 16, fontWeight: '700', marginTop: spacing.sm },
   videoSection: { alignItems: 'center', marginTop: spacing.lg },
   video: { width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg },
+  videoPlaceholder: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+  },
+  videoPlaceholderTitle: { color: colors.ink, fontSize: 17, fontWeight: '800' },
+  videoPlaceholderBody: {
+    maxWidth: 320,
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
   saveVideoButton: {
     minHeight: 42,
     marginTop: spacing.sm,

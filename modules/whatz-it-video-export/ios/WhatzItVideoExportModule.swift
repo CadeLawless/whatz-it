@@ -81,6 +81,10 @@ public final class WhatzItVideoExportModule: Module {
       21
     }
 
+    Function("getSystemOutputVolume") {
+      Double(AVAudioSession.sharedInstance().outputVolume)
+    }
+
     AsyncFunction("exportOverlayVideo") {
       (inputUrl: URL, audioUrl: URL?, events: [VideoOverlayEventRecord]) async throws -> String in
       try await Self.exportToTemporaryFile(

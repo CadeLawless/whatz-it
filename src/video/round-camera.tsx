@@ -10,6 +10,7 @@ import {
 } from 'react-native-vision-camera';
 import {
   cancelMicrophoneRecording,
+  getSystemOutputVolume,
   prepareRecordingAudio,
   reassertRecordingHaptics,
   startMicrophoneRecording,
@@ -17,6 +18,11 @@ import {
 } from 'whatz-it-video-export';
 
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
+import {
+  setInitialRoundSessionVolume,
+  startRoundLiveVolumeControl,
+  stopRoundLiveVolumeControl,
+} from '@/video/round-live-volume';
 
 export type RoundCameraRef = {
   startRecording: (maxDuration: number) => Promise<number | null>;
@@ -56,22 +62,34 @@ export async function requestRoundCameraPermissions() {
 }
 
 async function prepareRoundRecordingAudio() {
+  const preferredOutputVolume = Platform.OS === 'ios' ? getSystemOutputVolume() : null;
+  if (Platform.OS === 'ios') startRoundLiveVolumeControl(preferredOutputVolume);
   logVideoDiagnostic('recording audio session configuration started', {
     platform: Platform.OS,
+    preferredOutputVolume,
   });
-  await setAudioModeAsync({
-    allowsRecording: true,
-    interruptionMode: 'doNotMix',
-    playsInSilentMode: true,
-    shouldRouteThroughEarpiece: false,
-  });
-  // Expo Audio configures playback/recording but does not expose iOS's
-  // setAllowHapticsAndSystemSoundsDuringRecording. Our native module enables it
-  // while preserving the play-and-record speaker session used by the round.
-  await prepareRecordingAudio();
-  logVideoDiagnostic('recording audio session configured with haptics enabled', {
-    platform: Platform.OS,
-  });
+  try {
+    await setAudioModeAsync({
+      allowsRecording: true,
+      interruptionMode: 'doNotMix',
+      playsInSilentMode: true,
+      shouldRouteThroughEarpiece: false,
+    });
+    // Expo Audio configures playback/recording but does not expose iOS's
+    // setAllowHapticsAndSystemSoundsDuringRecording. Our native module enables it
+    // while preserving the play-and-record speaker session used by the round.
+    await prepareRecordingAudio();
+    const sessionOutputVolume = Platform.OS === 'ios' ? getSystemOutputVolume() : null;
+    if (Platform.OS === 'ios') setInitialRoundSessionVolume(sessionOutputVolume);
+    logVideoDiagnostic('recording audio session configured with haptics enabled', {
+      platform: Platform.OS,
+      preferredOutputVolume,
+      sessionOutputVolume,
+    });
+  } catch (error) {
+    if (Platform.OS === 'ios') stopRoundLiveVolumeControl();
+    throw error;
+  }
 }
 
 export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
@@ -142,6 +160,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               try {
                 const microphoneUri = await startMicrophoneRecording();
                 const microphoneStartedAt = Date.now();
+                setInitialRoundSessionVolume(getSystemOutputVolume());
                 let recordingHapticsEnabled = false;
                 try {
                   recordingHapticsEnabled = await reassertRecordingHaptics();
