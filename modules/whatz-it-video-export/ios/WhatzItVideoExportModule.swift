@@ -14,6 +14,7 @@ struct VideoOverlayEventRecord: Record {
 struct RoundAudioCueRecord: Record {
   @Field var atMs: Double = 0
   @Field var uri: String = ""
+  @Field var volumeScale: Double = 1
 }
 
 struct RoundVideoSegmentRecord: Record {
@@ -95,7 +96,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      17
+      18
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -576,6 +577,7 @@ public final class WhatzItVideoExportModule: Module {
 
     var effectTracks: [AVMutableCompositionTrack] = []
     var effectTrackEnds: [CMTime] = []
+    var effectTrackVolumeEvents: [[(at: CMTime, scale: Double)]] = []
     var insertedCueCount = 0
     for cue in cues.sorted(by: { $0.atMs < $1.atMs }) {
       guard let cueUrl = URL(string: cue.uri) else { continue }
@@ -597,6 +599,7 @@ public final class WhatzItVideoExportModule: Module {
         ) else { continue }
         effectTracks.append(newTrack)
         effectTrackEnds.append(.zero)
+        effectTrackVolumeEvents.append([])
         trackIndex = effectTracks.count - 1
       }
       guard let index = trackIndex else { continue }
@@ -606,6 +609,7 @@ public final class WhatzItVideoExportModule: Module {
         at: cueStart
       )
       effectTrackEnds[index] = CMTimeAdd(cueStart, insertDuration)
+      effectTrackVolumeEvents[index].append((at: cueStart, scale: cue.volumeScale))
       insertedCueCount += 1
     }
 
@@ -613,18 +617,30 @@ public final class WhatzItVideoExportModule: Module {
     let microphoneParameters = AVMutableAudioMixInputParameters(track: actualMicrophoneTrack)
     microphoneParameters.setVolume(1, at: .zero)
     let clampedCueVolume = Float(max(0, min(1, cueVolume)))
-    let effectParameters = effectTracks.map { track in
+    let effectParameters = effectTracks.enumerated().map { index, track in
       let parameters = AVMutableAudioMixInputParameters(track: track)
-      parameters.setVolume(clampedCueVolume, at: .zero)
+      for event in effectTrackVolumeEvents[index] {
+        let compensatedVolume = Float(
+          max(0, min(1, cueVolume * event.scale))
+        )
+        parameters.setVolume(compensatedVolume, at: event.at)
+      }
       return parameters
     }
+    let insertedCueVolumes = cues.map {
+      Float(max(0, min(1, cueVolume * $0.volumeScale)))
+    }
+    let minimumCueVolume = insertedCueVolumes.min() ?? clampedCueVolume
+    let maximumCueVolume = insertedCueVolumes.max() ?? clampedCueVolume
     audioMix.inputParameters = [microphoneParameters] + effectParameters
     NSLog(
-      "[RoundAudioNative] Export audio mix prepared requestedCues=%ld insertedCues=%ld cueTracks=%ld cueVolume=%.3f microphoneVolume=1.000 microphoneOffsetMs=%.0f videoDurationMs=%.0f microphoneDurationMs=%.0f",
+      "[RoundAudioNative] Export audio mix prepared requestedCues=%ld insertedCues=%ld cueTracks=%ld baseCueVolume=%.3f compensatedCueVolumeMin=%.3f compensatedCueVolumeMax=%.3f microphoneVolume=1.000 microphoneOffsetMs=%.0f videoDurationMs=%.0f microphoneDurationMs=%.0f",
       cues.count,
       insertedCueCount,
       effectTracks.count,
       Double(clampedCueVolume),
+      Double(minimumCueVolume),
+      Double(maximumCueVolume),
       microphoneOffsetMs,
       videoDuration.seconds * 1_000,
       microphoneDuration.seconds * 1_000

@@ -10,6 +10,7 @@ export type VideoOverlayEvent = {
 export type RoundAudioCue = {
   atMs: number;
   uri: string;
+  volumeScale: number;
 };
 
 export type RoundVideoSegment = {
