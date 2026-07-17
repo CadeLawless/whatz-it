@@ -420,7 +420,12 @@ public final class WhatzItVideoExportModule: Module {
       let inputNode = engine.inputNode
       var tapInstalled = false
       do {
+        // Keep acoustic echo cancellation so speaker cues do not appear once
+        // in the microphone track and again in the exported cue mix. Disable
+        // automatic gain control so a cue cannot pull the room level down and
+        // make the captured background pump in and out.
         try inputNode.setVoiceProcessingEnabled(true)
+        inputNode.isVoiceProcessingAGCEnabled = false
         if #available(iOS 17.0, *) {
           inputNode.voiceProcessingOtherAudioDuckingConfiguration =
             AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
@@ -467,7 +472,7 @@ public final class WhatzItVideoExportModule: Module {
       }
       self.microphoneEngine = engine
       self.microphoneRecordingUrl = outputUrl
-      return "voice-processing-engine"
+      return "voice-processing-engine-agc-disabled"
     } catch {
       NSLog(
         "[RoundAudioNative] Voice-processing capture unavailable; starting recorder fallback error=%@",
