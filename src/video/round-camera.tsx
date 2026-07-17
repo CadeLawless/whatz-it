@@ -78,8 +78,9 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
   function RoundCamera({ enabled, microphoneEnabled, onError, onReady }, ref) {
     const device = useCameraDevice('front');
     const videoOutput = useVideoOutput({
-      // iOS microphone audio is recorded independently with native voice
-      // processing and a file-recorder fallback, then preserved during export.
+      // iOS microphone audio uses echo cancellation without automatic gain
+      // control, then round cues are layered over it during export. This avoids
+      // both duplicated speaker cues and cue-triggered room-volume dips.
       enableAudio: microphoneEnabled && Platform.OS !== 'ios',
       fileType: 'mp4',
     });
