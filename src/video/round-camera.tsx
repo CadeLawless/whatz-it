@@ -217,6 +217,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           }
         },
         async stopRecording() {
+          const stopStartedAt = Date.now();
           const recorder = recorderRef.current;
           const result = resultPromiseRef.current;
           if (!recorder || !result) return null;
@@ -225,21 +226,37 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               microphoneUri: microphoneRef.current?.uri,
               videoRecorderActive: recorder.isRecording,
             });
-            if (recorder.isRecording) await recorder.stopRecording();
+            if (recorder.isRecording) {
+              const recorderStopStartedAt = Date.now();
+              await recorder.stopRecording();
+              logVideoDiagnostic('native video recorder stop command completed', {
+                elapsedMs: Date.now() - recorderStopStartedAt,
+              });
+            }
             let microphoneUri: string | undefined;
             if (Platform.OS === 'ios') {
               const microphoneCapture = microphoneRef.current;
               try {
+                const microphoneStopStartedAt = Date.now();
                 microphoneUri = microphoneCapture
                   ? await stopMicrophoneRecording()
                   : undefined;
+                logVideoDiagnostic('native microphone stop completed', {
+                  elapsedMs: Date.now() - microphoneStopStartedAt,
+                  hadMicrophoneCapture: !!microphoneCapture,
+                });
               } catch (error) {
                 warnVideoDiagnostic('microphone recording failed to stop cleanly', error, {
                   uri: microphoneCapture?.uri,
                 });
               }
             }
+            const recorderResultStartedAt = Date.now();
             const videoUri = await result;
+            logVideoDiagnostic('native video recorder result received', {
+              elapsedMs: Date.now() - recorderResultStartedAt,
+            });
+            const fileInspectionStartedAt = Date.now();
             const { File } = await import('expo-file-system');
             const microphoneFile = microphoneUri ? new File(microphoneUri) : null;
             const videoFile = new File(videoUri);
@@ -250,6 +267,8 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               videoFileExists: videoFile.exists,
               videoFileSize: videoFile.size,
               videoUri,
+              fileInspectionElapsedMs: Date.now() - fileInspectionStartedAt,
+              totalStopElapsedMs: Date.now() - stopStartedAt,
             });
             return {
               videoUri,

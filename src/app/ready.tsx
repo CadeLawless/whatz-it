@@ -265,6 +265,10 @@ export default function ReadyScreen() {
       }
       // Recording must be active before the first note so Get Ready is present
       // in the saved round video from its beginning.
+      if (started) {
+        recordOverlayEvent({ kind: 'countdown', text: 'GET READY' });
+        logRoundDiagnostic('get-ready overlay attached to recording');
+      }
       void triggerRoundHaptic('get-ready', { cameraActive: started });
       const played = await playSound('get-ready');
       logRoundDiagnostic('get-ready playback request completed', { active, played });
@@ -288,6 +292,7 @@ export default function ReadyScreen() {
     orientationSettled,
     playSound,
     positionReady,
+    recordOverlayEvent,
     recordingPreparation,
     recordingPrepared,
     soundsPrepared,

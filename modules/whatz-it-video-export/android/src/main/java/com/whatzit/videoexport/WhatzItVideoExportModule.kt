@@ -12,6 +12,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
@@ -69,6 +71,7 @@ class WhatzItVideoExportModule : Module() {
         return@AsyncFunction
       }
       Handler(Looper.getMainLooper()).post {
+        val operationStartedAt = SystemClock.elapsedRealtime()
         val exportId = UUID.randomUUID().toString()
         val outputFile = File(context.cacheDir, "whatz-it-stitched-$exportId.mp4")
         val items = segments.map {
@@ -76,9 +79,17 @@ class WhatzItVideoExportModule : Module() {
         }
         val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
         val composition = Composition.Builder(listOf(sequence)).build()
+        Log.i(
+          "RoundVideoNative",
+          "Segment stitch started id=$exportId segmentCount=${segments.size}"
+        )
         val listener = object : Transformer.Listener {
           override fun onCompleted(composition: Composition, exportResult: ExportResult) {
             activeExports.remove(exportId)
+            Log.i(
+              "RoundVideoNative",
+              "Segment stitch completed id=$exportId elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt} outputBytes=${outputFile.length()}"
+            )
             promise.resolve(Uri.fromFile(outputFile).toString())
           }
 
@@ -88,6 +99,11 @@ class WhatzItVideoExportModule : Module() {
             exportException: ExportException
           ) {
             activeExports.remove(exportId)
+            Log.e(
+              "RoundVideoNative",
+              "Segment stitch failed id=$exportId elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt}",
+              exportException
+            )
             outputFile.delete()
             promise.reject("ERR_VIDEO_STITCH", exportException.localizedMessage, exportException)
           }
@@ -136,6 +152,7 @@ class WhatzItVideoExportModule : Module() {
     }
 
     Handler(Looper.getMainLooper()).post {
+      val operationStartedAt = SystemClock.elapsedRealtime()
       val exportId = UUID.randomUUID().toString()
       val outputFile = File(context.cacheDir, "whatz-it-overlay-$exportId.mp4")
       val overlay = TimedCardOverlay(events.sortedBy { it.atMs }, headshotUri, wordmarkUri)
@@ -146,10 +163,18 @@ class WhatzItVideoExportModule : Module() {
       val editedMediaItem = EditedMediaItem.Builder(MediaItem.fromUri(Uri.parse(inputUri)))
         .setEffects(effects)
         .build()
+      Log.i(
+        "RoundVideoNative",
+        "Overlay export started id=$exportId eventCount=${events.size} hasSeparateAudio=${audioUri != null} inputBytes=${fileSize(inputUri)}"
+      )
 
       val listener = object : Transformer.Listener {
         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
           activeExports.remove(exportId)
+          Log.i(
+            "RoundVideoNative",
+            "Overlay export completed id=$exportId elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt} outputBytes=${outputFile.length()}"
+          )
           promise.resolve(Uri.fromFile(outputFile).toString())
         }
 
@@ -159,6 +184,11 @@ class WhatzItVideoExportModule : Module() {
           exportException: ExportException
         ) {
           activeExports.remove(exportId)
+          Log.e(
+            "RoundVideoNative",
+            "Overlay export failed id=$exportId elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt}",
+            exportException
+          )
           outputFile.delete()
           promise.reject("ERR_VIDEO_EXPORT", exportException.localizedMessage, exportException)
         }
@@ -172,10 +202,20 @@ class WhatzItVideoExportModule : Module() {
         transformer.start(editedMediaItem, outputFile.absolutePath)
       } catch (error: Exception) {
         activeExports.remove(exportId)
+        Log.e(
+          "RoundVideoNative",
+          "Overlay export failed before start id=$exportId elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt}",
+          error
+        )
         outputFile.delete()
         promise.reject("ERR_VIDEO_EXPORT", error.localizedMessage, error)
       }
     }
+  }
+
+  private fun fileSize(uri: String): Long {
+    val parsed = Uri.parse(uri)
+    return if (parsed.scheme == "file") File(parsed.path.orEmpty()).length() else 0
   }
 }
 

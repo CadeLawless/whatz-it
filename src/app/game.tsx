@@ -24,6 +24,7 @@ import { useTiltControls } from '@/hooks/use-tilt-controls';
 import { colors, radius, spacing, typography } from '@/theme';
 import { triggerRoundHaptic } from '@/utils/round-haptics';
 import { useRoundSounds } from '@/video/round-sound-provider';
+import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
 const ROUND_END_SCREEN_MS = 2495;
 const RESULTS_SCREENSHOT_TIMEOUT_MS = 2_000;
@@ -176,7 +177,12 @@ export default function GameScreen() {
     resultsTransitionStarted.current = true;
     let active = true;
     const showResults = async () => {
+      const transitionStartedAt = Date.now();
+      logVideoDiagnostic('results transition started', {
+        endScreenHoldMs: ROUND_END_SCREEN_MS,
+      });
       const prepareTransition = (async () => {
+        const screenshotStartedAt = Date.now();
         try {
           const uri = await withTimeout(
             captureRef(screenRef, {
@@ -186,20 +192,42 @@ export default function GameScreen() {
             }),
             RESULTS_SCREENSHOT_TIMEOUT_MS,
           );
+          logVideoDiagnostic('results transition screenshot captured', {
+            elapsedMs: Date.now() - screenshotStartedAt,
+            uri,
+          });
           await beginTransition({
             destination: 'results',
             direction: 'left',
             uri,
           });
-        } catch {
+          logVideoDiagnostic('results screenshot transition prepared', {
+            elapsedMs: Date.now() - screenshotStartedAt,
+          });
+        } catch (error) {
           // If capture is unavailable, navigation still completes normally.
+          warnVideoDiagnostic('results screenshot transition preparation failed', error, {
+            elapsedMs: Date.now() - screenshotStartedAt,
+          });
         }
       })();
       await new Promise((resolve) => setTimeout(resolve, ROUND_END_SCREEN_MS));
       if (!active) return;
-      void stopRecordingRef.current().catch(() => undefined);
+      logVideoDiagnostic('results end-screen hold completed; finalization dispatched', {
+        elapsedMs: Date.now() - transitionStartedAt,
+      });
+      void stopRecordingRef.current().catch((error) => {
+        warnVideoDiagnostic('background finalization request rejected', error, {
+          elapsedMs: Date.now() - transitionStartedAt,
+        });
+      });
       await prepareTransition;
-      if (active) router.replace('/results' as Href);
+      if (active) {
+        logVideoDiagnostic('navigating to results while finalization continues', {
+          elapsedMs: Date.now() - transitionStartedAt,
+        });
+        router.replace('/results' as Href);
+      }
     };
     showResults();
     return () => {

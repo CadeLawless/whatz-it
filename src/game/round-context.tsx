@@ -292,10 +292,12 @@ export function RoundProvider({ children }: PropsWithChildren) {
   }, []);
 
   const captureActiveSegment = useCallback(async () => {
+    const captureStartedAt = Date.now();
     const startedAt = recordingStartedAt.current;
     if (!recordingActive.current || startedAt === null) return null;
     recordingActive.current = false;
     setIsRecording(false);
+    const cueWaitStartedAt = Date.now();
     const soundResultsSettled = await waitForPendingRoundSoundResults();
     const events = [...recordingEvents.current];
     const pendingSoundCues = [...recordingSoundCues.current];
@@ -305,9 +307,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
     logVideoDiagnostic('recording segment cue decisions finalized', {
       audibleCueCount: soundCues.length,
       ...soundReceiptSummary,
+      cueWaitElapsedMs: Date.now() - cueWaitStartedAt,
       soundResultsSettled,
     });
     const stoppedAt = Date.now();
+    const cameraStopStartedAt = Date.now();
     const capture = await withTimeout(
       cameraRef.current?.stopRecording() ?? Promise.resolve(null),
       CAMERA_CAPTURE_STOP_TIMEOUT_MS,
@@ -325,7 +329,9 @@ export function RoundProvider({ children }: PropsWithChildren) {
     recordingSegments.current.push(segment);
     logVideoDiagnostic('round recording segment captured', {
       durationMs: segment.durationMs,
+      cameraStopElapsedMs: Date.now() - cameraStopStartedAt,
       eventCount: events.length,
+      segmentCaptureElapsedMs: Date.now() - captureStartedAt,
       segmentCount: recordingSegments.current.length,
       soundCueCount: soundCues.length,
     });
@@ -419,7 +425,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
   }, []);
 
   const stopRecording = useCallback(async () => {
-    if (stoppingPromise.current) return stoppingPromise.current;
+    if (stoppingPromise.current) {
+      logVideoDiagnostic('round video finalization joined existing request');
+      return stoppingPromise.current;
+    }
     if (!recordingActive.current && recordingSegments.current.length === 0) {
       setIsVideoFinalizing(false);
       finishCameraSession();
@@ -431,14 +440,50 @@ export function RoundProvider({ children }: PropsWithChildren) {
       return null;
     }
     const deckId = round.deckId;
+    const finalizationId = `finalize-${Date.now().toString(36)}`;
+    const finalizationStartedAt = Date.now();
+    logVideoDiagnostic('round video finalization started', {
+      deckId,
+      finalizationId,
+      hasActiveSegment: recordingActive.current,
+      pendingSegmentCount: recordingSegments.current.length,
+      platform: Platform.OS,
+    });
     setIsVideoFinalizing(true);
     stoppingPromise.current = (async () => {
       const temporaryUris: (string | undefined)[] = [];
       try {
-        if (segmentStoppingPromise.current) await segmentStoppingPromise.current;
-        if (recordingActive.current) await captureActiveSegment();
+        if (segmentStoppingPromise.current) {
+          const pendingStopStartedAt = Date.now();
+          await segmentStoppingPromise.current;
+          logVideoDiagnostic('pending segment stop completed during finalization', {
+            elapsedMs: Date.now() - pendingStopStartedAt,
+            finalizationId,
+          });
+        }
+        if (recordingActive.current) {
+          const captureStartedAt = Date.now();
+          await captureActiveSegment();
+          logVideoDiagnostic('active segment captured during finalization', {
+            elapsedMs: Date.now() - captureStartedAt,
+            finalizationId,
+          });
+        }
         const segments = [...recordingSegments.current];
         if (segments.length === 0) return null;
+
+        logVideoDiagnostic('round video segments ready for audio preparation', {
+          finalizationId,
+          segmentCount: segments.length,
+          segments: segments.map((segment, index) => ({
+            durationMs: segment.durationMs,
+            eventCount: segment.events.length,
+            hasMicrophone: !!segment.capture.microphoneUri,
+            index,
+            soundCueCount: segment.soundCues.length,
+          })),
+          totalElapsedMs: Date.now() - finalizationStartedAt,
+        });
 
         segments.forEach(({ capture }) => {
           temporaryUris.push(capture.videoUri, capture.microphoneUri);
@@ -448,22 +493,41 @@ export function RoundProvider({ children }: PropsWithChildren) {
             ? await import('whatz-it-video-export')
             : null;
         const preparedSegments = await Promise.all(
-          segments.map(async ({ capture, soundCues }) => {
+          segments.map(async ({ capture, soundCues }, segmentIndex) => {
+            const audioPreparationStartedAt = Date.now();
             let audioUri = capture.microphoneUri;
             if (audioMixer && capture.microphoneUri && audioMixer.supportsRoundAudioMix()) {
               try {
+                const cueResolutionStartedAt = Date.now();
+                const resolvedSoundCues = await resolveRoundAudioCues(soundCues);
+                logVideoDiagnostic('recording segment sound cues resolved', {
+                  elapsedMs: Date.now() - cueResolutionStartedAt,
+                  finalizationId,
+                  resolvedCueCount: resolvedSoundCues.length,
+                  segmentIndex,
+                });
+                const mixStartedAt = Date.now();
+                logVideoDiagnostic('recording segment audio mix started', {
+                  finalizationId,
+                  microphoneOffsetMs: capture.microphoneOffsetMs,
+                  resolvedCueCount: resolvedSoundCues.length,
+                  segmentIndex,
+                });
                 audioUri = await audioMixer.mixRoundAudio(
                   capture.videoUri,
                   capture.microphoneUri,
                   capture.microphoneOffsetMs,
-                  await resolveRoundAudioCues(soundCues),
+                  resolvedSoundCues,
                   ROUND_VIDEO_SOUND_VOLUME,
                 );
                 temporaryUris.push(audioUri);
                 logVideoDiagnostic('recording segment voice and confirmed cues mixed', {
                   audibleCueCount: soundCues.length,
                   cueVolume: ROUND_VIDEO_SOUND_VOLUME,
+                  elapsedMs: Date.now() - mixStartedAt,
+                  finalizationId,
                   mixedAudioUri: audioUri,
+                  segmentIndex,
                 });
               } catch (error) {
                 warnVideoDiagnostic(
@@ -471,12 +535,21 @@ export function RoundProvider({ children }: PropsWithChildren) {
                   error,
                   {
                     audibleCueCount: soundCues.length,
+                    elapsedMs: Date.now() - audioPreparationStartedAt,
+                    finalizationId,
                     microphoneUri: capture.microphoneUri,
+                    segmentIndex,
                   },
                 );
                 audioUri = capture.microphoneUri;
               }
             }
+            logVideoDiagnostic('recording segment audio preparation completed', {
+              elapsedMs: Date.now() - audioPreparationStartedAt,
+              finalizationId,
+              hasPreparedAudio: !!audioUri,
+              segmentIndex,
+            });
             return { videoUri: capture.videoUri, audioUri: audioUri ?? null };
           }),
         );
@@ -485,12 +558,19 @@ export function RoundProvider({ children }: PropsWithChildren) {
         let audioUri = preparedSegments[0].audioUri ?? undefined;
         if (preparedSegments.length > 1) {
           const { stitchRoundVideoSegments } = await import('whatz-it-video-export');
+          const stitchStartedAt = Date.now();
+          logVideoDiagnostic('round recording segment stitch started', {
+            finalizationId,
+            segmentCount: preparedSegments.length,
+          });
           videoUri = await stitchRoundVideoSegments(preparedSegments);
           temporaryUris.push(videoUri);
           // The stitched MP4 contains the selected audio track for every segment.
           audioUri = undefined;
           logVideoDiagnostic('round recording segments stitched', {
             segmentCount: preparedSegments.length,
+            elapsedMs: Date.now() - stitchStartedAt,
+            finalizationId,
             videoUri,
           });
         }
@@ -509,21 +589,54 @@ export function RoundProvider({ children }: PropsWithChildren) {
           return adjusted;
         });
 
-        const video = await storeRoundVideo(videoUri, audioUri, deckId, events);
+        const persistenceStartedAt = Date.now();
+        logVideoDiagnostic('round video persistence started', {
+          eventCount: events.length,
+          finalizationId,
+          hasSeparateAudio: !!audioUri,
+          segmentCount: segments.length,
+        });
+        const video = await storeRoundVideo(videoUri, audioUri, deckId, events, finalizationId);
         setCurrentVideo(video);
         setIsVideoFinalizing(false);
+        logVideoDiagnostic('round video published to results screen', {
+          finalizationId,
+          persistenceElapsedMs: Date.now() - persistenceStartedAt,
+          totalElapsedMs: Date.now() - finalizationStartedAt,
+          videoId: video.id,
+        });
+        logVideoDiagnostic('round video background overlay export dispatched', {
+          finalizationId,
+          videoId: video.id,
+        });
         void prepareRoundVideoExport(video).then((preparedVideo) => {
+          logVideoDiagnostic('round video background overlay export returned to context', {
+            exportStatus: preparedVideo.exportStatus,
+            finalizationId,
+            totalElapsedMs: Date.now() - finalizationStartedAt,
+            videoId: preparedVideo.id,
+          });
           setCurrentVideo((activeVideo) =>
             activeVideo?.id === preparedVideo.id ? preparedVideo : activeVideo,
           );
         });
         return video;
       } catch (error) {
-        warnVideoDiagnostic('round video storage failed', error);
+        warnVideoDiagnostic('round video storage failed', error, {
+          finalizationId,
+          totalElapsedMs: Date.now() - finalizationStartedAt,
+        });
         setIsVideoFinalizing(false);
         return null;
       } finally {
+        const cleanupStartedAt = Date.now();
         await cleanupTemporaryFiles(temporaryUris);
+        logVideoDiagnostic('round video temporary file cleanup completed', {
+          cleanupElapsedMs: Date.now() - cleanupStartedAt,
+          finalizationId,
+          temporaryFileCount: temporaryUris.filter(Boolean).length,
+          totalElapsedMs: Date.now() - finalizationStartedAt,
+        });
         stoppingPromise.current = null;
         recordingEvents.current = [];
         recordingSoundCues.current = [];

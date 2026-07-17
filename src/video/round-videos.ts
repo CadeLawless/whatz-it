@@ -123,15 +123,29 @@ export async function storeRoundVideo(
   temporaryAudioUri: string | undefined,
   deckId: string,
   events: RoundVideoEvent[] = [],
+  diagnosticId?: string,
 ) {
+  const persistenceStartedAt = Date.now();
   if (Platform.OS === 'web') throw new Error('Round recording is only available on a device.');
+  const fileSystemImportStartedAt = Date.now();
   const { Directory, File, Paths } = await import('expo-file-system');
+  logVideoDiagnostic('round video file system loaded for persistence', {
+    diagnosticId,
+    elapsedMs: Date.now() - fileSystemImportStartedAt,
+  });
   const videoDirectory = new Directory(Paths.document, VIDEO_DIRECTORY_NAME);
   videoDirectory.create({ idempotent: true, intermediates: true });
   const createdAt = Date.now();
   const id = `${createdAt}-${Math.random().toString(36).slice(2, 8)}`;
   const destination = new File(videoDirectory, `${id}.${readExtension(temporaryUri)}`);
+  const videoCopyStartedAt = Date.now();
   await new File(temporaryUri).copy(destination);
+  logVideoDiagnostic('round source video copied to persistent storage', {
+    diagnosticId,
+    elapsedMs: Date.now() - videoCopyStartedAt,
+    sourceSize: new File(temporaryUri).size,
+    destinationSize: destination.size,
+  });
 
   let audioUri: string | undefined;
   if (temporaryAudioUri) {
@@ -139,7 +153,14 @@ export async function storeRoundVideo(
       videoDirectory,
       `${id}-audio.${readExtension(temporaryAudioUri)}`,
     );
+    const audioCopyStartedAt = Date.now();
     await new File(temporaryAudioUri).copy(audioDestination);
+    logVideoDiagnostic('round audio copied to persistent storage', {
+      diagnosticId,
+      elapsedMs: Date.now() - audioCopyStartedAt,
+      sourceSize: new File(temporaryAudioUri).size,
+      destinationSize: audioDestination.size,
+    });
     audioUri = audioDestination.uri;
   }
 
@@ -147,12 +168,14 @@ export async function storeRoundVideo(
     audioDestinationExists: audioUri ? new File(audioUri).exists : false,
     audioDestinationSize: audioUri ? new File(audioUri).size : 0,
     audioUri,
+    diagnosticId,
     sourceAudioExists: temporaryAudioUri ? new File(temporaryAudioUri).exists : false,
     sourceAudioSize: temporaryAudioUri ? new File(temporaryAudioUri).size : 0,
     sourceAudioUri: temporaryAudioUri,
     videoDestinationExists: destination.exists,
     videoDestinationSize: destination.size,
     videoUri: destination.uri,
+    totalElapsedMs: Date.now() - persistenceStartedAt,
   });
 
   const video: RoundVideo = {
@@ -164,11 +187,25 @@ export async function storeRoundVideo(
     createdAt,
     events,
   };
+  const libraryLoadStartedAt = Date.now();
   const previous = await loadRoundVideos();
+  logVideoDiagnostic('round video library loaded during persistence', {
+    diagnosticId,
+    elapsedMs: Date.now() - libraryLoadStartedAt,
+    previousVideoCount: previous.length,
+  });
   const next = [video, ...previous].slice(0, MAX_STORED_VIDEOS);
   const removed = previous.filter((item) => !next.some((kept) => kept.id === item.id));
   removed.forEach((item) => deleteVideoFiles(item, File));
+  const metadataWriteStartedAt = Date.now();
   await writeStoredMetadata(next);
+  logVideoDiagnostic('round video metadata persisted', {
+    diagnosticId,
+    elapsedMs: Date.now() - metadataWriteStartedAt,
+    totalElapsedMs: Date.now() - persistenceStartedAt,
+    videoCount: next.length,
+    videoId: video.id,
+  });
   return video;
 }
 
@@ -243,6 +280,7 @@ export async function saveRoundVideoToDevice(video: RoundVideo) {
 }
 
 async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVideo> {
+  const exportStartedAt = Date.now();
   if (Platform.OS === 'web' || !video.events?.length) {
     return updateStoredVideo({ ...video, exportStatus: 'ready' });
   }
@@ -251,11 +289,16 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
     return updateStoredVideo({ ...video, exportStatus: 'ready' });
   }
 
+  const preparingMetadataStartedAt = Date.now();
   await updateStoredVideo({
     ...video,
     exportUri: undefined,
     exportIncludesOverlays: undefined,
     exportStatus: 'preparing',
+  });
+  logVideoDiagnostic('native export preparing state persisted', {
+    elapsedMs: Date.now() - preparingMetadataStartedAt,
+    videoId: video.id,
   });
   let temporaryExportUri: string | undefined;
   try {
@@ -298,7 +341,15 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
         'This installed app build does not contain the reliable audio exporter. Install the updated build, then retry this export.',
       );
     }
+    const brandingStartedAt = Date.now();
     const branding = await loadExportBrandingUris();
+    logVideoDiagnostic('native export branding resolved', {
+      elapsedMs: Date.now() - brandingStartedAt,
+      hasHeadshot: !!branding?.headshotUri,
+      hasWordmark: !!branding?.wordmarkUri,
+      videoId: video.id,
+    });
+    const nativeExportStartedAt = Date.now();
     temporaryExportUri = await exportOverlayVideo(
       video.uri,
       video.audioUri ?? null,
@@ -306,18 +357,33 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
       branding?.headshotUri ?? null,
       branding?.wordmarkUri ?? null,
     );
+    logVideoDiagnostic('native overlay export promise resolved', {
+      elapsedMs: Date.now() - nativeExportStartedAt,
+      temporaryExportUri,
+      videoId: video.id,
+    });
     const videoDirectory = new Directory(Paths.document, VIDEO_DIRECTORY_NAME);
     videoDirectory.create({ idempotent: true, intermediates: true });
     const destination = new File(videoDirectory, `${video.id}-export.mp4`);
     if (destination.exists) destination.delete();
+    const exportCopyStartedAt = Date.now();
     await new File(temporaryExportUri).copy(destination);
+    logVideoDiagnostic('native export copied to persistent storage', {
+      destinationSize: destination.size,
+      elapsedMs: Date.now() - exportCopyStartedAt,
+      videoId: video.id,
+    });
+    const audioInspectionStartedAt = Date.now();
     const exportedAudioTrackCount = await inspectVideoAudioTrackCount(destination.uri);
     logVideoDiagnostic('native export completed', {
       destinationExists: destination.exists,
       destinationSize: destination.size,
       destinationUri: destination.uri,
       exportedAudioTrackCount,
+      audioInspectionElapsedMs: Date.now() - audioInspectionStartedAt,
       temporaryExportUri,
+      totalElapsedMs: Date.now() - exportStartedAt,
+      videoId: video.id,
     });
     if (video.audioUri && exportedAudioTrackCount === 0 && !nativeAudioValidated) {
       throw new Error('The native exporter returned a video with no audio track.');
@@ -340,6 +406,8 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
       audioUri: video.audioUri,
       sourceVideoUri: video.uri,
       temporaryExportUri,
+      totalElapsedMs: Date.now() - exportStartedAt,
+      videoId: video.id,
     });
     return updateStoredVideo({
       ...video,

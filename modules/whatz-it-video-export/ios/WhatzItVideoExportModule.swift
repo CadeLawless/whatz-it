@@ -78,7 +78,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      21
+      22
     }
 
     Function("getSystemOutputVolume") {
@@ -236,11 +236,12 @@ public final class WhatzItVideoExportModule: Module {
       let inputNode = engine.inputNode
       var tapInstalled = false
       do {
-        // Restore Apple's device-tuned echo cancellation, noise suppression,
-        // and voice gain path. The export keeps this microphone track at a
-        // constant level and adds clean, low-volume cues on a separate bus.
+        // Keep Apple's device-tuned echo cancellation and noise suppression,
+        // but do not let automatic gain control pump the microphone level when
+        // speaker cues play. Export keeps this track at a constant level and
+        // adds clean, low-volume cues on a separate bus.
         try inputNode.setVoiceProcessingEnabled(true)
-        inputNode.isVoiceProcessingAGCEnabled = true
+        inputNode.isVoiceProcessingAGCEnabled = false
         if #available(iOS 17.0, *) {
           inputNode.voiceProcessingOtherAudioDuckingConfiguration =
             AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
@@ -407,6 +408,14 @@ public final class WhatzItVideoExportModule: Module {
     cueVolume: Double,
     outputUrl: URL
   ) async throws {
+    let operationStartedAt = Date()
+    NSLog(
+      "[RoundVideoNative] Audio mix operation started video=%@ microphone=%@ requestedCues=%ld microphoneOffsetMs=%.0f",
+      videoUrl.lastPathComponent,
+      microphoneUrl.lastPathComponent,
+      cues.count,
+      microphoneOffsetMs
+    )
     let videoAsset = AVURLAsset(url: videoUrl)
     let videoDuration = try await videoAsset.load(.duration)
     let microphoneAsset = AVURLAsset(url: microphoneUrl)
@@ -521,9 +530,11 @@ public final class WhatzItVideoExportModule: Module {
     )
     try await run(exporter)
     NSLog(
-      "[RoundAudioNative] Export audio mix completed output=%@ insertedCues=%ld",
+      "[RoundAudioNative] Export audio mix completed output=%@ insertedCues=%ld elapsedMs=%.0f outputBytes=%lld",
       outputUrl.lastPathComponent,
-      insertedCueCount
+      insertedCueCount,
+      Date().timeIntervalSince(operationStartedAt) * 1_000,
+      Self.fileSize(at: outputUrl)
     )
   }
 
@@ -537,6 +548,8 @@ public final class WhatzItVideoExportModule: Module {
       return first.videoUri
     }
 
+    let operationStartedAt = Date()
+    NSLog("[RoundVideoNative] Segment stitch started segmentCount=%ld", segments.count)
     let composition = AVMutableComposition()
     guard let outputVideoTrack = composition.addMutableTrack(
       withMediaType: .video,
@@ -606,6 +619,13 @@ public final class WhatzItVideoExportModule: Module {
     exporter.shouldOptimizeForNetworkUse = false
     do {
       try await run(exporter)
+      NSLog(
+        "[RoundVideoNative] Segment stitch completed segmentCount=%ld elapsedMs=%.0f outputBytes=%lld output=%@",
+        segments.count,
+        Date().timeIntervalSince(operationStartedAt) * 1_000,
+        Self.fileSize(at: outputUrl),
+        outputUrl.lastPathComponent
+      )
       return outputUrl.absoluteString
     } catch {
       try? FileManager.default.removeItem(at: outputUrl)
@@ -646,6 +666,13 @@ public final class WhatzItVideoExportModule: Module {
     headshotUrl: URL?,
     wordmarkUrl: URL?
   ) async throws {
+    let operationStartedAt = Date()
+    NSLog(
+      "[RoundVideoNative] Overlay export operation started input=%@ audio=%@ eventCount=%ld",
+      inputUrl.lastPathComponent,
+      audioUrl?.lastPathComponent ?? "embedded-or-none",
+      events.count
+    )
     let sourceAsset = AVURLAsset(url: inputUrl)
     guard let sourceVideoTrack = try await sourceAsset.loadTracks(withMediaType: .video).first else {
       throw VideoExportError.missingVideoTrack
@@ -710,6 +737,7 @@ public final class WhatzItVideoExportModule: Module {
     videoExporter.shouldOptimizeForNetworkUse = false
     videoExporter.canPerformMultiplePassesOverSourceMediaData = true
     videoExporter.videoComposition = videoComposition
+    let overlayRenderStartedAt = Date()
     NSLog(
       "[RoundVideoNative] Overlay render started preset=%@ renderWidth=%.0f renderHeight=%.0f durationMs=%.0f multiPass=true",
       preset,
@@ -718,7 +746,12 @@ public final class WhatzItVideoExportModule: Module {
       duration.seconds * 1_000
     )
     try await run(videoExporter)
-    NSLog("[RoundVideoNative] Overlay render completed output=%@", renderedVideoUrl.lastPathComponent)
+    NSLog(
+      "[RoundVideoNative] Overlay render completed output=%@ elapsedMs=%.0f outputBytes=%lld",
+      renderedVideoUrl.lastPathComponent,
+      Date().timeIntervalSince(overlayRenderStartedAt) * 1_000,
+      Self.fileSize(at: renderedVideoUrl)
+    )
 
     let audioAsset: AVAsset?
     if let audioUrl {
@@ -733,10 +766,17 @@ public final class WhatzItVideoExportModule: Module {
       audioAsset = embeddedAudioTracks.isEmpty ? nil : sourceAsset
     }
 
+    let muxStartedAt = Date()
+    NSLog("[RoundVideoNative] Overlay audio mux started hasAudio=%@", audioAsset == nil ? "false" : "true")
     try await muxRenderedVideo(
       renderedVideoUrl: renderedVideoUrl,
       audioAsset: audioAsset,
       outputUrl: outputUrl
+    )
+    NSLog(
+      "[RoundVideoNative] Overlay audio mux completed elapsedMs=%.0f outputBytes=%lld",
+      Date().timeIntervalSince(muxStartedAt) * 1_000,
+      Self.fileSize(at: outputUrl)
     )
 
     let finishedAsset = AVURLAsset(url: outputUrl)
@@ -748,6 +788,19 @@ public final class WhatzItVideoExportModule: Module {
     if audioAsset != nil && finishedAudioTracks.isEmpty {
       throw VideoExportError.missingExportedAudioTrack
     }
+    NSLog(
+      "[RoundVideoNative] Overlay export operation completed elapsedMs=%.0f videoTracks=%ld audioTracks=%ld outputBytes=%lld output=%@",
+      Date().timeIntervalSince(operationStartedAt) * 1_000,
+      finishedVideoTracks.count,
+      finishedAudioTracks.count,
+      Self.fileSize(at: outputUrl),
+      outputUrl.lastPathComponent
+    )
+  }
+
+  private static func fileSize(at url: URL) -> Int64 {
+    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+    return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
   }
 
   private static func muxRenderedVideo(

@@ -13,6 +13,7 @@ import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
 import { isRoundVideoReadyToSave, saveRoundVideoToDevice } from '@/video/round-videos';
+import { logVideoDiagnostic } from '@/video/video-diagnostics';
 
 export default function ResultsScreen() {
   const router = useRouter();
@@ -40,6 +41,24 @@ export default function ResultsScreen() {
   const passedCount = round.results.filter((result) => result.outcome === 'passed').length;
   const videoReady = currentVideo ? isRoundVideoReadyToSave(currentVideo) : false;
   const videoExportFailed = currentVideo?.exportStatus === 'failed';
+
+  useEffect(() => {
+    logVideoDiagnostic('results screen video state changed', {
+      currentVideoId: currentVideo?.id ?? null,
+      exportStatus: currentVideo?.exportStatus ?? null,
+      hasAudioUri: !!currentVideo?.audioUri,
+      hasExportUri: !!currentVideo?.exportUri,
+      isVideoFinalizing,
+      videoReady,
+    });
+  }, [
+    currentVideo?.audioUri,
+    currentVideo?.exportStatus,
+    currentVideo?.exportUri,
+    currentVideo?.id,
+    isVideoFinalizing,
+    videoReady,
+  ]);
 
   const returnHome = () => {
     if (router.canDismiss()) {
