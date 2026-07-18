@@ -15,6 +15,7 @@ import {
   reassertRecordingHaptics,
   startMicrophoneRecording,
   stopMicrophoneRecording,
+  supportsRecordingRoundSoundPlayback,
 } from 'whatz-it-video-export';
 
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
@@ -23,6 +24,10 @@ import {
   startRoundLiveVolumeControl,
   stopRoundLiveVolumeControl,
 } from '@/video/round-live-volume';
+import {
+  resolveRoundRecordingSoundSources,
+  setRecordingCuePlaybackActive,
+} from '@/video/round-sounds';
 
 export type RoundCameraRef = {
   startRecording: (maxDuration: number) => Promise<number | null>;
@@ -97,7 +102,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
     const device = useCameraDevice('front');
     const videoOutput = useVideoOutput({
       // iOS records a separate Apple voice-processed microphone track. Export
-      // keeps it constant and adds only confirmed-audible cues on a quiet bus.
+      // keeps it constant and adds the clean export cues on a quiet bus.
       enableAudio: microphoneEnabled && Platform.OS !== 'ios',
       fileType: 'mp4',
     });
@@ -105,6 +110,9 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
     const resultPromiseRef = useRef<Promise<string> | null>(null);
     const microphoneRef = useRef<{ uri: string; offsetMs: number } | null>(null);
     const microphonePreparedRef = useRef(false);
+    const recordingSoundSourcesRef = useRef<Awaited<
+      ReturnType<typeof resolveRoundRecordingSoundSources>
+    >>([]);
 
     const prepareMicrophone = useCallback(async () => {
       if (Platform.OS !== 'ios') return microphoneEnabled;
@@ -116,8 +124,19 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           logVideoDiagnostic('recording haptics prepared without microphone capture');
           return false;
         }
+        try {
+          recordingSoundSourcesRef.current = await resolveRoundRecordingSoundSources();
+        } catch (error) {
+          recordingSoundSourcesRef.current = [];
+          warnVideoDiagnostic(
+            'native recording cue preparation failed; microphone and Expo playback remain available',
+            error,
+          );
+        }
         microphonePreparedRef.current = true;
-        logVideoDiagnostic('native microphone capture preparation completed');
+        logVideoDiagnostic('native microphone capture preparation completed', {
+          recordingSoundSourceCount: recordingSoundSourcesRef.current.length,
+        });
         return true;
       } catch (error) {
         warnVideoDiagnostic('microphone preparation failed', error);
@@ -158,7 +177,9 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             const videoStartedAt = Date.now();
             if (Platform.OS === 'ios' && microphonePrepared) {
               try {
-                const microphoneUri = await startMicrophoneRecording();
+                const microphoneUri = await startMicrophoneRecording(
+                  recordingSoundSourcesRef.current,
+                );
                 const microphoneStartedAt = Date.now();
                 setInitialRoundSessionVolume(getSystemOutputVolume());
                 let recordingHapticsEnabled = false;
@@ -174,8 +195,12 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                   uri: microphoneUri,
                   offsetMs: Math.max(0, microphoneStartedAt - videoStartedAt),
                 };
+                const recordingCuePlaybackSupported =
+                  supportsRecordingRoundSoundPlayback();
+                setRecordingCuePlaybackActive(recordingCuePlaybackSupported);
                 logVideoDiagnostic('microphone recording started', {
                   offsetMs: microphoneRef.current.offsetMs,
+                  recordingCuePlaybackSupported,
                   recordingHapticsEnabled,
                   uri: microphoneUri,
                 });
@@ -183,6 +208,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                 // A microphone failure must not discard an otherwise valid video.
                 warnVideoDiagnostic('microphone recording failed; continuing with video only', error);
                 await cancelMicrophoneRecording().catch(() => undefined);
+                setRecordingCuePlaybackActive(false);
                 microphoneRef.current = null;
                 microphonePreparedRef.current = false;
               }
@@ -209,6 +235,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               // The recorder may already have stopped while cleaning up a failed start.
             }
             if (Platform.OS === 'ios') await cancelMicrophoneRecording().catch(() => undefined);
+            setRecordingCuePlaybackActive(false);
             recorderRef.current = null;
             resultPromiseRef.current = null;
             microphoneRef.current = null;
@@ -276,10 +303,12 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               microphoneOffsetMs: microphoneRef.current?.offsetMs ?? 0,
             };
           } finally {
+            setRecordingCuePlaybackActive(false);
             recorderRef.current = null;
             resultPromiseRef.current = null;
             microphoneRef.current = null;
             microphonePreparedRef.current = false;
+            recordingSoundSourcesRef.current = [];
           }
         },
         async cancelRecording() {
@@ -294,10 +323,12 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           } catch {
             // There may be no native microphone recorder left to cancel.
           } finally {
+            setRecordingCuePlaybackActive(false);
             recorderRef.current = null;
             resultPromiseRef.current = null;
             microphoneRef.current = null;
             microphonePreparedRef.current = false;
+            recordingSoundSourcesRef.current = [];
           }
         },
       }),

@@ -1,7 +1,7 @@
 import { Asset } from 'expo-asset';
 import { preload, type AudioPlayer } from 'expo-audio';
 import { Platform } from 'react-native';
-import { getSystemOutputVolume } from 'whatz-it-video-export';
+import { getSystemOutputVolume, playRecordingRoundSound } from 'whatz-it-video-export';
 
 import {
   getRoundLiveVolumeScale,
@@ -43,6 +43,7 @@ export type RoundSoundPlaybackEvent =
       requestId: string;
       requestedAt: number;
       sound: RoundSoundId;
+      includeInExport: boolean;
       wasAudible: boolean;
     };
 
@@ -94,6 +95,7 @@ export const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
 const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
 const playbackListeners = new Set<RoundSoundPlaybackListener>();
 let nextPlaybackRequestId = 1;
+let recordingCuePlaybackActive = false;
 
 // Begin decoder/buffer preparation as soon as the bundle loads.
 for (const [sound, source] of Object.entries(ROUND_SOUND_SOURCES)) {
@@ -115,6 +117,28 @@ export function subscribeToRoundSoundPlayback(listener: RoundSoundPlaybackListen
   return () => {
     playbackListeners.delete(listener);
   };
+}
+
+export function setRecordingCuePlaybackActive(active: boolean) {
+  recordingCuePlaybackActive = active;
+  logRoundDiagnostic('voice-processing round cue playback state changed', {
+    active,
+    platform: Platform.OS,
+  });
+}
+
+export function isRecordingCuePlaybackActive() {
+  return Platform.OS === 'ios' && recordingCuePlaybackActive;
+}
+
+export async function resolveRoundRecordingSoundSources() {
+  const sounds = Object.keys(ROUND_SOUND_SOURCES) as RoundSoundId[];
+  return Promise.all(
+    sounds.map(async (sound) => ({
+      sound,
+      uri: await resolveRoundSoundUri(sound),
+    })),
+  );
 }
 
 export async function prepareRoundSoundsForPlayback() {
@@ -152,11 +176,71 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   logRoundDiagnostic('audio cue requested', {
     requestId,
     sound,
-    playbackPath: 'expo-audio',
+    playbackPath: isRecordingCuePlaybackActive() ? 'voice-processing-engine' : 'expo-audio',
     ignoresSilentSwitch: true,
     playerDuration: player.duration,
     playerIsLoaded: player.isLoaded,
   });
+
+  // Feed live cues through the same AVAudioEngine as Apple's voice-processed
+  // microphone. This gives echo cancellation a direct output reference while
+  // preserving the audible game feedback. Do not fall back to Expo while the
+  // microphone is active: that separate output path is the source of the
+  // voice-processing cuts this native path is designed to avoid.
+  if (isRecordingCuePlaybackActive()) {
+    const volumeState = getRoundLivePlayerVolume(sound);
+    try {
+      const nativePlaybackStarted = await playRecordingRoundSound(
+        sound,
+        volumeState.playerVolume,
+      );
+      if (nativePlaybackStarted) {
+        emitPlaybackEvent({
+          phase: 'resolved',
+          requestId,
+          requestedAt,
+          sound,
+          includeInExport: true,
+          wasAudible: true,
+        });
+        logVideoDiagnostic('voice-processing engine round cue started', {
+          requestId,
+          sound,
+          ...volumeState,
+        });
+        return true;
+      }
+      emitPlaybackEvent({
+        phase: 'resolved',
+        requestId,
+        requestedAt,
+        sound,
+        includeInExport: true,
+        wasAudible: false,
+      });
+      warnVideoDiagnostic('voice-processing engine cue unavailable; Expo fallback disabled', undefined, {
+        includeInExport: true,
+        requestId,
+        sound,
+      });
+      return false;
+    } catch (error) {
+      emitPlaybackEvent({
+        phase: 'resolved',
+        requestId,
+        requestedAt,
+        sound,
+        includeInExport: true,
+        wasAudible: false,
+      });
+      warnVideoDiagnostic('voice-processing engine cue failed; Expo fallback disabled', error, {
+        includeInExport: true,
+        requestId,
+        sound,
+      });
+      return false;
+    }
+  }
 
   if (!player.isLoaded) {
     emitPlaybackEvent({
@@ -164,6 +248,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
       requestId,
       requestedAt,
       sound,
+      includeInExport: false,
       wasAudible: false,
     });
     warnVideoDiagnostic('round cue skipped because its player is not loaded', undefined, {
@@ -183,6 +268,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
         requestId,
         requestedAt,
         sound,
+        includeInExport: false,
         wasAudible: false,
       });
       return false;
@@ -194,6 +280,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
       requestId,
       requestedAt,
       sound,
+      includeInExport: true,
       wasAudible: true,
     });
     logVideoDiagnostic('Expo round cue started', {
@@ -209,6 +296,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
       requestId,
       requestedAt,
       sound,
+      includeInExport: false,
       wasAudible: false,
     });
     warnVideoDiagnostic('round cue playback failed', error, { requestId, sound });

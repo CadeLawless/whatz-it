@@ -7,16 +7,39 @@ import {
 } from '../video/round-sound-receipts';
 
 describe('round sound playback receipts', () => {
-  it('keeps only cues confirmed audible for export', () => {
-    const audible = { ...createPendingRoundSoundCue('1', 'correct', 1_250, 1_000), wasAudible: true };
-    const silent = { ...createPendingRoundSoundCue('2', 'pass', 1_500, 1_000), wasAudible: false };
+  it('keeps only cues explicitly included in export', () => {
+    const audible = {
+      ...createPendingRoundSoundCue('1', 'correct', 1_250, 1_000),
+      includeInExport: true,
+      wasAudible: true,
+    };
+    const silent = {
+      ...createPendingRoundSoundCue('2', 'pass', 1_500, 1_000),
+      includeInExport: false,
+      wasAudible: false,
+    };
     const pending = createPendingRoundSoundCue('3', 'flip', 1_750, 1_000);
 
     assert.deepEqual(finalizeRoundSoundReceipts([audible, silent, pending]), {
-      audibleCues: [{ atMs: 250, sound: 'correct' }],
+      exportCues: [{ atMs: 250, sound: 'correct' }],
       excludedCueCount: 2,
       pendingCueCount: 1,
       requestedCueCount: 3,
+    });
+  });
+
+  it('exports a clean cue even when its live playback was deliberately suppressed', () => {
+    const suppressed = {
+      ...createPendingRoundSoundCue('1', 'final-tick', 2_000, 1_000),
+      includeInExport: true,
+      wasAudible: false,
+    };
+
+    assert.deepEqual(finalizeRoundSoundReceipts([suppressed]), {
+      exportCues: [{ atMs: 1_000, sound: 'final-tick' }],
+      excludedCueCount: 0,
+      pendingCueCount: 0,
+      requestedCueCount: 1,
     });
   });
 

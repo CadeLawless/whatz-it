@@ -14,6 +14,11 @@ export type RoundAudioCue = {
   volumeScale: number;
 };
 
+export type RecordingRoundSound = {
+  sound: string;
+  uri: string;
+};
+
 export type RoundVideoSegment = {
   videoUri: string;
   audioUri: string | null;
@@ -45,6 +50,8 @@ type WhatzItVideoExportNativeModule = {
   prepareRecordingAudio(): Promise<void>;
   reassertRecordingHaptics(): Promise<boolean>;
   playRoundHaptic(cue: string, countdownValue: number | null): Promise<string>;
+  playRecordingRoundSound?(sound: string, volume: number): Promise<boolean>;
+  startMicrophoneRecordingWithSounds?(sounds: RecordingRoundSound[]): Promise<string>;
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
   cancelMicrophoneRecording(): Promise<void>;
@@ -126,7 +133,21 @@ export function playRoundHaptic(cue: string, countdownValue: number | null) {
   return nativeModule.playRoundHaptic(cue, countdownValue);
 }
 
-export function startMicrophoneRecording() {
+export function playRecordingRoundSound(sound: string, volume: number) {
+  return nativeModule.playRecordingRoundSound?.(sound, volume) ?? Promise.resolve(false);
+}
+
+export function supportsRecordingRoundSoundPlayback() {
+  return (
+    typeof nativeModule.playRecordingRoundSound === 'function' &&
+    typeof nativeModule.startMicrophoneRecordingWithSounds === 'function'
+  );
+}
+
+export function startMicrophoneRecording(sounds: RecordingRoundSound[] = []) {
+  if (nativeModule.startMicrophoneRecordingWithSounds) {
+    return nativeModule.startMicrophoneRecordingWithSounds(sounds);
+  }
   return nativeModule.startMicrophoneRecording();
 }
 

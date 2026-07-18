@@ -1,19 +1,20 @@
 import type { RoundSoundId, RoundVideoSoundCue } from '@/video/round-sounds';
 
 export type PendingRoundVideoSoundCue = RoundVideoSoundCue & {
+  includeInExport?: boolean;
   requestId: string;
   wasAudible?: boolean;
 };
 
 export function finalizeRoundSoundReceipts(cues: PendingRoundVideoSoundCue[]) {
-  const audibleCues = cues
-    .filter((cue) => cue.wasAudible === true)
+  const exportCues = cues
+    .filter((cue) => cue.includeInExport === true)
     .map<RoundVideoSoundCue>(({ atMs, sound }) => ({ atMs, sound }));
 
   return {
-    audibleCues,
-    excludedCueCount: cues.length - audibleCues.length,
-    pendingCueCount: cues.filter((cue) => cue.wasAudible === undefined).length,
+    exportCues,
+    excludedCueCount: cues.length - exportCues.length,
+    pendingCueCount: cues.filter((cue) => cue.includeInExport === undefined).length,
     requestedCueCount: cues.length,
   };
 }

@@ -155,15 +155,18 @@ export function RoundProvider({ children }: PropsWithChildren) {
           logVideoDiagnostic('round cue result had no active recording request', {
             requestId: event.requestId,
             sound: event.sound,
+            includeInExport: event.includeInExport,
             wasAudible: event.wasAudible,
           });
           return;
         }
+        cue.includeInExport = event.includeInExport;
         cue.wasAudible = event.wasAudible;
         logVideoDiagnostic('round cue recording decision resolved', {
           atMs: cue.atMs,
           requestId: cue.requestId,
           sound: cue.sound,
+          includeInExport: cue.includeInExport,
           wasAudible: cue.wasAudible,
         });
       }),
@@ -302,10 +305,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
     const events = [...recordingEvents.current];
     const pendingSoundCues = [...recordingSoundCues.current];
     const soundReceiptSummary = finalizeRoundSoundReceipts(pendingSoundCues);
-    const soundCues = soundReceiptSummary.audibleCues;
+    const soundCues = soundReceiptSummary.exportCues;
     recordingStartedAt.current = null;
     logVideoDiagnostic('recording segment cue decisions finalized', {
-      audibleCueCount: soundCues.length,
+      exportCueCount: soundCues.length,
       ...soundReceiptSummary,
       cueWaitElapsedMs: Date.now() - cueWaitStartedAt,
       soundResultsSettled,
@@ -522,7 +525,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
                 );
                 temporaryUris.push(audioUri);
                 logVideoDiagnostic('recording segment voice and confirmed cues mixed', {
-                  audibleCueCount: soundCues.length,
+                  exportCueCount: soundCues.length,
                   cueVolume: ROUND_VIDEO_SOUND_VOLUME,
                   elapsedMs: Date.now() - mixStartedAt,
                   finalizationId,
@@ -534,7 +537,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
                   'voice/cue mix failed; preserving captured microphone',
                   error,
                   {
-                    audibleCueCount: soundCues.length,
+                    exportCueCount: soundCues.length,
                     elapsedMs: Date.now() - audioPreparationStartedAt,
                     finalizationId,
                     microphoneUri: capture.microphoneUri,

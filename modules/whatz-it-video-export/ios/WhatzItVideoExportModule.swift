@@ -69,10 +69,19 @@ private enum VideoExportError: Error, LocalizedError {
   }
 }
 
+struct RecordingRoundSoundRecord: Record {
+  @Field var sound: String = ""
+  @Field var uri: String = ""
+}
+
 public final class WhatzItVideoExportModule: Module {
   private var microphoneEngine: AVAudioEngine?
   private var microphoneRecorder: AVAudioRecorder?
   private var microphoneRecordingUrl: URL?
+  private let recordingCueQueue = DispatchQueue(label: "com.whatzit.recording-cue-playback")
+  private var recordingCueBuffers = [String: AVAudioPCMBuffer]()
+  private var recordingCueNextPlayerIndices = [String: Int]()
+  private var recordingCuePlayers = [String: [AVAudioPlayerNode]]()
 
   public func definition() -> ModuleDefinition {
     Name("WhatzItVideoExport")
@@ -161,6 +170,10 @@ public final class WhatzItVideoExportModule: Module {
       return "ui-feedback-generator"
     }
 
+    AsyncFunction("playRecordingRoundSound") { (sound: String, volume: Double) -> Bool in
+      self.playRecordingRoundSound(sound: sound, volume: volume)
+    }
+
     AsyncFunction("startMicrophoneRecording") { () throws -> String in
       guard self.microphoneEngine == nil, self.microphoneRecorder == nil else {
         throw VideoExportError.microphoneAlreadyRecording
@@ -168,7 +181,23 @@ public final class WhatzItVideoExportModule: Module {
       try Self.configureRecordingAudioSession()
       let outputUrl = FileManager.default.temporaryDirectory
         .appendingPathComponent("whatz-it-microphone-\(UUID().uuidString).m4a")
-      let capturePath = try self.startMicrophoneCapture(at: outputUrl)
+      let capturePath = try self.startMicrophoneCapture(at: outputUrl, recordingSounds: [])
+      NSLog("[RoundAudioNative] Microphone capture selected path=%@ uri=%@", capturePath, outputUrl.absoluteString)
+      return outputUrl.absoluteString
+    }
+
+    AsyncFunction("startMicrophoneRecordingWithSounds") {
+      (recordingSounds: [RecordingRoundSoundRecord]) throws -> String in
+      guard self.microphoneEngine == nil, self.microphoneRecorder == nil else {
+        throw VideoExportError.microphoneAlreadyRecording
+      }
+      try Self.configureRecordingAudioSession()
+      let outputUrl = FileManager.default.temporaryDirectory
+        .appendingPathComponent("whatz-it-microphone-\(UUID().uuidString).m4a")
+      let capturePath = try self.startMicrophoneCapture(
+        at: outputUrl,
+        recordingSounds: recordingSounds
+      )
       NSLog("[RoundAudioNative] Microphone capture selected path=%@ uri=%@", capturePath, outputUrl.absoluteString)
       return outputUrl.absoluteString
     }
@@ -181,6 +210,7 @@ public final class WhatzItVideoExportModule: Module {
       if let engine = self.microphoneEngine {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
+        self.clearRecordingCuePlayback(from: engine)
         self.microphoneEngine = nil
         capturePath = "voice-processing-engine"
       } else if let recorder = self.microphoneRecorder {
@@ -216,6 +246,7 @@ public final class WhatzItVideoExportModule: Module {
       if let engine = self.microphoneEngine {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
+        self.clearRecordingCuePlayback(from: engine)
       }
       self.microphoneRecorder?.stop()
       if let outputUrl = self.microphoneRecordingUrl {
@@ -229,7 +260,10 @@ public final class WhatzItVideoExportModule: Module {
 
   }
 
-  private func startMicrophoneCapture(at outputUrl: URL) throws -> String {
+  private func startMicrophoneCapture(
+    at outputUrl: URL,
+    recordingSounds: [RecordingRoundSoundRecord]
+  ) throws -> String {
     do {
       try Self.configureRecordingAudioSession(mode: .videoChat)
       let engine = AVAudioEngine()
@@ -274,24 +308,32 @@ public final class WhatzItVideoExportModule: Module {
           }
         }
         tapInstalled = true
+        self.prepareRecordingCuePlayback(recordingSounds, on: engine)
         engine.prepare()
         try engine.start()
         guard engine.isRunning else {
           throw VideoExportError.microphoneStartFailed
         }
+        let outputNode = engine.outputNode
+        let outputFormat = outputNode.outputFormat(forBus: 0)
         NSLog(
-          "[RoundAudioNative] Voice processing started enabled=%@ agc=%@ bypassed=%@ sampleRate=%.0f channels=%u",
+          "[RoundAudioNative] Voice processing started inputEnabled=%@ outputEnabled=%@ agc=%@ bypassed=%@ inputSampleRate=%.0f inputChannels=%u outputSampleRate=%.0f outputChannels=%u preparedCueCount=%ld",
           inputNode.isVoiceProcessingEnabled ? "true" : "false",
+          outputNode.isVoiceProcessingEnabled ? "true" : "false",
           inputNode.isVoiceProcessingAGCEnabled ? "true" : "false",
           inputNode.isVoiceProcessingBypassed ? "true" : "false",
           inputFormat.sampleRate,
-          inputFormat.channelCount
+          inputFormat.channelCount,
+          outputFormat.sampleRate,
+          outputFormat.channelCount,
+          self.recordingCuePlayers.count
         )
       } catch {
         engine.stop()
         if tapInstalled {
           inputNode.removeTap(onBus: 0)
         }
+        self.clearRecordingCuePlayback(from: engine)
         throw error
       }
       self.microphoneEngine = engine
@@ -321,6 +363,106 @@ public final class WhatzItVideoExportModule: Module {
       self.microphoneRecorder = recorder
       self.microphoneRecordingUrl = outputUrl
       return "audio-recorder-fallback"
+    }
+  }
+
+  private func prepareRecordingCuePlayback(
+    _ recordingSounds: [RecordingRoundSoundRecord],
+    on engine: AVAudioEngine
+  ) {
+    recordingCueQueue.sync {
+      recordingCueBuffers.removeAll()
+      recordingCueNextPlayerIndices.removeAll()
+      recordingCuePlayers.removeAll()
+
+      for recordingSound in recordingSounds {
+        guard !recordingSound.sound.isEmpty,
+              let url = URL(string: recordingSound.uri) else {
+          continue
+        }
+        do {
+          let file = try AVAudioFile(forReading: url)
+          guard file.length > 0,
+                file.length <= AVAudioFramePosition(UInt32.max),
+                let buffer = AVAudioPCMBuffer(
+                  pcmFormat: file.processingFormat,
+                  frameCapacity: AVAudioFrameCount(file.length)
+                ) else {
+            continue
+          }
+          try file.read(into: buffer)
+          guard buffer.frameLength > 0 else { continue }
+
+          let players = (0..<2).map { _ in AVAudioPlayerNode() }
+          for player in players {
+            engine.attach(player)
+            engine.connect(player, to: engine.mainMixerNode, format: buffer.format)
+          }
+          recordingCueBuffers[recordingSound.sound] = buffer
+          recordingCueNextPlayerIndices[recordingSound.sound] = 0
+          recordingCuePlayers[recordingSound.sound] = players
+          NSLog(
+            "[RoundAudioNative] Recording cue prepared sound=%@ durationMs=%.0f players=%ld",
+            recordingSound.sound,
+            Double(buffer.frameLength) / buffer.format.sampleRate * 1_000,
+            players.count
+          )
+        } catch {
+          NSLog(
+            "[RoundAudioNative] Recording cue preparation failed sound=%@ error=%@",
+            recordingSound.sound,
+            error.localizedDescription
+          )
+        }
+      }
+      NSLog(
+        "[RoundAudioNative] Voice-processing cue playback prepared sounds=%ld",
+        recordingCuePlayers.count
+      )
+    }
+  }
+
+  private func playRecordingRoundSound(sound: String, volume: Double) -> Bool {
+    recordingCueQueue.sync {
+      guard let engine = microphoneEngine,
+            engine.isRunning,
+            let buffer = recordingCueBuffers[sound],
+            let players = recordingCuePlayers[sound],
+            !players.isEmpty else {
+        NSLog("[RoundAudioNative] Recording cue unavailable sound=%@", sound)
+        return false
+      }
+
+      let playerIndex = recordingCueNextPlayerIndices[sound] ?? 0
+      let player = players[playerIndex % players.count]
+      recordingCueNextPlayerIndices[sound] = (playerIndex + 1) % players.count
+      player.stop()
+      player.volume = Float(max(0, min(1, volume)))
+      player.scheduleBuffer(buffer, at: nil, options: .interrupts)
+      player.play()
+      NSLog(
+        "[RoundAudioNative] Recording cue started sound=%@ volume=%.3f playerIndex=%ld engineRunning=%@",
+        sound,
+        player.volume,
+        playerIndex % players.count,
+        engine.isRunning ? "true" : "false"
+      )
+      return true
+    }
+  }
+
+  private func clearRecordingCuePlayback(from engine: AVAudioEngine) {
+    recordingCueQueue.sync {
+      for players in recordingCuePlayers.values {
+        for player in players {
+          player.stop()
+          engine.detach(player)
+        }
+      }
+      recordingCueBuffers.removeAll()
+      recordingCueNextPlayerIndices.removeAll()
+      recordingCuePlayers.removeAll()
+      NSLog("[RoundAudioNative] Recording cue playback cleared")
     }
   }
 
