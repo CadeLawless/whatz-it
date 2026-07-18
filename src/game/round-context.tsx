@@ -504,6 +504,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
           events,
           finalizationId,
           readyExportUri,
+          allSegmentsHaveLiveOverlays,
         );
         setCurrentVideo(video);
         setIsVideoFinalizing(false);

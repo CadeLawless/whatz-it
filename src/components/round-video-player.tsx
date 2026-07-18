@@ -187,7 +187,7 @@ export function RoundVideoPlayer({
       audioTracks: availableAudioTracks,
       availableVideoTracks,
       exportUri: video.exportUri,
-      playbackIncludesOverlays: false,
+      playbackIncludesOverlays: video.playbackIncludesOverlays ?? false,
       playbackUri,
       separateAudioUri,
       videoSource,
@@ -502,7 +502,9 @@ export function RoundVideoPlayer({
               surfaceType="textureView"
             />
           )}
-          <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} compact />
+          {!video.playbackIncludesOverlays && (
+            <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} compact />
+          )}
           {staticThumbnail && (
             <View pointerEvents="none" style={styles.thumbnailPlayBadge}>
               <Text style={styles.thumbnailPlayIcon}>{'\u25B6'}</Text>
@@ -565,7 +567,9 @@ export function RoundVideoPlayer({
                   onPress={toggleControls}
                   style={StyleSheet.absoluteFill}
                 />
-                <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} />
+                {!video.playbackIncludesOverlays && (
+                  <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} />
+                )}
                 <View
                   style={[styles.playerActions, { left: leftChromeInset, top: spacing.md }]}
                 >

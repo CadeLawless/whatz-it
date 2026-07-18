@@ -13,6 +13,7 @@ export type RoundVideo = {
   uri: string;
   audioUri?: string;
   exportUri?: string;
+  playbackIncludesOverlays?: boolean;
   exportIncludesOverlays?: boolean;
   exportStatus?: 'preparing' | 'ready' | 'failed';
   deckId: string;
@@ -125,6 +126,7 @@ export async function storeRoundVideo(
   events: RoundVideoEvent[] = [],
   diagnosticId?: string,
   temporaryReadyExportUri?: string,
+  playbackIncludesOverlays = false,
 ) {
   const persistenceStartedAt = Date.now();
   if (Platform.OS === 'web') throw new Error('Round recording is only available on a device.');
@@ -212,6 +214,7 @@ export async function storeRoundVideo(
     uri: destination.uri,
     audioUri,
     exportUri,
+    playbackIncludesOverlays,
     exportIncludesOverlays: exportUri ? true : undefined,
     exportStatus: exportUri || !events.length ? 'ready' : 'preparing',
     deckId,
