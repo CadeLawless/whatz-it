@@ -10,6 +10,7 @@ import {
 } from 'react-native-vision-camera';
 import {
   cancelMicrophoneRecording,
+  getMicrophoneCapturePath,
   getRecordingRoundSoundPlaybackStatus,
   getSystemOutputVolume,
   prepareRecordingAudio,
@@ -102,8 +103,8 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
   function RoundCamera({ enabled, microphoneEnabled, onError, onReady }, ref) {
     const device = useCameraDevice('front');
     const videoOutput = useVideoOutput({
-      // iOS records a separate Apple voice-processed microphone track. Export
-      // keeps it constant and adds the clean export cues on a quiet bus.
+      // iOS records a separate, unprocessed video-recording microphone track.
+      // Live cues share that native engine and are not duplicated in export.
       enableAudio: microphoneEnabled && Platform.OS !== 'ios',
       fileType: 'mp4',
     });
@@ -203,6 +204,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                   : 'unsupported';
                 setRecordingCuePlaybackActive(recordingCuePlaybackSupported);
                 logVideoDiagnostic('microphone recording started', {
+                  capturePath: getMicrophoneCapturePath(),
                   offsetMs: microphoneRef.current.offsetMs,
                   recordingCuePlaybackSupported,
                   recordingCuePlaybackStatus,

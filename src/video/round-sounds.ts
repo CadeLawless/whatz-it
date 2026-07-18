@@ -66,8 +66,8 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
   'round-end': require('../../assets/sounds/round-end.wav'),
 };
 
-// This is a hard export ceiling for the clean cue bus. The voice-processed
-// microphone remains at 1.0 for the entire video.
+// This is a hard export ceiling for a cue that failed to play live. Successful
+// native cues are already present naturally in the unprocessed microphone.
 export const ROUND_VIDEO_SOUND_VOLUME = 0.08;
 
 // The single bundled sound set is peak-normalized for louder live playback.
@@ -125,7 +125,7 @@ export function subscribeToRoundSoundPlayback(listener: RoundSoundPlaybackListen
 
 export function setRecordingCuePlaybackActive(active: boolean) {
   recordingCuePlaybackActive = active;
-  logRoundDiagnostic('voice-processing round cue playback state changed', {
+  logRoundDiagnostic('recording-engine round cue playback state changed', {
     active,
     platform: Platform.OS,
   });
@@ -180,17 +180,15 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   logRoundDiagnostic('audio cue requested', {
     requestId,
     sound,
-    playbackPath: isRecordingCuePlaybackActive() ? 'voice-processing-engine' : 'expo-audio',
+    playbackPath: isRecordingCuePlaybackActive() ? 'recording-audio-engine' : 'expo-audio',
     ignoresSilentSwitch: true,
     playerDuration: player.duration,
     playerIsLoaded: player.isLoaded,
   });
 
-  // Feed live cues through the same AVAudioEngine as Apple's voice-processed
-  // microphone. This gives echo cancellation a direct output reference while
-  // preserving the audible game feedback. Do not fall back to Expo while the
-  // microphone is active: that separate output path is the source of the
-  // voice-processing cuts this native path is designed to avoid.
+  // Feed live cues through the same unprocessed recording engine as the mic.
+  // A successful cue is already captured acoustically, so export must not add
+  // a second clean copy. If native playback fails, export inserts the cue once.
   if (isRecordingCuePlaybackActive()) {
     const volumeState = getRoundLivePlayerVolume(sound);
     try {
@@ -204,10 +202,10 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
           requestId,
           requestedAt,
           sound,
-          includeInExport: true,
+          includeInExport: false,
           wasAudible: true,
         });
-        logVideoDiagnostic('voice-processing engine round cue started', {
+        logVideoDiagnostic('recording audio engine round cue started', {
           requestId,
           sound,
           ...volumeState,
@@ -222,7 +220,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
         includeInExport: true,
         wasAudible: false,
       });
-      warnVideoDiagnostic('voice-processing engine cue unavailable; Expo fallback disabled', undefined, {
+      warnVideoDiagnostic('recording audio engine cue unavailable; Expo fallback disabled', undefined, {
         includeInExport: true,
         nativePlaybackStatus: getRecordingRoundSoundPlaybackStatus(sound),
         requestId,
@@ -238,7 +236,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
         includeInExport: true,
         wasAudible: false,
       });
-      warnVideoDiagnostic('voice-processing engine cue failed; Expo fallback disabled', error, {
+      warnVideoDiagnostic('recording audio engine cue failed; Expo fallback disabled', error, {
         includeInExport: true,
         nativePlaybackStatus: getRecordingRoundSoundPlaybackStatus(sound),
         requestId,

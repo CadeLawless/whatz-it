@@ -178,6 +178,14 @@ public final class WhatzItVideoExportModule: Module {
       self.recordingRoundSoundPlaybackStatus(sound: sound)
     }
 
+    Function("getMicrophoneCapturePath") { () -> String in
+      if let engine = self.microphoneEngine {
+        return engine.inputNode.isVoiceProcessingEnabled ? "voice-processing-engine" : "recording-audio-engine"
+      }
+      if self.microphoneRecorder != nil { return "audio-recorder-fallback" }
+      return "inactive"
+    }
+
     AsyncFunction("startMicrophoneRecording") { () throws -> String in
       guard self.microphoneEngine == nil, self.microphoneRecorder == nil else {
         throw VideoExportError.microphoneAlreadyRecording
@@ -216,7 +224,7 @@ public final class WhatzItVideoExportModule: Module {
         engine.inputNode.removeTap(onBus: 0)
         self.clearRecordingCuePlayback(from: engine)
         self.microphoneEngine = nil
-        capturePath = "voice-processing-engine"
+        capturePath = "recording-audio-engine"
       } else if let recorder = self.microphoneRecorder {
         recorder.updateMeters()
         let duration = recorder.currentTime
@@ -269,24 +277,15 @@ public final class WhatzItVideoExportModule: Module {
     recordingSounds: [RecordingRoundSoundRecord]
   ) throws -> String {
     do {
-      try Self.configureRecordingAudioSession(mode: .videoChat)
+      try Self.configureRecordingAudioSession(mode: .videoRecording)
       let engine = AVAudioEngine()
       let inputNode = engine.inputNode
       var tapInstalled = false
       do {
-        // Keep Apple's device-tuned echo cancellation and noise suppression,
-        // but do not let automatic gain control pump the microphone level when
-        // speaker cues play. Export keeps this track at a constant level and
-        // adds clean, low-volume cues on a separate bus.
-        try inputNode.setVoiceProcessingEnabled(true)
-        inputNode.isVoiceProcessingAGCEnabled = false
-        if #available(iOS 17.0, *) {
-          inputNode.voiceProcessingOtherAudioDuckingConfiguration =
-            AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
-              enableAdvancedDucking: ObjCBool(false),
-              duckingLevel: .min
-            )
-        }
+        // This is a game recording, not a call. Apple's voice-processing I/O
+        // suppresses microphone speech whenever speaker cues play, producing
+        // the once-per-second cuts heard during the final countdown. Capture
+        // the standard video-recording input unchanged instead.
         let inputFormat = inputNode.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
           throw VideoExportError.microphoneStartFailed
@@ -312,10 +311,8 @@ public final class WhatzItVideoExportModule: Module {
           }
         }
         tapInstalled = true
-        // Start the known-good microphone-only voice-processing graph first.
-        // Apple supports adding source nodes upstream of a mixer at runtime,
-        // so cue preparation cannot make microphone capture fall back merely
-        // because a playback node prevented the initial engine start.
+        // Start microphone capture before attaching the two shared cue nodes,
+        // so live feedback cannot prevent the recording graph from starting.
         engine.prepare()
         try engine.start()
         guard engine.isRunning else {
@@ -328,11 +325,9 @@ public final class WhatzItVideoExportModule: Module {
         let outputNode = engine.outputNode
         let outputFormat = outputNode.outputFormat(forBus: 0)
         NSLog(
-          "[RoundAudioNative] Voice processing started inputEnabled=%@ outputEnabled=%@ agc=%@ bypassed=%@ inputSampleRate=%.0f inputChannels=%u outputSampleRate=%.0f outputChannels=%u preparedCueCount=%ld",
+          "[RoundAudioNative] Recording audio engine started inputVoiceProcessing=%@ outputVoiceProcessing=%@ inputSampleRate=%.0f inputChannels=%u outputSampleRate=%.0f outputChannels=%u preparedCueCount=%ld",
           inputNode.isVoiceProcessingEnabled ? "true" : "false",
           outputNode.isVoiceProcessingEnabled ? "true" : "false",
-          inputNode.isVoiceProcessingAGCEnabled ? "true" : "false",
-          inputNode.isVoiceProcessingBypassed ? "true" : "false",
           inputFormat.sampleRate,
           inputFormat.channelCount,
           outputFormat.sampleRate,
@@ -349,10 +344,10 @@ public final class WhatzItVideoExportModule: Module {
       }
       self.microphoneEngine = engine
       self.microphoneRecordingUrl = outputUrl
-      return "voice-processing-engine"
+      return "recording-audio-engine"
     } catch {
       NSLog(
-        "[RoundAudioNative] Voice-processing capture unavailable; starting recorder fallback error=%@",
+        "[RoundAudioNative] Recording audio engine unavailable; starting recorder fallback error=%@",
         error.localizedDescription
       )
       try? FileManager.default.removeItem(at: outputUrl)
@@ -438,7 +433,7 @@ public final class WhatzItVideoExportModule: Module {
       }
 
       // The bundled cues share one PCM format. Reuse two nodes for every cue
-      // instead of adding two nodes per sound to the voice-processing graph.
+      // instead of adding two nodes per sound to the recording graph.
       // Two nodes still allow a new cue to overlap the tail of the prior cue.
       if let playbackFormat, !recordingCueBuffers.isEmpty {
         recordingCuePlayers = (0..<2).map { _ in AVAudioPlayerNode() }
@@ -448,7 +443,7 @@ public final class WhatzItVideoExportModule: Module {
         }
       }
       NSLog(
-        "[RoundAudioNative] Voice-processing cue playback prepared sounds=%ld players=%ld",
+        "[RoundAudioNative] Recording cue playback prepared sounds=%ld players=%ld",
         recordingCueBuffers.count,
         recordingCuePlayers.count
       )
@@ -567,7 +562,7 @@ public final class WhatzItVideoExportModule: Module {
   }
 
   private static func configureRecordingAudioSession(
-    mode: AVAudioSession.Mode = .videoChat
+    mode: AVAudioSession.Mode = .videoRecording
   ) throws {
     let audioSession = AVAudioSession.sharedInstance()
     try audioSession.setCategory(

@@ -52,6 +52,7 @@ type WhatzItVideoExportNativeModule = {
   playRoundHaptic(cue: string, countdownValue: number | null): Promise<string>;
   playRecordingRoundSound?(sound: string, volume: number): Promise<boolean>;
   getRecordingRoundSoundPlaybackStatus?(sound: string): string;
+  getMicrophoneCapturePath?(): string;
   startMicrophoneRecordingWithSounds?(sounds: RecordingRoundSound[]): Promise<string>;
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
@@ -140,6 +141,10 @@ export function playRecordingRoundSound(sound: string, volume: number) {
 
 export function getRecordingRoundSoundPlaybackStatus(sound: string) {
   return nativeModule.getRecordingRoundSoundPlaybackStatus?.(sound) ?? 'unsupported';
+}
+
+export function getMicrophoneCapturePath() {
+  return nativeModule.getMicrophoneCapturePath?.() ?? 'unsupported';
 }
 
 export function supportsRecordingRoundSoundPlayback() {
