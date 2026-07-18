@@ -14,18 +14,12 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Platform } from 'react-native';
-
 import {
   getRoundSoundSource,
-  getCurrentRoundLiveVolumeScale,
   playRoundSound,
-  prepareRoundSoundsForPlayback,
   rewindRoundSoundPlayer,
-  syncRoundSoundPlayerVolume,
   type RoundSoundId,
 } from '@/video/round-sounds';
-import { isRoundLiveVolumeControlActive } from '@/video/round-live-volume';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 const PLAYER_OPTIONS = {
@@ -120,7 +114,6 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   );
   const tickIndex = useRef(0);
   const previousStatusKeys = useRef(new Map<string, string>());
-  const previousLiveVolumeScale = useRef<number | null>(null);
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const isReady = namedStatuses.every(([, status]) => status.isLoaded && !status.error);
   const effectiveLoadTimedOut = loadTimedOut && !isReady;
@@ -206,32 +199,6 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     void tick2.seekTo(0);
   }, [tick2, tick2Status.didJustFinish]);
 
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    const players: [AudioPlayer, RoundSoundId][] = [
-      ...Object.entries(regularPlayers).map(
-        ([sound, player]) => [player, sound as RoundSoundId] as [AudioPlayer, RoundSoundId],
-      ),
-      [tickPlayers[0], 'final-tick'],
-      [tickPlayers[1], 'final-tick'],
-    ];
-    const syncLiveVolumes = () => {
-      if (!isRoundLiveVolumeControlActive()) {
-        previousLiveVolumeScale.current = null;
-        return;
-      }
-      const liveVolumeScale = getCurrentRoundLiveVolumeScale();
-      if (previousLiveVolumeScale.current === liveVolumeScale) return;
-      previousLiveVolumeScale.current = liveVolumeScale;
-      for (const [player, sound] of players) {
-        syncRoundSoundPlayerVolume(player, sound, liveVolumeScale);
-      }
-    };
-    syncLiveVolumes();
-    const interval = setInterval(syncLiveVolumes, 100);
-    return () => clearInterval(interval);
-  }, [regularPlayers, tickPlayers]);
-
   const play = useCallback(
     (sound: RoundSoundId) => {
       logRoundDiagnostic('audio cue requested from provider', {
@@ -267,8 +234,6 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     try {
       await setIsAudioActiveAsync(true);
       logRoundDiagnostic('audio session activated for round');
-      await prepareRoundSoundsForPlayback();
-      logRoundDiagnostic('platform round sound playback prepared');
       tickIndex.current = 0;
       const players = [...Object.values(regularPlayers), ...tickPlayers];
       const results = await Promise.all(players.map(rewindRoundSoundPlayer));
