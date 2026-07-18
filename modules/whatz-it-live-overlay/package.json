@@ -1,7 +1,7 @@
 {
   "name": "whatz-it-live-overlay",
   "version": "0.1.0",
-  "description": "Real-time iOS round-video overlay output for WHATZ IT",
+  "description": "Real-time round-video overlay output for WHATZ IT",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "react-native": "src/index.ts",
@@ -9,6 +9,7 @@
   "files": [
     "src",
     "ios",
+    "android",
     "nitrogen",
     "nitro.json",
     "react-native.config.js",

@@ -129,7 +129,11 @@ export function stitchRoundVideoSegments(segments: RoundVideoSegment[]) {
 }
 
 export function supportsLiveOverlayMux() {
-  return getIosVideoExportVersion() >= 25 && typeof nativeModule.muxLiveOverlayVideo === 'function';
+  const nativeVersion = getIosVideoExportVersion();
+  return (
+    (nativeVersion === 0 || nativeVersion >= 25) &&
+    typeof nativeModule.muxLiveOverlayVideo === 'function'
+  );
 }
 
 export function muxLiveOverlayVideo(

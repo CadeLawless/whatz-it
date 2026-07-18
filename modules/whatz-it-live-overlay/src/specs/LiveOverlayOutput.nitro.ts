@@ -20,7 +20,7 @@ export type LiveOverlayRecordingResult = {
 };
 
 export interface LiveOverlayOutputFactory
-  extends HybridObject<{ ios: 'swift' }> {
+  extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   readonly isRecording: boolean;
   createLiveOverlayOutput(): CameraOutput;
   startRecording(headshotPath?: string, wordmarkPath?: string): Promise<void>;

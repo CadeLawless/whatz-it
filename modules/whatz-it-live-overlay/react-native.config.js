@@ -2,7 +2,11 @@ module.exports = {
   dependency: {
     platforms: {
       ios: {},
-      android: null,
+      android: {
+        packageImportPath:
+          'import com.margelo.nitro.whatzit.liveoverlay.WhatzItLiveOverlayPackage;',
+        packageInstance: 'new WhatzItLiveOverlayPackage()',
+      },
     },
   },
 };

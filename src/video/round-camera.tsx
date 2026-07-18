@@ -91,13 +91,13 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       // avoids making the exporter decode and scale 1080p frames first.
       targetResolution: CommonResolutions.HD_16_9,
       targetBitRate: ROUND_VIDEO_TARGET_BIT_RATE,
-      // iOS microphone audio is recorded independently by expo-audio.
-      // This avoids VisionCamera's intermittently missing iOS audio track.
+      // The live-overlay path records microphone audio independently. The
+      // standard Android recorder still uses CameraX's embedded audio track.
       enableAudio: microphoneEnabled && Platform.OS !== 'ios',
       fileType: 'mp4',
     });
     const liveOverlayOutput = useMemo<LiveOverlayOutput | null>(() => {
-      if (Platform.OS !== 'ios') return null;
+      if (Platform.OS === 'web') return null;
       try {
         return createLiveOverlayOutput();
       } catch (error) {
@@ -106,7 +106,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       }
     }, []);
     const cameraOutputs = useMemo(
-      // The live path replaces the normal iOS recorder. Attaching both outputs
+      // The live path replaces the normal recorder. Attaching both outputs
       // makes the camera encode two 720p streams and was the main source of
       // stalls in the first prototype.
       () => (liveOverlayOutput ? [liveOverlayOutput.cameraOutput] : [videoOutput]),
@@ -119,7 +119,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
     const liveOverlayActiveRef = useRef(false);
 
     const prepareMicrophone = useCallback(async () => {
-      if (Platform.OS !== 'ios') return microphoneEnabled;
+      if (Platform.OS !== 'ios' && !liveOverlayOutput) return microphoneEnabled;
       if (microphonePreparedRef.current) return true;
       try {
         const statusBefore = microphoneRecorder.getStatus();
@@ -133,7 +133,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         }
         await prepareRoundRecordingAudio();
         if (!microphoneEnabled) {
-          logVideoDiagnostic('recording haptics prepared without microphone capture');
+          logVideoDiagnostic('recording audio session prepared without microphone capture');
           return false;
         }
         if (!microphoneRecorder.getStatus().canRecord) {
@@ -152,7 +152,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         });
         return false;
       }
-    }, [microphoneEnabled, microphoneRecorder]);
+    }, [liveOverlayOutput, microphoneEnabled, microphoneRecorder]);
 
     useImperativeHandle(
       ref,
@@ -168,7 +168,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               platform: Platform.OS,
             });
             let microphonePrepared = await prepareMicrophone();
-            if (microphonePrepared && Platform.OS !== 'ios') {
+            if (microphonePrepared && Platform.OS !== 'ios' && !liveOverlayOutput) {
               try {
                 await prepareRoundRecordingAudio();
               } catch (error) {
@@ -201,7 +201,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               await recorder.startRecording(finishRecording, failRecording);
             }
             const videoStartedAt = Date.now();
-            if (Platform.OS === 'ios' && microphonePrepared) {
+            if ((Platform.OS === 'ios' || !!liveOverlayOutput) && microphonePrepared) {
               try {
                 microphoneRecorder.record();
                 const microphoneUri = microphoneRecorder.uri;
@@ -209,14 +209,16 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                 if (!microphoneStatus.isRecording || !microphoneUri) {
                   throw new Error('The prepared microphone recorder did not enter recording state.');
                 }
-                let recordingHapticsEnabled = false;
-                try {
-                  recordingHapticsEnabled = await reassertRecordingHaptics();
-                } catch (error) {
-                  warnVideoDiagnostic(
-                    'recording haptics flag could not be reasserted; microphone recording will continue',
-                    error,
-                  );
+                let recordingHapticsEnabled: boolean | null = null;
+                if (Platform.OS === 'ios') {
+                  try {
+                    recordingHapticsEnabled = await reassertRecordingHaptics();
+                  } catch (error) {
+                    warnVideoDiagnostic(
+                      'recording haptics flag could not be reasserted; microphone recording will continue',
+                      error,
+                    );
+                  }
                 }
                 microphoneRef.current = {
                   uri: microphoneUri,
@@ -273,7 +275,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             } catch {
               // The experimental recorder may not have armed before the start failure.
             }
-            if (Platform.OS === 'ios' && microphoneRecorder.getStatus().isRecording) {
+            if (
+              (Platform.OS === 'ios' || !!liveOverlayOutput) &&
+              microphoneRecorder.getStatus().isRecording
+            ) {
               try {
                 await microphoneRecorder.stop();
               } catch {
@@ -314,7 +319,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               });
             }
             let microphoneUri: string | undefined;
-            if (Platform.OS === 'ios') {
+            if (Platform.OS === 'ios' || stoppingLiveOverlay) {
               const microphoneCapture = microphoneRef.current;
               try {
                 const microphoneStopStartedAt = Date.now();
@@ -390,7 +395,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             // The live output may already have stopped; microphone cleanup still continues.
           }
           try {
-            if (Platform.OS === 'ios' && microphoneRecorder.getStatus().isRecording) {
+            if (
+              (Platform.OS === 'ios' || !!liveOverlayOutput) &&
+              microphoneRecorder.getStatus().isRecording
+            ) {
               await microphoneRecorder.stop();
               const microphoneUri = microphoneRecorder.uri;
               if (microphoneUri) {
@@ -461,7 +469,7 @@ function toFileUri(path: string) {
 let liveOverlayBrandingPromise: ReturnType<typeof resolveLiveOverlayBrandingUris> | null = null;
 
 function loadLiveOverlayBrandingUris() {
-  if (Platform.OS !== 'ios') return Promise.resolve(null);
+  if (Platform.OS === 'web') return Promise.resolve(null);
   liveOverlayBrandingPromise ??= resolveLiveOverlayBrandingUris();
   return liveOverlayBrandingPromise;
 }

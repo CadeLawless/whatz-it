@@ -361,6 +361,7 @@ async function prepareLiveOverlayVideoExportOnce(
     exportStatus: 'preparing',
   });
   let temporaryExportUri: string | undefined;
+  const temporarySegmentUris: string[] = [];
   try {
     const { muxLiveOverlayVideo, stitchRoundVideoSegments, supportsLiveOverlayMux } =
       await import('whatz-it-video-export');
@@ -384,10 +385,25 @@ async function prepareLiveOverlayVideoExportOnce(
         temporaryExportUri = segment.videoUri;
       }
     } else {
+      if (segments.some((segment) => !!segment.audioUri) && !supportsLiveOverlayMux()) {
+        throw new Error('The installed native exporter does not support live-overlay muxing.');
+      }
+      const muxedSegments = await Promise.all(
+        segments.map(async (segment) => {
+          if (!segment.audioUri) return segment.videoUri;
+          const uri = await muxLiveOverlayVideo(
+            segment.videoUri,
+            segment.audioUri,
+            segment.microphoneOffsetMs,
+          );
+          temporarySegmentUris.push(uri);
+          return uri;
+        }),
+      );
       temporaryExportUri = await stitchRoundVideoSegments(
-        segments.map((segment) => ({
-          videoUri: segment.videoUri,
-          audioUri: segment.audioUri,
+        muxedSegments.map((videoUri) => ({
+          videoUri,
+          audioUri: null,
         })),
       );
     }
@@ -429,6 +445,10 @@ async function prepareLiveOverlayVideoExportOnce(
       const temporaryFile = new File(temporaryExportUri);
       if (temporaryFile.exists) temporaryFile.delete();
     }
+    temporarySegmentUris.forEach((uri) => {
+      const temporaryFile = new File(uri);
+      if (temporaryFile.exists) temporaryFile.delete();
+    });
   }
 }
 

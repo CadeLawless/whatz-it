@@ -431,13 +431,34 @@ export function RoundProvider({ children }: PropsWithChildren) {
           ({ capture }) => !!capture.liveOverlay,
         );
         if (preparedSegments.length > 1) {
-          const { stitchRoundVideoSegments } = await import('whatz-it-video-export');
+          const { muxLiveOverlayVideo, stitchRoundVideoSegments, supportsLiveOverlayMux } =
+            await import('whatz-it-video-export');
           const stitchStartedAt = Date.now();
           logVideoDiagnostic('round recording segment stitch started', {
             finalizationId,
             segmentCount: preparedSegments.length,
           });
-          videoUri = await stitchRoundVideoSegments(preparedSegments);
+          let cleanSegments = preparedSegments;
+          if (allSegmentsHaveLiveOverlays && preparedSegments.some((segment) => !!segment.audioUri)) {
+            if (!supportsLiveOverlayMux()) {
+              throw new Error('The installed native exporter does not support live-overlay muxing.');
+            }
+            cleanSegments = await Promise.all(
+              segments.map(async ({ capture }) => {
+                if (!capture.microphoneUri) {
+                  return { videoUri: capture.videoUri, audioUri: null };
+                }
+                const muxedUri = await muxLiveOverlayVideo(
+                  capture.videoUri,
+                  capture.microphoneUri,
+                  capture.microphoneOffsetMs,
+                );
+                temporaryUris.push(muxedUri);
+                return { videoUri: muxedUri, audioUri: null };
+              }),
+            );
+          }
+          videoUri = await stitchRoundVideoSegments(cleanSegments);
           temporaryUris.push(videoUri);
           // The stitched MP4 contains the selected audio track for every segment.
           audioUri = undefined;

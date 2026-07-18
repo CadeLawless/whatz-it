@@ -8,6 +8,10 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -35,6 +39,7 @@ import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
 import expo.modules.kotlin.types.OptimizedRecord
 import java.io.File
+import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
@@ -116,6 +121,44 @@ class WhatzItVideoExportModule : Module() {
 
     AsyncFunction("prepareRecordingAudio") {
       // VisionCamera configures Android's recording audio source directly.
+    }
+
+    AsyncFunction("muxLiveOverlayVideo") {
+        videoUri: String,
+        audioUri: String?,
+        microphoneOffsetMs: Double,
+        promise: Promise ->
+      val context = appContext.reactContext?.applicationContext
+      if (context == null) {
+        promise.reject("ERR_LIVE_VIDEO_MUX", "The Android application context is unavailable.", null)
+        return@AsyncFunction
+      }
+      Thread {
+        val operationStartedAt = SystemClock.elapsedRealtime()
+        val outputFile = File(context.cacheDir, "whatz-it-live-ready-${UUID.randomUUID()}.mp4")
+        try {
+          muxVideoAndAudio(
+            context,
+            Uri.parse(videoUri),
+            audioUri?.let(Uri::parse),
+            (max(0.0, microphoneOffsetMs) * 1_000.0).toLong(),
+            outputFile,
+          )
+          Log.i(
+            "RoundVideoNative",
+            "Android live overlay mux completed elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt} outputBytes=${outputFile.length()}",
+          )
+          promise.resolve(Uri.fromFile(outputFile).toString())
+        } catch (error: Exception) {
+          outputFile.delete()
+          Log.e(
+            "RoundVideoNative",
+            "Android live overlay mux failed elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt}",
+            error,
+          )
+          promise.reject("ERR_LIVE_VIDEO_MUX", error.localizedMessage, error)
+        }
+      }.start()
     }
 
     AsyncFunction("exportOverlayVideo") {
@@ -216,6 +259,120 @@ class WhatzItVideoExportModule : Module() {
   private fun fileSize(uri: String): Long {
     val parsed = Uri.parse(uri)
     return if (parsed.scheme == "file") File(parsed.path.orEmpty()).length() else 0
+  }
+
+  private fun muxVideoAndAudio(
+    context: android.content.Context,
+    videoUri: Uri,
+    audioUri: Uri?,
+    audioOffsetUs: Long,
+    outputFile: File,
+  ) {
+    val videoExtractor = MediaExtractor()
+    val audioExtractor = audioUri?.let { MediaExtractor() }
+    var muxer: MediaMuxer? = null
+    var muxerStarted = false
+    try {
+      videoExtractor.setDataSource(context, videoUri, null)
+      val videoTrack = findTrack(videoExtractor, "video/")
+      check(videoTrack >= 0) { "The live recording has no video track." }
+      val videoFormat = videoExtractor.getTrackFormat(videoTrack)
+      val videoDurationUs = if (videoFormat.containsKey(MediaFormat.KEY_DURATION)) {
+        videoFormat.getLong(MediaFormat.KEY_DURATION)
+      } else {
+        Long.MAX_VALUE
+      }
+
+      val audioTrack = if (audioExtractor != null && audioUri != null) {
+        audioExtractor.setDataSource(context, audioUri, null)
+        findTrack(audioExtractor, "audio/")
+      } else {
+        -1
+      }
+      if (audioExtractor != null) check(audioTrack >= 0) { "The microphone recording has no audio track." }
+
+      muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+      if (videoFormat.containsKey(MediaFormat.KEY_ROTATION)) {
+        muxer.setOrientationHint(videoFormat.getInteger(MediaFormat.KEY_ROTATION))
+      }
+      val outputVideoTrack = muxer.addTrack(videoFormat)
+      val outputAudioTrack = if (audioExtractor != null) {
+        muxer.addTrack(audioExtractor.getTrackFormat(audioTrack))
+      } else {
+        -1
+      }
+      muxer.start()
+      muxerStarted = true
+
+      copyTrack(videoExtractor, videoTrack, muxer, outputVideoTrack, 0L, videoDurationUs)
+      if (audioExtractor != null) {
+        copyTrack(
+          audioExtractor,
+          audioTrack,
+          muxer,
+          outputAudioTrack,
+          audioOffsetUs,
+          videoDurationUs,
+        )
+      }
+    } finally {
+      videoExtractor.release()
+      audioExtractor?.release()
+      if (muxerStarted) muxer?.stop()
+      muxer?.release()
+    }
+  }
+
+  private fun findTrack(extractor: MediaExtractor, mimePrefix: String): Int {
+    for (index in 0 until extractor.trackCount) {
+      val mime = extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+      if (mime?.startsWith(mimePrefix) == true) return index
+    }
+    return -1
+  }
+
+  private fun copyTrack(
+    extractor: MediaExtractor,
+    inputTrack: Int,
+    muxer: MediaMuxer,
+    outputTrack: Int,
+    presentationOffsetUs: Long,
+    maximumPresentationTimeUs: Long,
+  ) {
+    extractor.selectTrack(inputTrack)
+    extractor.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+    val format = extractor.getTrackFormat(inputTrack)
+    val maximumInputSize = if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+      max(DEFAULT_MUX_BUFFER_SIZE, format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
+    } else {
+      DEFAULT_MUX_BUFFER_SIZE
+    }
+    val buffer = ByteBuffer.allocateDirect(maximumInputSize)
+    val info = MediaCodec.BufferInfo()
+    var firstSampleTimeUs = -1L
+    while (true) {
+      val sampleTimeUs = extractor.sampleTime
+      if (sampleTimeUs < 0) break
+      if (firstSampleTimeUs < 0) firstSampleTimeUs = sampleTimeUs
+      val outputTimeUs = sampleTimeUs - firstSampleTimeUs + presentationOffsetUs
+      if (outputTimeUs > maximumPresentationTimeUs) break
+      buffer.clear()
+      val size = extractor.readSampleData(buffer, 0)
+      if (size < 0) break
+      val outputFlags = if (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
+        MediaCodec.BUFFER_FLAG_KEY_FRAME
+      } else {
+        0
+      }
+      info.set(0, size, outputTimeUs, outputFlags)
+      muxer.writeSampleData(outputTrack, buffer, info)
+      extractor.advance()
+    }
+    extractor.unselectTrack(inputTrack)
+  }
+
+  private companion object {
+    const val DEFAULT_MUX_BUFFER_SIZE = 2 * 1024 * 1024
   }
 }
 
