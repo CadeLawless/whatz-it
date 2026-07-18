@@ -816,8 +816,11 @@ public final class WhatzItVideoExportModule: Module {
       guard !(try await finishedAsset.loadTracks(withMediaType: .video)).isEmpty else {
         throw VideoExportError.missingVideoTrack
       }
-      if audioUrl != nil && (try await finishedAsset.loadTracks(withMediaType: .audio)).isEmpty {
-        throw VideoExportError.missingExportedAudioTrack
+      if audioUrl != nil {
+        let finishedAudioTracks = try await finishedAsset.loadTracks(withMediaType: .audio)
+        if finishedAudioTracks.isEmpty {
+          throw VideoExportError.missingExportedAudioTrack
+        }
       }
       NSLog(
         "[RoundVideoNative] Live overlay mux completed elapsedMs=%.0f outputBytes=%lld output=%@",
