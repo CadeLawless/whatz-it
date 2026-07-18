@@ -3,7 +3,7 @@ import type { Deck } from '@/types/deck';
 const deckDefinitions: Deck[] = [
   {
     id: 'animal-antics',
-    order: 1,
+    order: 9,
     title: 'Animal Antics',
     description: 'Lions, tigers, and bears, oh my!',
     coverImage: require('../../assets/images/decks/animal-antics.webp'),
@@ -201,7 +201,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'snack-attack',
-    order: 2,
+    order: 14,
     title: 'Snack Attack',
     description: 'Your pantry\'s greatest hits.',
     coverImage: require('../../assets/images/decks/snack-attack.webp'),
@@ -395,7 +395,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'celebrity-shuffle',
-    order: 3,
+    order: 1,
     title: 'Celebrity Shuffle',
     description: 'Hollywood Legends, famous musicians, sports heroes, and internet superstars.',
     coverImage: require('../../assets/images/decks/celebrity-shuffle.webp'),
@@ -709,7 +709,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'movie-mania',
-    order: 4,
+    order: 3,
     title: 'Movie Mania',
     description: 'Movie lovers, this one\'s for you.',
     coverImage: require('../../assets/images/decks/movie-mania.webp'),
@@ -1034,7 +1034,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'music-mix',
-    order: 5,
+    order: 4,
     title: 'Music Mix',
     description: 'Popular songs from across the decades.',
     coverImage: require('../../assets/images/decks/name-that-tune.webp'),
@@ -1541,7 +1541,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'gone-viral',
-    order: 7,
+    order: 11,
     title: 'Gone Viral',
     description: 'Internet legends, memes, trends, and viral moments.',
     coverImage: require('../../assets/images/decks/internet-famous.webp'),
@@ -1893,7 +1893,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'fictional-who-am-i',
-    order: 9,
+    order: 10,
     title: 'Fictional Who Am I?',
     description: 'Legendary fictional characters across books, screens, and games.',
     coverImage: require('../../assets/images/decks/fictional-who-am-i.webp'),
@@ -2180,7 +2180,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'road-trip',
-    order: 10,
+    order: 7,
     title: 'Road Trip',
     description: 'Everything to do with an American road trip.',
     coverImage: require('../../assets/images/decks/road-trip.webp'),
@@ -2379,7 +2379,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'fast-food',
-    order: 11,
+    order: 2,
     title: 'Fast Food',
     description: 'America\'s favorite fast food places.',
     coverImage: require('../../assets/images/decks/fast-food.webp'),
@@ -2704,7 +2704,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'act-it-out',
-    order: 13,
+    order: 5,
     title: 'Act It Out',
     description: 'No words allowed, bring your best performance!',
     coverImage: require('../../assets/images/decks/act-it-out.webp'),
@@ -2878,7 +2878,7 @@ const deckDefinitions: Deck[] = [
   },
   {
     id: 'history-buff',
-    order: 14,
+    order: 13,
     title: 'History Buff',
     description: 'Legendary people, places, and moments that shaped history.',
     coverImage: require('../../assets/images/decks/history-buff.webp'),
