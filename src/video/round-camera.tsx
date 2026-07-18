@@ -10,6 +10,7 @@ import {
 } from 'react-native-vision-camera';
 import {
   cancelMicrophoneRecording,
+  getRecordingRoundSoundPlaybackStatus,
   getSystemOutputVolume,
   prepareRecordingAudio,
   reassertRecordingHaptics,
@@ -197,10 +198,14 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
                 };
                 const recordingCuePlaybackSupported =
                   supportsRecordingRoundSoundPlayback();
+                const recordingCuePlaybackStatus = recordingCuePlaybackSupported
+                  ? getRecordingRoundSoundPlaybackStatus('get-ready')
+                  : 'unsupported';
                 setRecordingCuePlaybackActive(recordingCuePlaybackSupported);
                 logVideoDiagnostic('microphone recording started', {
                   offsetMs: microphoneRef.current.offsetMs,
                   recordingCuePlaybackSupported,
+                  recordingCuePlaybackStatus,
                   recordingHapticsEnabled,
                   uri: microphoneUri,
                 });

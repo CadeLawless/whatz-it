@@ -274,11 +274,13 @@ export default function ReadyScreen() {
       logRoundDiagnostic('get-ready playback request completed', { active, played });
       if (!active) return;
       if (!played) {
-        warnRoundDiagnostic('get-ready playback did not start', new Error('Player rejected playback'));
-        introStarted.current = false;
-        setSoundsPrepared(false);
-        setSoundPreparationFailed(true);
-        return;
+        // A live cue is feedback, not a prerequisite for gameplay. The cue is
+        // still attached to the exported video, so continue the intro even if
+        // the device's native playback path becomes unavailable.
+        warnRoundDiagnostic(
+          'get-ready live playback did not start; continuing round intro',
+          new Error('Player rejected playback'),
+        );
       }
       setIntroEndsAt(Date.now() + GET_READY_SOUND_MS);
     };

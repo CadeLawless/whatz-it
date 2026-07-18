@@ -1,7 +1,11 @@
 import { Asset } from 'expo-asset';
 import { preload, type AudioPlayer } from 'expo-audio';
 import { Platform } from 'react-native';
-import { getSystemOutputVolume, playRecordingRoundSound } from 'whatz-it-video-export';
+import {
+  getRecordingRoundSoundPlaybackStatus,
+  getSystemOutputVolume,
+  playRecordingRoundSound,
+} from 'whatz-it-video-export';
 
 import {
   getRoundLiveVolumeScale,
@@ -220,6 +224,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
       });
       warnVideoDiagnostic('voice-processing engine cue unavailable; Expo fallback disabled', undefined, {
         includeInExport: true,
+        nativePlaybackStatus: getRecordingRoundSoundPlaybackStatus(sound),
         requestId,
         sound,
       });
@@ -235,6 +240,7 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
       });
       warnVideoDiagnostic('voice-processing engine cue failed; Expo fallback disabled', error, {
         includeInExport: true,
+        nativePlaybackStatus: getRecordingRoundSoundPlaybackStatus(sound),
         requestId,
         sound,
       });
