@@ -24,8 +24,7 @@
       "icon": "./assets/images/whatz-it-app-icon.png",
       "adaptiveIcon": {
         "backgroundColor": "#4BCBFD",
-        "foregroundImage": "./assets/images/whatz-it-adaptive-foreground.png",
-        "monochromeImage": "./assets/images/whatz-it-adaptive-monochrome.png"
+        "foregroundImage": "./assets/images/whatz-it-app-icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
