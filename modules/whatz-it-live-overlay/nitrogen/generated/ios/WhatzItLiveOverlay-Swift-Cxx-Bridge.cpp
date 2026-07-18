@@ -9,12 +9,21 @@
 
 // Include C++ implementation defined types
 #include "HybridLiveOverlayOutputFactorySpecSwift.hpp"
-#include "HybridLiveOverlayOutputSpecSwift.hpp"
 #include "WhatzItLiveOverlay-Swift-Cxx-Umbrella.hpp"
 #include <NitroModules/NitroDefines.hpp>
 #include <VisionCamera/VisionCamera-Swift-Cxx-Bridge.hpp>
 
 namespace margelo::nitro::whatzit::liveoverlay::bridge::swift {
+
+  // pragma MARK: std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>
+  std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec> create_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
+    // Implemented in VisionCamera
+    return margelo::nitro::camera::bridge::swift::create_std__shared_ptr_HybridCameraOutputSpec_(swiftUnsafePointer);
+  }
+  void* NON_NULL get_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ cppType) {
+    // Implemented in VisionCamera
+    return margelo::nitro::camera::bridge::swift::get_std__shared_ptr_HybridCameraOutputSpec_(cppType);
+  }
 
   // pragma MARK: std::function<void()>
   Func_void create_Func_void(void* NON_NULL swiftClosureWrapper) noexcept {
@@ -38,32 +47,6 @@ namespace margelo::nitro::whatzit::liveoverlay::bridge::swift {
     return [swiftClosure = std::move(swiftClosure)](const LiveOverlayRecordingResult& result) mutable -> void {
       swiftClosure.call(result);
     };
-  }
-
-  // pragma MARK: std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>
-  std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec> create_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
-    // Implemented in VisionCamera
-    return margelo::nitro::camera::bridge::swift::create_std__shared_ptr_HybridCameraOutputSpec_(swiftUnsafePointer);
-  }
-  void* NON_NULL get_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ cppType) {
-    // Implemented in VisionCamera
-    return margelo::nitro::camera::bridge::swift::get_std__shared_ptr_HybridCameraOutputSpec_(cppType);
-  }
-
-  // pragma MARK: std::shared_ptr<HybridLiveOverlayOutputSpec>
-  std::shared_ptr<HybridLiveOverlayOutputSpec> create_std__shared_ptr_HybridLiveOverlayOutputSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
-    WhatzItLiveOverlay::HybridLiveOverlayOutputSpec_cxx swiftPart = WhatzItLiveOverlay::HybridLiveOverlayOutputSpec_cxx::fromUnsafe(swiftUnsafePointer);
-    return std::make_shared<margelo::nitro::whatzit::liveoverlay::HybridLiveOverlayOutputSpecSwift>(swiftPart);
-  }
-  void* NON_NULL get_std__shared_ptr_HybridLiveOverlayOutputSpec_(std__shared_ptr_HybridLiveOverlayOutputSpec_ cppType) {
-    std::shared_ptr<margelo::nitro::whatzit::liveoverlay::HybridLiveOverlayOutputSpecSwift> swiftWrapper = std::dynamic_pointer_cast<margelo::nitro::whatzit::liveoverlay::HybridLiveOverlayOutputSpecSwift>(cppType);
-    #ifdef NITRO_DEBUG
-    if (swiftWrapper == nullptr) [[unlikely]] {
-      throw std::runtime_error("Class \"HybridLiveOverlayOutputSpec\" is not implemented in Swift!");
-    }
-    #endif
-    WhatzItLiveOverlay::HybridLiveOverlayOutputSpec_cxx& swiftPart = swiftWrapper->getSwiftPart();
-    return swiftPart.toUnsafe();
   }
 
   // pragma MARK: std::shared_ptr<HybridLiveOverlayOutputFactorySpec>

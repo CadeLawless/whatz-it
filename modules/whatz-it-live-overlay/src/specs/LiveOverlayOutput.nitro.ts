@@ -18,15 +18,12 @@ export type LiveOverlayRecordingResult = {
   height: number;
 };
 
-export interface LiveOverlayOutput extends CameraOutput {
+export interface LiveOverlayOutputFactory
+  extends HybridObject<{ ios: 'swift' }> {
   readonly isRecording: boolean;
+  createLiveOverlayOutput(): CameraOutput;
   startRecording(headshotPath?: string, wordmarkPath?: string): Promise<void>;
   appendOverlayEvent(event: LiveOverlayEvent): void;
   stopRecording(): Promise<LiveOverlayRecordingResult>;
   cancelRecording(): Promise<void>;
-}
-
-export interface LiveOverlayOutputFactory
-  extends HybridObject<{ ios: 'swift' }> {
-  createLiveOverlayOutput(): LiveOverlayOutput;
 }

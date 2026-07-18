@@ -5,15 +5,20 @@
 /// Copyright © Marc Rousavy @ Margelo
 ///
 
+import VisionCamera
 import NitroModules
 
 /// See ``HybridLiveOverlayOutputFactorySpec``
 public protocol HybridLiveOverlayOutputFactorySpec_protocol: HybridObject {
   // Properties
-
+  var isRecording: Bool { get }
 
   // Methods
-  func createLiveOverlayOutput() throws -> (any HybridLiveOverlayOutputSpec)
+  func createLiveOverlayOutput() throws -> (any HybridCameraOutputSpec)
+  func startRecording(headshotPath: String?, wordmarkPath: String?) throws -> Promise<Void>
+  func appendOverlayEvent(event: LiveOverlayEvent) throws -> Void
+  func stopRecording() throws -> Promise<LiveOverlayRecordingResult>
+  func cancelRecording() throws -> Promise<Void>
 }
 
 public extension HybridLiveOverlayOutputFactorySpec_protocol {

@@ -14,7 +14,12 @@ namespace margelo::nitro::whatzit::liveoverlay {
     HybridObject::loadHybridMethods();
     // load custom methods/properties
     registerHybrids(this, [](Prototype& prototype) {
+      prototype.registerHybridGetter("isRecording", &HybridLiveOverlayOutputFactorySpec::getIsRecording);
       prototype.registerHybridMethod("createLiveOverlayOutput", &HybridLiveOverlayOutputFactorySpec::createLiveOverlayOutput);
+      prototype.registerHybridMethod("startRecording", &HybridLiveOverlayOutputFactorySpec::startRecording);
+      prototype.registerHybridMethod("appendOverlayEvent", &HybridLiveOverlayOutputFactorySpec::appendOverlayEvent);
+      prototype.registerHybridMethod("stopRecording", &HybridLiveOverlayOutputFactorySpec::stopRecording);
+      prototype.registerHybridMethod("cancelRecording", &HybridLiveOverlayOutputFactorySpec::cancelRecording);
     });
   }
 

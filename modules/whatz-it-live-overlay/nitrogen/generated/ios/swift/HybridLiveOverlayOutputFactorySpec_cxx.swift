@@ -6,6 +6,7 @@
 ///
 
 import NitroModules
+import VisionCamera
 
 /**
  * A class implementation that bridges HybridLiveOverlayOutputFactorySpec over to C++.
@@ -121,21 +122,108 @@ open class HybridLiveOverlayOutputFactorySpec_cxx {
   }
 
   // Properties
-
+  public final var isRecording: Bool {
+    @inline(__always)
+    get {
+      return self.__implementation.isRecording
+    }
+  }
 
   // Methods
   @inline(__always)
-  public final func createLiveOverlayOutput() -> bridge.Result_std__shared_ptr_HybridLiveOverlayOutputSpec__ {
+  public final func createLiveOverlayOutput() -> bridge.Result_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec__ {
     do {
       let __result = try self.__implementation.createLiveOverlayOutput()
-      let __resultCpp = { () -> bridge.std__shared_ptr_HybridLiveOverlayOutputSpec_ in
+      let __resultCpp = { () -> bridge.std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ in
         let __cxxWrapped = __result.getCxxWrapper()
         return __cxxWrapped.getCxxPart()
       }()
-      return bridge.create_Result_std__shared_ptr_HybridLiveOverlayOutputSpec__(__resultCpp)
+      return bridge.create_Result_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec__(__resultCpp)
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_std__shared_ptr_HybridLiveOverlayOutputSpec__(__exceptionPtr)
+      return bridge.create_Result_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec__(__exceptionPtr)
+    }
+  }
+
+  @inline(__always)
+  public final func startRecording(headshotPath: bridge.std__optional_std__string_, wordmarkPath: bridge.std__optional_std__string_) -> bridge.Result_std__shared_ptr_Promise_void___ {
+    do {
+      let __result = try self.__implementation.startRecording(headshotPath: { () -> String? in
+        if bridge.has_value_std__optional_std__string_(headshotPath) {
+          let __unwrapped = bridge.get_std__optional_std__string_(headshotPath)
+          return String(__unwrapped)
+        } else {
+          return nil
+        }
+      }(), wordmarkPath: { () -> String? in
+        if bridge.has_value_std__optional_std__string_(wordmarkPath) {
+          let __unwrapped = bridge.get_std__optional_std__string_(wordmarkPath)
+          return String(__unwrapped)
+        } else {
+          return nil
+        }
+      }())
+      let __resultCpp = { () -> bridge.std__shared_ptr_Promise_void__ in
+        let __promise = bridge.create_std__shared_ptr_Promise_void__()
+        let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_void__(__promise)
+        __result
+          .then({ __result in __promiseHolder.resolve() })
+          .catch({ __error in __promiseHolder.reject(__error.toCpp()) })
+        return __promise
+      }()
+      return bridge.create_Result_std__shared_ptr_Promise_void___(__resultCpp)
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_std__shared_ptr_Promise_void___(__exceptionPtr)
+    }
+  }
+
+  @inline(__always)
+  public final func appendOverlayEvent(event: LiveOverlayEvent) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.appendOverlayEvent(event: event)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+
+  @inline(__always)
+  public final func stopRecording() -> bridge.Result_std__shared_ptr_Promise_LiveOverlayRecordingResult___ {
+    do {
+      let __result = try self.__implementation.stopRecording()
+      let __resultCpp = { () -> bridge.std__shared_ptr_Promise_LiveOverlayRecordingResult__ in
+        let __promise = bridge.create_std__shared_ptr_Promise_LiveOverlayRecordingResult__()
+        let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_LiveOverlayRecordingResult__(__promise)
+        __result
+          .then({ __result in __promiseHolder.resolve(__result) })
+          .catch({ __error in __promiseHolder.reject(__error.toCpp()) })
+        return __promise
+      }()
+      return bridge.create_Result_std__shared_ptr_Promise_LiveOverlayRecordingResult___(__resultCpp)
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_std__shared_ptr_Promise_LiveOverlayRecordingResult___(__exceptionPtr)
+    }
+  }
+
+  @inline(__always)
+  public final func cancelRecording() -> bridge.Result_std__shared_ptr_Promise_void___ {
+    do {
+      let __result = try self.__implementation.cancelRecording()
+      let __resultCpp = { () -> bridge.std__shared_ptr_Promise_void__ in
+        let __promise = bridge.create_std__shared_ptr_Promise_void__()
+        let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_void__(__promise)
+        __result
+          .then({ __result in __promiseHolder.resolve() })
+          .catch({ __error in __promiseHolder.reject(__error.toCpp()) })
+        return __promise
+      }()
+      return bridge.create_Result_std__shared_ptr_Promise_void___(__resultCpp)
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_std__shared_ptr_Promise_void___(__exceptionPtr)
     }
   }
 }

@@ -8,31 +8,19 @@
 #pragma once
 
 // Forward declarations of C++ defined types
-// Forward declaration of `CameraOrientation` to properly resolve imports.
-namespace margelo::nitro::whatzit::liveoverlay { enum class CameraOrientation; }
 // Forward declaration of `HybridCameraOutputSpec` to properly resolve imports.
 namespace margelo::nitro::camera { class HybridCameraOutputSpec; }
 // Forward declaration of `HybridLiveOverlayOutputFactorySpec` to properly resolve imports.
 namespace margelo::nitro::whatzit::liveoverlay { class HybridLiveOverlayOutputFactorySpec; }
-// Forward declaration of `HybridLiveOverlayOutputSpec` to properly resolve imports.
-namespace margelo::nitro::whatzit::liveoverlay { class HybridLiveOverlayOutputSpec; }
 // Forward declaration of `LiveOverlayEvent` to properly resolve imports.
 namespace margelo::nitro::whatzit::liveoverlay { struct LiveOverlayEvent; }
 // Forward declaration of `LiveOverlayRecordingResult` to properly resolve imports.
 namespace margelo::nitro::whatzit::liveoverlay { struct LiveOverlayRecordingResult; }
-// Forward declaration of `MediaType` to properly resolve imports.
-namespace margelo::nitro::whatzit::liveoverlay { enum class MediaType; }
-// Forward declaration of `Size` to properly resolve imports.
-namespace margelo::nitro::whatzit::liveoverlay { struct Size; }
 
 // Include C++ defined types
-#include "CameraOrientation.hpp"
 #include "HybridLiveOverlayOutputFactorySpec.hpp"
-#include "HybridLiveOverlayOutputSpec.hpp"
 #include "LiveOverlayEvent.hpp"
 #include "LiveOverlayRecordingResult.hpp"
-#include "MediaType.hpp"
-#include "Size.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/Result.hpp>
 #include <VisionCamera/HybridCameraOutputSpec.hpp>
@@ -55,8 +43,6 @@ namespace margelo::nitro::whatzit::liveoverlay { struct Size; }
 namespace VisionCamera { class HybridCameraOutputSpec_cxx; }
 // Forward declaration of `HybridLiveOverlayOutputFactorySpec_cxx` to properly resolve imports.
 namespace WhatzItLiveOverlay { class HybridLiveOverlayOutputFactorySpec_cxx; }
-// Forward declaration of `HybridLiveOverlayOutputSpec_cxx` to properly resolve imports.
-namespace WhatzItLiveOverlay { class HybridLiveOverlayOutputSpec_cxx; }
 
 // Include Swift defined types
 #if __has_include("WhatzItLiveOverlay-Swift.h")

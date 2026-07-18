@@ -12,26 +12,18 @@
 namespace margelo::nitro::camera { class HybridCameraOutputSpec; }
 // Forward declaration of `HybridLiveOverlayOutputFactorySpec` to properly resolve imports.
 namespace margelo::nitro::whatzit::liveoverlay { class HybridLiveOverlayOutputFactorySpec; }
-// Forward declaration of `HybridLiveOverlayOutputSpec` to properly resolve imports.
-namespace margelo::nitro::whatzit::liveoverlay { class HybridLiveOverlayOutputSpec; }
 // Forward declaration of `LiveOverlayRecordingResult` to properly resolve imports.
 namespace margelo::nitro::whatzit::liveoverlay { struct LiveOverlayRecordingResult; }
-// Forward declaration of `Size` to properly resolve imports.
-namespace margelo::nitro::whatzit::liveoverlay { struct Size; }
 
 // Forward declarations of Swift defined types
 // Forward declaration of `HybridCameraOutputSpec_cxx` to properly resolve imports.
 namespace VisionCamera { class HybridCameraOutputSpec_cxx; }
 // Forward declaration of `HybridLiveOverlayOutputFactorySpec_cxx` to properly resolve imports.
 namespace WhatzItLiveOverlay { class HybridLiveOverlayOutputFactorySpec_cxx; }
-// Forward declaration of `HybridLiveOverlayOutputSpec_cxx` to properly resolve imports.
-namespace WhatzItLiveOverlay { class HybridLiveOverlayOutputSpec_cxx; }
 
 // Include C++ defined types
 #include "HybridLiveOverlayOutputFactorySpec.hpp"
-#include "HybridLiveOverlayOutputSpec.hpp"
 #include "LiveOverlayRecordingResult.hpp"
-#include "Size.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/PromiseHolder.hpp>
 #include <NitroModules/Result.hpp>
@@ -47,6 +39,18 @@ namespace WhatzItLiveOverlay { class HybridLiveOverlayOutputSpec_cxx; }
  * as well as helper functions to interact with those C++ types from Swift.
  */
 namespace margelo::nitro::whatzit::liveoverlay::bridge::swift {
+
+  // pragma MARK: std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>
+  /**
+   * Specialized version of `std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>`.
+   */
+  using std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ = std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>;
+  std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec> create_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(void* NON_NULL swiftUnsafePointer) noexcept;
+  void* NON_NULL get_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ cppType);
+
+  // pragma MARK: std::weak_ptr<margelo::nitro::camera::HybridCameraOutputSpec>
+  using std__weak_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ = std::weak_ptr<margelo::nitro::camera::HybridCameraOutputSpec>;
+  inline std__weak_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ weakify_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(const std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>& strong) noexcept { return strong; }
 
   // pragma MARK: std::shared_ptr<Promise<void>>
   /**
@@ -168,47 +172,26 @@ namespace margelo::nitro::whatzit::liveoverlay::bridge::swift {
     return Func_void_LiveOverlayRecordingResult_Wrapper(std::move(value));
   }
 
-  // pragma MARK: std::optional<Size>
+  // pragma MARK: std::shared_ptr<HybridLiveOverlayOutputFactorySpec>
   /**
-   * Specialized version of `std::optional<Size>`.
+   * Specialized version of `std::shared_ptr<HybridLiveOverlayOutputFactorySpec>`.
    */
-  using std__optional_Size_ = std::optional<Size>;
-  inline std::optional<Size> create_std__optional_Size_(const Size& value) noexcept {
-    return std::optional<Size>(value);
+  using std__shared_ptr_HybridLiveOverlayOutputFactorySpec_ = std::shared_ptr<HybridLiveOverlayOutputFactorySpec>;
+  std::shared_ptr<HybridLiveOverlayOutputFactorySpec> create_std__shared_ptr_HybridLiveOverlayOutputFactorySpec_(void* NON_NULL swiftUnsafePointer) noexcept;
+  void* NON_NULL get_std__shared_ptr_HybridLiveOverlayOutputFactorySpec_(std__shared_ptr_HybridLiveOverlayOutputFactorySpec_ cppType);
+
+  // pragma MARK: std::weak_ptr<HybridLiveOverlayOutputFactorySpec>
+  using std__weak_ptr_HybridLiveOverlayOutputFactorySpec_ = std::weak_ptr<HybridLiveOverlayOutputFactorySpec>;
+  inline std__weak_ptr_HybridLiveOverlayOutputFactorySpec_ weakify_std__shared_ptr_HybridLiveOverlayOutputFactorySpec_(const std::shared_ptr<HybridLiveOverlayOutputFactorySpec>& strong) noexcept { return strong; }
+
+  // pragma MARK: Result<std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>>
+  using Result_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec__ = Result<std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>>;
+  inline Result_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec__ create_Result_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec__(const std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>& value) noexcept {
+    return Result<std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>>::withValue(value);
   }
-  inline bool has_value_std__optional_Size_(const std::optional<Size>& optional) noexcept {
-    return optional.has_value();
+  inline Result_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec__ create_Result_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec__(const std::exception_ptr& error) noexcept {
+    return Result<std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>>::withError(error);
   }
-  inline Size get_std__optional_Size_(const std::optional<Size>& optional) noexcept {
-    return optional.value();
-  }
-
-  // pragma MARK: std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>
-  /**
-   * Specialized version of `std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>`.
-   */
-  using std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ = std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>;
-  std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec> create_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(void* NON_NULL swiftUnsafePointer) noexcept;
-  void* NON_NULL get_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ cppType);
-
-  // pragma MARK: std::weak_ptr<margelo::nitro::camera::HybridCameraOutputSpec>
-  using std__weak_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ = std::weak_ptr<margelo::nitro::camera::HybridCameraOutputSpec>;
-  inline std__weak_ptr_margelo__nitro__camera__HybridCameraOutputSpec_ weakify_std__shared_ptr_margelo__nitro__camera__HybridCameraOutputSpec_(const std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>& strong) noexcept { return strong; }
-
-  // pragma MARK: std::shared_ptr<HybridLiveOverlayOutputSpec>
-  /**
-   * Specialized version of `std::shared_ptr<HybridLiveOverlayOutputSpec>`.
-   */
-  using std__shared_ptr_HybridLiveOverlayOutputSpec_ = std::shared_ptr<HybridLiveOverlayOutputSpec>;
-  std::shared_ptr<HybridLiveOverlayOutputSpec> create_std__shared_ptr_HybridLiveOverlayOutputSpec_(void* NON_NULL swiftUnsafePointer) noexcept;
-  void* NON_NULL get_std__shared_ptr_HybridLiveOverlayOutputSpec_(std__shared_ptr_HybridLiveOverlayOutputSpec_ cppType);
-
-  // pragma MARK: std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec>
-  inline std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec> upcast_LiveOverlayOutput_to_CameraOutput(std::shared_ptr<HybridLiveOverlayOutputSpec> child) noexcept { return child; }
-
-  // pragma MARK: std::weak_ptr<HybridLiveOverlayOutputSpec>
-  using std__weak_ptr_HybridLiveOverlayOutputSpec_ = std::weak_ptr<HybridLiveOverlayOutputSpec>;
-  inline std__weak_ptr_HybridLiveOverlayOutputSpec_ weakify_std__shared_ptr_HybridLiveOverlayOutputSpec_(const std::shared_ptr<HybridLiveOverlayOutputSpec>& strong) noexcept { return strong; }
 
   // pragma MARK: Result<std::shared_ptr<Promise<void>>>
   using Result_std__shared_ptr_Promise_void___ = Result<std::shared_ptr<Promise<void>>>;
@@ -235,27 +218,6 @@ namespace margelo::nitro::whatzit::liveoverlay::bridge::swift {
   }
   inline Result_std__shared_ptr_Promise_LiveOverlayRecordingResult___ create_Result_std__shared_ptr_Promise_LiveOverlayRecordingResult___(const std::exception_ptr& error) noexcept {
     return Result<std::shared_ptr<Promise<LiveOverlayRecordingResult>>>::withError(error);
-  }
-
-  // pragma MARK: std::shared_ptr<HybridLiveOverlayOutputFactorySpec>
-  /**
-   * Specialized version of `std::shared_ptr<HybridLiveOverlayOutputFactorySpec>`.
-   */
-  using std__shared_ptr_HybridLiveOverlayOutputFactorySpec_ = std::shared_ptr<HybridLiveOverlayOutputFactorySpec>;
-  std::shared_ptr<HybridLiveOverlayOutputFactorySpec> create_std__shared_ptr_HybridLiveOverlayOutputFactorySpec_(void* NON_NULL swiftUnsafePointer) noexcept;
-  void* NON_NULL get_std__shared_ptr_HybridLiveOverlayOutputFactorySpec_(std__shared_ptr_HybridLiveOverlayOutputFactorySpec_ cppType);
-
-  // pragma MARK: std::weak_ptr<HybridLiveOverlayOutputFactorySpec>
-  using std__weak_ptr_HybridLiveOverlayOutputFactorySpec_ = std::weak_ptr<HybridLiveOverlayOutputFactorySpec>;
-  inline std__weak_ptr_HybridLiveOverlayOutputFactorySpec_ weakify_std__shared_ptr_HybridLiveOverlayOutputFactorySpec_(const std::shared_ptr<HybridLiveOverlayOutputFactorySpec>& strong) noexcept { return strong; }
-
-  // pragma MARK: Result<std::shared_ptr<HybridLiveOverlayOutputSpec>>
-  using Result_std__shared_ptr_HybridLiveOverlayOutputSpec__ = Result<std::shared_ptr<HybridLiveOverlayOutputSpec>>;
-  inline Result_std__shared_ptr_HybridLiveOverlayOutputSpec__ create_Result_std__shared_ptr_HybridLiveOverlayOutputSpec__(const std::shared_ptr<HybridLiveOverlayOutputSpec>& value) noexcept {
-    return Result<std::shared_ptr<HybridLiveOverlayOutputSpec>>::withValue(value);
-  }
-  inline Result_std__shared_ptr_HybridLiveOverlayOutputSpec__ create_Result_std__shared_ptr_HybridLiveOverlayOutputSpec__(const std::exception_ptr& error) noexcept {
-    return Result<std::shared_ptr<HybridLiveOverlayOutputSpec>>::withError(error);
   }
 
 } // namespace margelo::nitro::whatzit::liveoverlay::bridge::swift

@@ -7,7 +7,7 @@ import Metal
 import NitroModules
 import VisionCamera
 
-final class HybridLiveOverlayOutput: HybridLiveOverlayOutputSpec, NativeCameraOutput,
+final class HybridLiveOverlayOutput: HybridCameraOutputSpec, NativeCameraOutput,
   AVCaptureVideoDataOutputSampleBufferDelegate
 {
   let mediaType: MediaType = .video

@@ -13,11 +13,20 @@
 #error NitroModules cannot be found! Are you sure you installed NitroModules properly?
 #endif
 
-// Forward declaration of `HybridLiveOverlayOutputSpec` to properly resolve imports.
-namespace margelo::nitro::whatzit::liveoverlay { class HybridLiveOverlayOutputSpec; }
+// Forward declaration of `HybridCameraOutputSpec` to properly resolve imports.
+namespace margelo::nitro::camera { class HybridCameraOutputSpec; }
+// Forward declaration of `LiveOverlayEvent` to properly resolve imports.
+namespace margelo::nitro::whatzit::liveoverlay { struct LiveOverlayEvent; }
+// Forward declaration of `LiveOverlayRecordingResult` to properly resolve imports.
+namespace margelo::nitro::whatzit::liveoverlay { struct LiveOverlayRecordingResult; }
 
 #include <memory>
-#include "HybridLiveOverlayOutputSpec.hpp"
+#include <VisionCamera/HybridCameraOutputSpec.hpp>
+#include <NitroModules/Promise.hpp>
+#include <string>
+#include <optional>
+#include "LiveOverlayEvent.hpp"
+#include "LiveOverlayRecordingResult.hpp"
 
 namespace margelo::nitro::whatzit::liveoverlay {
 
@@ -46,11 +55,15 @@ namespace margelo::nitro::whatzit::liveoverlay {
 
     public:
       // Properties
-
+      virtual bool getIsRecording() = 0;
 
     public:
       // Methods
-      virtual std::shared_ptr<HybridLiveOverlayOutputSpec> createLiveOverlayOutput() = 0;
+      virtual std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec> createLiveOverlayOutput() = 0;
+      virtual std::shared_ptr<Promise<void>> startRecording(const std::optional<std::string>& headshotPath, const std::optional<std::string>& wordmarkPath) = 0;
+      virtual void appendOverlayEvent(const LiveOverlayEvent& event) = 0;
+      virtual std::shared_ptr<Promise<LiveOverlayRecordingResult>> stopRecording() = 0;
+      virtual std::shared_ptr<Promise<void>> cancelRecording() = 0;
 
     protected:
       // Hybrid Setup

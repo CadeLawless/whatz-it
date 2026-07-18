@@ -12,11 +12,20 @@
 // Forward declaration of `HybridLiveOverlayOutputFactorySpec_cxx` to properly resolve imports.
 namespace WhatzItLiveOverlay { class HybridLiveOverlayOutputFactorySpec_cxx; }
 
-// Forward declaration of `HybridLiveOverlayOutputSpec` to properly resolve imports.
-namespace margelo::nitro::whatzit::liveoverlay { class HybridLiveOverlayOutputSpec; }
+// Forward declaration of `HybridCameraOutputSpec` to properly resolve imports.
+namespace margelo::nitro::camera { class HybridCameraOutputSpec; }
+// Forward declaration of `LiveOverlayEvent` to properly resolve imports.
+namespace margelo::nitro::whatzit::liveoverlay { struct LiveOverlayEvent; }
+// Forward declaration of `LiveOverlayRecordingResult` to properly resolve imports.
+namespace margelo::nitro::whatzit::liveoverlay { struct LiveOverlayRecordingResult; }
 
 #include <memory>
-#include "HybridLiveOverlayOutputSpec.hpp"
+#include <VisionCamera/HybridCameraOutputSpec.hpp>
+#include <NitroModules/Promise.hpp>
+#include <string>
+#include <optional>
+#include "LiveOverlayEvent.hpp"
+#include "LiveOverlayRecordingResult.hpp"
 
 #include "WhatzItLiveOverlay-Swift-Cxx-Umbrella.hpp"
 
@@ -64,12 +73,44 @@ namespace margelo::nitro::whatzit::liveoverlay {
 
   public:
     // Properties
-
+    inline bool getIsRecording() noexcept override {
+      return _swiftPart.isRecording();
+    }
 
   public:
     // Methods
-    inline std::shared_ptr<HybridLiveOverlayOutputSpec> createLiveOverlayOutput() override {
+    inline std::shared_ptr<margelo::nitro::camera::HybridCameraOutputSpec> createLiveOverlayOutput() override {
       auto __result = _swiftPart.createLiveOverlayOutput();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline std::shared_ptr<Promise<void>> startRecording(const std::optional<std::string>& headshotPath, const std::optional<std::string>& wordmarkPath) override {
+      auto __result = _swiftPart.startRecording(headshotPath, wordmarkPath);
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline void appendOverlayEvent(const LiveOverlayEvent& event) override {
+      auto __result = _swiftPart.appendOverlayEvent(std::forward<decltype(event)>(event));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline std::shared_ptr<Promise<LiveOverlayRecordingResult>> stopRecording() override {
+      auto __result = _swiftPart.stopRecording();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline std::shared_ptr<Promise<void>> cancelRecording() override {
+      auto __result = _swiftPart.cancelRecording();
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }

@@ -109,7 +109,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       // The live path replaces the normal iOS recorder. Attaching both outputs
       // makes the camera encode two 720p streams and was the main source of
       // stalls in the first prototype.
-      () => (liveOverlayOutput ? [liveOverlayOutput] : [videoOutput]),
+      () => (liveOverlayOutput ? [liveOverlayOutput.cameraOutput] : [videoOutput]),
       [liveOverlayOutput, videoOutput],
     );
     const recorderRef = useRef<Recorder | null>(null);
