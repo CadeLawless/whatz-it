@@ -48,6 +48,7 @@ const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
   correct: 0.4,
   flip: 0.7,
   'round-start': 0.65,
+  'final-tick': 0.8,
 };
 
 export function getRoundSoundSource(sound: RoundSoundId) {
