@@ -87,7 +87,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      22
+      23
     }
 
     Function("getSystemOutputVolume") {
@@ -800,9 +800,14 @@ public final class WhatzItVideoExportModule: Module {
     let outputUrl = FileManager.default.temporaryDirectory
       .appendingPathComponent("whatz-it-stitched-\(UUID().uuidString).mp4")
     let presets = AVAssetExportSession.exportPresets(compatibleWith: composition)
-    let preset = presets.contains(AVAssetExportPresetHighestQuality)
-      ? AVAssetExportPresetHighestQuality
-      : AVAssetExportPresetPassthrough
+    let preset: String
+    if presets.contains(AVAssetExportPresetPassthrough) {
+      preset = AVAssetExportPresetPassthrough
+    } else if presets.contains(AVAssetExportPreset1280x720) {
+      preset = AVAssetExportPreset1280x720
+    } else {
+      preset = AVAssetExportPresetHighestQuality
+    }
     guard let exporter = AVAssetExportSession(asset: composition, presetName: preset) else {
       throw VideoExportError.cannotCreateExporter
     }
@@ -884,6 +889,40 @@ public final class WhatzItVideoExportModule: Module {
       at: .zero
     )
 
+    let audioAsset: AVAsset?
+    if let audioUrl {
+      let microphoneAsset = AVURLAsset(url: audioUrl)
+      let microphoneTracks = try await microphoneAsset.loadTracks(withMediaType: .audio)
+      guard !microphoneTracks.isEmpty else {
+        throw VideoExportError.missingAudioTrack
+      }
+      audioAsset = microphoneAsset
+    } else {
+      let embeddedAudioTracks = try await sourceAsset.loadTracks(withMediaType: .audio)
+      audioAsset = embeddedAudioTracks.isEmpty ? nil : sourceAsset
+    }
+    if let audioAsset {
+      guard let sourceAudioTrack = try await audioAsset
+        .loadTracks(withMediaType: .audio)
+        .first,
+        let compositionAudioTrack = videoCompositionAsset.addMutableTrack(
+          withMediaType: .audio,
+          preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+        throw VideoExportError.missingAudioTrack
+      }
+      let sourceAudioRange = try await sourceAudioTrack.load(.timeRange)
+      let audioDuration = CMTimeMinimum(duration, sourceAudioRange.duration)
+      guard audioDuration.isValid, audioDuration > .zero else {
+        throw VideoExportError.missingAudioTrack
+      }
+      try compositionAudioTrack.insertTimeRange(
+        CMTimeRange(start: sourceAudioRange.start, duration: audioDuration),
+        of: sourceAudioTrack,
+        at: .zero
+      )
+    }
+
     let naturalSize = try await sourceVideoTrack.load(.naturalSize)
     let preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
     let transformedRect = CGRect(origin: .zero, size: naturalSize).applying(preferredTransform)
@@ -911,63 +950,34 @@ public final class WhatzItVideoExportModule: Module {
     )
 
     let compatiblePresets = AVAssetExportSession.exportPresets(compatibleWith: videoCompositionAsset)
-    let preset = compatiblePresets.contains(AVAssetExportPresetHighestQuality)
-      ? AVAssetExportPresetHighestQuality
-      : AVAssetExportPreset1280x720
+    let preset = compatiblePresets.contains(AVAssetExportPreset1280x720)
+      ? AVAssetExportPreset1280x720
+      : AVAssetExportPresetHighestQuality
     guard let videoExporter = AVAssetExportSession(
       asset: videoCompositionAsset,
       presetName: preset
     ) else {
       throw VideoExportError.cannotCreateExporter
     }
-    let renderedVideoUrl = FileManager.default.temporaryDirectory
-      .appendingPathComponent("whatz-it-rendered-video-\(UUID().uuidString).mp4")
-    defer { try? FileManager.default.removeItem(at: renderedVideoUrl) }
-
-    videoExporter.outputURL = renderedVideoUrl
+    videoExporter.outputURL = outputUrl
     videoExporter.outputFileType = .mp4
     videoExporter.shouldOptimizeForNetworkUse = false
-    videoExporter.canPerformMultiplePassesOverSourceMediaData = true
+    videoExporter.canPerformMultiplePassesOverSourceMediaData = false
     videoExporter.videoComposition = videoComposition
     let overlayRenderStartedAt = Date()
     NSLog(
-      "[RoundVideoNative] Overlay render started preset=%@ renderWidth=%.0f renderHeight=%.0f durationMs=%.0f multiPass=true",
+      "[RoundVideoNative] Overlay render started preset=%@ renderWidth=%.0f renderHeight=%.0f durationMs=%.0f multiPass=false hasAudio=%@",
       preset,
       renderSize.width,
       renderSize.height,
-      duration.seconds * 1_000
+      duration.seconds * 1_000,
+      audioAsset == nil ? "false" : "true"
     )
     try await run(videoExporter)
     NSLog(
       "[RoundVideoNative] Overlay render completed output=%@ elapsedMs=%.0f outputBytes=%lld",
-      renderedVideoUrl.lastPathComponent,
+      outputUrl.lastPathComponent,
       Date().timeIntervalSince(overlayRenderStartedAt) * 1_000,
-      Self.fileSize(at: renderedVideoUrl)
-    )
-
-    let audioAsset: AVAsset?
-    if let audioUrl {
-      let microphoneAsset = AVURLAsset(url: audioUrl)
-      let microphoneTracks = try await microphoneAsset.loadTracks(withMediaType: .audio)
-      guard !microphoneTracks.isEmpty else {
-        throw VideoExportError.missingAudioTrack
-      }
-      audioAsset = microphoneAsset
-    } else {
-      let embeddedAudioTracks = try await sourceAsset.loadTracks(withMediaType: .audio)
-      audioAsset = embeddedAudioTracks.isEmpty ? nil : sourceAsset
-    }
-
-    let muxStartedAt = Date()
-    NSLog("[RoundVideoNative] Overlay audio mux started hasAudio=%@", audioAsset == nil ? "false" : "true")
-    try await muxRenderedVideo(
-      renderedVideoUrl: renderedVideoUrl,
-      audioAsset: audioAsset,
-      outputUrl: outputUrl
-    )
-    NSLog(
-      "[RoundVideoNative] Overlay audio mux completed elapsedMs=%.0f outputBytes=%lld",
-      Date().timeIntervalSince(muxStartedAt) * 1_000,
       Self.fileSize(at: outputUrl)
     )
 
@@ -993,67 +1003,6 @@ public final class WhatzItVideoExportModule: Module {
   private static func fileSize(at url: URL) -> Int64 {
     let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
     return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-  }
-
-  private static func muxRenderedVideo(
-    renderedVideoUrl: URL,
-    audioAsset: AVAsset?,
-    outputUrl: URL
-  ) async throws {
-    let renderedAsset = AVURLAsset(url: renderedVideoUrl)
-    guard let renderedVideoTrack = try await renderedAsset
-      .loadTracks(withMediaType: .video)
-      .first else {
-      throw VideoExportError.missingVideoTrack
-    }
-    let renderedDuration = try await renderedAsset.load(.duration)
-    let composition = AVMutableComposition()
-    guard let finalVideoTrack = composition.addMutableTrack(
-      withMediaType: .video,
-      preferredTrackID: kCMPersistentTrackID_Invalid
-    ) else {
-      throw VideoExportError.missingVideoTrack
-    }
-    try finalVideoTrack.insertTimeRange(
-      CMTimeRange(start: .zero, duration: renderedDuration),
-      of: renderedVideoTrack,
-      at: .zero
-    )
-    finalVideoTrack.preferredTransform = try await renderedVideoTrack.load(.preferredTransform)
-
-    if let audioAsset {
-      guard let sourceAudioTrack = try await audioAsset
-        .loadTracks(withMediaType: .audio)
-        .first,
-        let finalAudioTrack = composition.addMutableTrack(
-          withMediaType: .audio,
-          preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else {
-        throw VideoExportError.missingAudioTrack
-      }
-      let sourceAudioRange = try await sourceAudioTrack.load(.timeRange)
-      let audioDuration = CMTimeMinimum(renderedDuration, sourceAudioRange.duration)
-      guard audioDuration.isValid, audioDuration > .zero else {
-        throw VideoExportError.missingAudioTrack
-      }
-      try finalAudioTrack.insertTimeRange(
-        CMTimeRange(start: sourceAudioRange.start, duration: audioDuration),
-        of: sourceAudioTrack,
-        at: .zero
-      )
-    }
-
-    let compatiblePresets = AVAssetExportSession.exportPresets(compatibleWith: composition)
-    let preset = compatiblePresets.contains(AVAssetExportPresetPassthrough)
-      ? AVAssetExportPresetPassthrough
-      : AVAssetExportPresetHighestQuality
-    guard let exporter = AVAssetExportSession(asset: composition, presetName: preset) else {
-      throw VideoExportError.cannotCreateExporter
-    }
-    exporter.outputURL = outputUrl
-    exporter.outputFileType = .mp4
-    exporter.shouldOptimizeForNetworkUse = false
-    try await run(exporter)
   }
 
   private static func run(_ exporter: AVAssetExportSession) async throws {

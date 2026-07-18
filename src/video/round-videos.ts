@@ -138,12 +138,14 @@ export async function storeRoundVideo(
   const createdAt = Date.now();
   const id = `${createdAt}-${Math.random().toString(36).slice(2, 8)}`;
   const destination = new File(videoDirectory, `${id}.${readExtension(temporaryUri)}`);
-  const videoCopyStartedAt = Date.now();
-  await new File(temporaryUri).copy(destination);
-  logVideoDiagnostic('round source video copied to persistent storage', {
+  const sourceVideo = new File(temporaryUri);
+  const sourceVideoSize = sourceVideo.size;
+  const videoMoveStartedAt = Date.now();
+  await sourceVideo.move(destination);
+  logVideoDiagnostic('round source video moved to persistent storage', {
     diagnosticId,
-    elapsedMs: Date.now() - videoCopyStartedAt,
-    sourceSize: new File(temporaryUri).size,
+    elapsedMs: Date.now() - videoMoveStartedAt,
+    sourceSize: sourceVideoSize,
     destinationSize: destination.size,
   });
 
@@ -153,12 +155,14 @@ export async function storeRoundVideo(
       videoDirectory,
       `${id}-audio.${readExtension(temporaryAudioUri)}`,
     );
-    const audioCopyStartedAt = Date.now();
-    await new File(temporaryAudioUri).copy(audioDestination);
-    logVideoDiagnostic('round audio copied to persistent storage', {
+    const sourceAudio = new File(temporaryAudioUri);
+    const sourceAudioSize = sourceAudio.size;
+    const audioMoveStartedAt = Date.now();
+    await sourceAudio.move(audioDestination);
+    logVideoDiagnostic('round audio moved to persistent storage', {
       diagnosticId,
-      elapsedMs: Date.now() - audioCopyStartedAt,
-      sourceSize: new File(temporaryAudioUri).size,
+      elapsedMs: Date.now() - audioMoveStartedAt,
+      sourceSize: sourceAudioSize,
       destinationSize: audioDestination.size,
     });
     audioUri = audioDestination.uri;
@@ -169,11 +173,11 @@ export async function storeRoundVideo(
     audioDestinationSize: audioUri ? new File(audioUri).size : 0,
     audioUri,
     diagnosticId,
-    sourceAudioExists: temporaryAudioUri ? new File(temporaryAudioUri).exists : false,
-    sourceAudioSize: temporaryAudioUri ? new File(temporaryAudioUri).size : 0,
+    sourceAudioExistsAfterMove: temporaryAudioUri ? new File(temporaryAudioUri).exists : false,
     sourceAudioUri: temporaryAudioUri,
     videoDestinationExists: destination.exists,
     videoDestinationSize: destination.size,
+    sourceVideoExistsAfterMove: new File(temporaryUri).exists,
     videoUri: destination.uri,
     totalElapsedMs: Date.now() - persistenceStartedAt,
   });
@@ -250,8 +254,10 @@ export async function saveRoundVideoToDevice(video: RoundVideo) {
   if (!saveUri) throw new Error('This video is still being prepared.');
   const { File } = await import('expo-file-system');
   const saveFile = new File(saveUri);
-  const saveAudioTrackCount = await inspectVideoAudioTrackCount(saveUri);
   const nativeAudioValidated = await usesReliableNativeAudioValidation();
+  const saveAudioTrackCount = nativeAudioValidated
+    ? null
+    : await inspectVideoAudioTrackCount(saveUri);
   logVideoDiagnostic('media library save started', {
     audioUri: video.audioUri,
     exportIncludesOverlays: video.exportIncludesOverlays,
@@ -366,15 +372,18 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
     videoDirectory.create({ idempotent: true, intermediates: true });
     const destination = new File(videoDirectory, `${video.id}-export.mp4`);
     if (destination.exists) destination.delete();
-    const exportCopyStartedAt = Date.now();
-    await new File(temporaryExportUri).copy(destination);
-    logVideoDiagnostic('native export copied to persistent storage', {
+    const temporaryExport = new File(temporaryExportUri);
+    const exportMoveStartedAt = Date.now();
+    await temporaryExport.move(destination);
+    logVideoDiagnostic('native export moved to persistent storage', {
       destinationSize: destination.size,
-      elapsedMs: Date.now() - exportCopyStartedAt,
+      elapsedMs: Date.now() - exportMoveStartedAt,
       videoId: video.id,
     });
     const audioInspectionStartedAt = Date.now();
-    const exportedAudioTrackCount = await inspectVideoAudioTrackCount(destination.uri);
+    const exportedAudioTrackCount = nativeAudioValidated
+      ? null
+      : await inspectVideoAudioTrackCount(destination.uri);
     logVideoDiagnostic('native export completed', {
       destinationExists: destination.exists,
       destinationSize: destination.size,
@@ -423,7 +432,14 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
   }
 }
 
-async function loadExportBrandingUris() {
+let exportBrandingUrisPromise: ReturnType<typeof resolveExportBrandingUris> | null = null;
+
+function loadExportBrandingUris() {
+  exportBrandingUrisPromise ??= resolveExportBrandingUris();
+  return exportBrandingUrisPromise;
+}
+
+async function resolveExportBrandingUris() {
   try {
     const { Asset } = await import('expo-asset');
     const [headshot, wordmark] = await Asset.loadAsync([

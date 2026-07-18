@@ -3,6 +3,7 @@ import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import {
   Camera,
+  CommonResolutions,
   type Recorder,
   VisionCamera,
   useCameraDevice,
@@ -76,6 +77,9 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
     const device = useCameraDevice('front');
     const microphoneRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
     const videoOutput = useVideoOutput({
+      // The saved round is rendered at 720p. Capturing at the same resolution
+      // avoids making the exporter decode and scale 1080p frames first.
+      targetResolution: CommonResolutions.HD_16_9,
       // iOS microphone audio is recorded independently by expo-audio.
       // This avoids VisionCamera's intermittently missing iOS audio track.
       enableAudio: microphoneEnabled && Platform.OS !== 'ios',
