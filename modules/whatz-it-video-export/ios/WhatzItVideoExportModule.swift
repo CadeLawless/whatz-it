@@ -87,7 +87,7 @@ public final class WhatzItVideoExportModule: Module {
     Name("WhatzItVideoExport")
 
     Constant("overlayExportVersion") {
-      24
+      23
     }
 
     Function("getSystemOutputVolume") {
@@ -151,11 +151,6 @@ public final class WhatzItVideoExportModule: Module {
     AsyncFunction("stitchRoundVideoSegments") {
       (segments: [RoundVideoSegmentRecord]) async throws -> String in
       try await Self.stitchRoundVideoSegments(segments)
-    }
-
-    AsyncFunction("muxLiveOverlayVideo") {
-      (videoUrl: URL, audioUrl: URL?) async throws -> String in
-      try await Self.muxLiveOverlayVideo(videoUrl: videoUrl, audioUrl: audioUrl)
     }
 
     AsyncFunction("prepareRecordingAudio") { () throws in
@@ -824,92 +819,6 @@ public final class WhatzItVideoExportModule: Module {
       NSLog(
         "[RoundVideoNative] Segment stitch completed segmentCount=%ld elapsedMs=%.0f outputBytes=%lld output=%@",
         segments.count,
-        Date().timeIntervalSince(operationStartedAt) * 1_000,
-        Self.fileSize(at: outputUrl),
-        outputUrl.lastPathComponent
-      )
-      return outputUrl.absoluteString
-    } catch {
-      try? FileManager.default.removeItem(at: outputUrl)
-      throw error
-    }
-  }
-
-  private static func muxLiveOverlayVideo(videoUrl: URL, audioUrl: URL?) async throws -> String {
-    let operationStartedAt = Date()
-    let videoAsset = AVURLAsset(url: videoUrl)
-    guard let sourceVideoTrack = try await videoAsset.loadTracks(withMediaType: .video).first else {
-      throw VideoExportError.missingVideoTrack
-    }
-    let videoRange = try await sourceVideoTrack.load(.timeRange)
-    guard videoRange.duration.isValid, videoRange.duration > .zero else {
-      throw VideoExportError.missingVideoTrack
-    }
-
-    let composition = AVMutableComposition()
-    guard let outputVideoTrack = composition.addMutableTrack(
-      withMediaType: .video,
-      preferredTrackID: kCMPersistentTrackID_Invalid
-    ) else {
-      throw VideoExportError.missingVideoTrack
-    }
-    try outputVideoTrack.insertTimeRange(videoRange, of: sourceVideoTrack, at: .zero)
-    outputVideoTrack.preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
-
-    if let audioUrl {
-      let audioAsset = AVURLAsset(url: audioUrl)
-      guard
-        let sourceAudioTrack = try await audioAsset.loadTracks(withMediaType: .audio).first,
-        let outputAudioTrack = composition.addMutableTrack(
-          withMediaType: .audio,
-          preferredTrackID: kCMPersistentTrackID_Invalid
-        )
-      else {
-        throw VideoExportError.missingAudioTrack
-      }
-      let audioRange = try await sourceAudioTrack.load(.timeRange)
-      let audioDuration = CMTimeMinimum(videoRange.duration, audioRange.duration)
-      guard audioDuration.isValid, audioDuration > .zero else {
-        throw VideoExportError.missingAudioTrack
-      }
-      try outputAudioTrack.insertTimeRange(
-        CMTimeRange(start: audioRange.start, duration: audioDuration),
-        of: sourceAudioTrack,
-        at: .zero
-      )
-    }
-
-    let outputUrl = FileManager.default.temporaryDirectory
-      .appendingPathComponent("whatz-it-live-ready-\(UUID().uuidString).mp4")
-    guard let exporter = AVAssetExportSession(
-      asset: composition,
-      presetName: AVAssetExportPresetPassthrough
-    ) else {
-      throw VideoExportError.cannotCreateExporter
-    }
-    exporter.outputURL = outputUrl
-    exporter.outputFileType = .mp4
-    exporter.shouldOptimizeForNetworkUse = false
-    do {
-      NSLog(
-        "[RoundVideoNative] Live overlay mux started video=%@ audio=%@ durationMs=%.0f",
-        videoUrl.lastPathComponent,
-        audioUrl?.lastPathComponent ?? "none",
-        videoRange.duration.seconds * 1_000
-      )
-      try await run(exporter)
-      let finishedAsset = AVURLAsset(url: outputUrl)
-      guard !(try await finishedAsset.loadTracks(withMediaType: .video)).isEmpty else {
-        throw VideoExportError.missingVideoTrack
-      }
-      if audioUrl != nil {
-        let finishedAudioTracks = try await finishedAsset.loadTracks(withMediaType: .audio)
-        if finishedAudioTracks.isEmpty {
-          throw VideoExportError.missingExportedAudioTrack
-        }
-      }
-      NSLog(
-        "[RoundVideoNative] Live overlay mux completed elapsedMs=%.0f outputBytes=%lld output=%@",
         Date().timeIntervalSince(operationStartedAt) * 1_000,
         Self.fileSize(at: outputUrl),
         outputUrl.lastPathComponent

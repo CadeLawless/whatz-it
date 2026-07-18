@@ -41,7 +41,6 @@
     "react-native-vision-camera": "^5.1.0",
     "react-native-web": "~0.21.0",
     "react-native-worklets": "0.10.0",
-    "whatz-it-live-overlay": "file:modules/whatz-it-live-overlay",
     "whatz-it-video-export": "file:modules/whatz-it-video-export"
   },
   "devDependencies": {

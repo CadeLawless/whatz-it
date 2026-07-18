@@ -106,9 +106,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       previous.text === event.text &&
       previous.byline === event.byline
     ) return;
-    const timedEvent = { ...event, atMs };
-    recordingEvents.current.push(timedEvent);
-    cameraRef.current?.recordOverlayEvent(timedEvent);
+    recordingEvents.current.push({ ...event, atMs });
   }, []);
 
   const getRecordingTimerEndsAtMs = useCallback((endsAt: number | null) => {
@@ -410,7 +408,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
         });
 
         segments.forEach(({ capture }) => {
-          temporaryUris.push(capture.videoUri, capture.microphoneUri, capture.liveOverlay?.uri);
+          temporaryUris.push(capture.videoUri, capture.microphoneUri);
         });
         // Match the known-good Wednesday behavior: the microphone naturally
         // captures the audible game sounds, so use it directly and never mix
@@ -422,7 +420,6 @@ export function RoundProvider({ children }: PropsWithChildren) {
 
         let videoUri = preparedSegments[0].videoUri;
         let audioUri = preparedSegments[0].audioUri ?? undefined;
-        let readyExportUri: string | undefined;
         if (preparedSegments.length > 1) {
           const { stitchRoundVideoSegments } = await import('whatz-it-video-export');
           const stitchStartedAt = Date.now();
@@ -440,41 +437,6 @@ export function RoundProvider({ children }: PropsWithChildren) {
             finalizationId,
             videoUri,
           });
-        }
-
-        if (segments.length === 1 && segments[0].capture.liveOverlay) {
-          const liveOverlay = segments[0].capture.liveOverlay;
-          const validation = validateLiveOverlayCapture(liveOverlay, segments[0].durationMs);
-          logVideoDiagnostic('live overlay capture validated', {
-            ...validation,
-            ...liveOverlay,
-            finalizationId,
-          });
-          if (validation.accepted) {
-            try {
-              const { muxLiveOverlayVideo, supportsLiveOverlayMux } = await import(
-                'whatz-it-video-export'
-              );
-              if (!supportsLiveOverlayMux()) {
-                throw new Error('The installed native exporter does not support live-overlay muxing.');
-              }
-              const muxStartedAt = Date.now();
-              readyExportUri = await muxLiveOverlayVideo(liveOverlay.uri, audioUri ?? null);
-              temporaryUris.push(readyExportUri);
-              logVideoDiagnostic('live overlay fast export completed', {
-                elapsedMs: Date.now() - muxStartedAt,
-                finalizationId,
-                readyExportUri,
-              });
-            } catch (error) {
-              readyExportUri = undefined;
-              warnVideoDiagnostic(
-                'live overlay fast export failed; standard export remains available',
-                error,
-                { finalizationId },
-              );
-            }
-          }
         }
 
         let offsetMs = 0;
@@ -498,14 +460,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
           hasSeparateAudio: !!audioUri,
           segmentCount: segments.length,
         });
-        const video = await storeRoundVideo(
-          videoUri,
-          audioUri,
-          deckId,
-          events,
-          finalizationId,
-          readyExportUri,
-        );
+        const video = await storeRoundVideo(videoUri, audioUri, deckId, events, finalizationId);
         setCurrentVideo(video);
         setIsVideoFinalizing(false);
         logVideoDiagnostic('round video published to results screen', {
@@ -514,29 +469,21 @@ export function RoundProvider({ children }: PropsWithChildren) {
           totalElapsedMs: Date.now() - finalizationStartedAt,
           videoId: video.id,
         });
-        if (video.exportStatus !== 'ready') {
-          logVideoDiagnostic('round video background overlay export dispatched', {
-            finalizationId,
-            videoId: video.id,
-          });
-          void prepareRoundVideoExport(video).then((preparedVideo) => {
-            logVideoDiagnostic('round video background overlay export returned to context', {
-              exportStatus: preparedVideo.exportStatus,
-              finalizationId,
-              totalElapsedMs: Date.now() - finalizationStartedAt,
-              videoId: preparedVideo.id,
-            });
-            setCurrentVideo((activeVideo) =>
-              activeVideo?.id === preparedVideo.id ? preparedVideo : activeVideo,
-            );
-          });
-        } else {
-          logVideoDiagnostic('round video ready immediately from live overlay capture', {
+        logVideoDiagnostic('round video background overlay export dispatched', {
+          finalizationId,
+          videoId: video.id,
+        });
+        void prepareRoundVideoExport(video).then((preparedVideo) => {
+          logVideoDiagnostic('round video background overlay export returned to context', {
+            exportStatus: preparedVideo.exportStatus,
             finalizationId,
             totalElapsedMs: Date.now() - finalizationStartedAt,
-            videoId: video.id,
+            videoId: preparedVideo.id,
           });
-        }
+          setCurrentVideo((activeVideo) =>
+            activeVideo?.id === preparedVideo.id ? preparedVideo : activeVideo,
+          );
+        });
         return video;
       } catch (error) {
         warnVideoDiagnostic('round video storage failed', error, {
@@ -783,34 +730,6 @@ async function cleanupTemporaryFiles(uris: (string | undefined)[]) {
       // The persisted copy is already safe; temporary cleanup must not discard the result.
     }
   }
-}
-
-function validateLiveOverlayCapture(
-  capture: NonNullable<RoundCapture['liveOverlay']>,
-  expectedDurationMs: number,
-) {
-  const totalFrames = capture.encodedFrameCount + capture.droppedFrameCount;
-  const droppedFrameRatio = totalFrames > 0 ? capture.droppedFrameCount / totalFrames : 1;
-  const encodedFramesPerSecond = capture.durationMs > 0
-    ? capture.encodedFrameCount / (capture.durationMs / 1_000)
-    : 0;
-  const durationDeltaMs = Math.abs(capture.durationMs - expectedDurationMs);
-  const maximumDurationDeltaMs = Math.max(1_000, expectedDurationMs * 0.03);
-  const reasons: string[] = [];
-  if (capture.width < 700 || capture.height < 1_200 || capture.height <= capture.width) {
-    reasons.push('unexpected-resolution');
-  }
-  if (durationDeltaMs > maximumDurationDeltaMs) reasons.push('duration-mismatch');
-  if (encodedFramesPerSecond < 24) reasons.push('low-frame-rate');
-  if (droppedFrameRatio > 0.05) reasons.push('excessive-frame-drops');
-  return {
-    accepted: reasons.length === 0,
-    droppedFrameRatio,
-    durationDeltaMs,
-    encodedFramesPerSecond,
-    maximumDurationDeltaMs,
-    reasons,
-  };
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
