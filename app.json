@@ -3,7 +3,7 @@
     "name": "WHATZ IT",
     "slug": "whatz-it",
     "owner": "cades-team",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/images/whatz-it-app-icon.png",
     "scheme": "whatzit",
