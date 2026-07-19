@@ -27,7 +27,11 @@ import { LandscapeViewport } from '@/components/landscape-viewport';
 import { formatRoundClock } from '@/game/round-duration';
 import { colors, radius, spacing } from '@/theme';
 import type { RoundVideo, RoundVideoEvent } from '@/video/round-videos';
-import { logVideoDiagnostic } from '@/video/video-diagnostics';
+import {
+  flushRoundDiagnostics,
+  logVideoDiagnostic,
+  warnVideoDiagnostic,
+} from '@/video/video-diagnostics';
 
 export type VideoSaveNotice = {
   title: string;
@@ -104,6 +108,52 @@ export function RoundVideoPlayer({
     instance.muted = true;
     instance.timeUpdateEventInterval = 0.1;
     if (!staticThumbnail) instance.play();
+  });
+
+  useEffect(() => {
+    logVideoDiagnostic('player mounted', {
+      exportStatus: video.exportStatus,
+      hasSeparateAudio: !!separateAudioUri,
+      playbackIncludesOverlays: video.playbackIncludesOverlays ?? false,
+      staticThumbnail,
+      videoId: video.id,
+    });
+    return () => {
+      logVideoDiagnostic('player unmounted', {
+        expanded: expandedRef.current,
+        playerStatus: player.status,
+        videoId: video.id,
+      });
+      flushRoundDiagnostics();
+    };
+  }, [
+    player,
+    separateAudioUri,
+    staticThumbnail,
+    video.exportStatus,
+    video.id,
+    video.playbackIncludesOverlays,
+  ]);
+
+  useEventListener(player, 'statusChange', ({ error, oldStatus, status }) => {
+    const details = {
+      errorMessage: error?.message,
+      expanded: expandedRef.current,
+      oldStatus,
+      status,
+      videoId: video.id,
+    };
+    if (status === 'error') {
+      warnVideoDiagnostic(
+        'player status changed to error',
+        error?.message ?? 'Unknown player error',
+        details,
+      );
+      flushRoundDiagnostics();
+      return;
+    }
+    logVideoDiagnostic('player status changed', details);
+    if (status === 'readyToPlay') flushRoundDiagnostics();
   });
 
   useEventListener(player, 'timeUpdate', ({ currentTime: nextTime }) => {
@@ -192,6 +242,7 @@ export function RoundVideoPlayer({
       separateAudioUri,
       videoSource,
     });
+    flushRoundDiagnostics();
   });
 
   const event = useMemo(
@@ -266,30 +317,79 @@ export function RoundVideoPlayer({
   );
 
   const openExpanded = async () => {
-    expandedRef.current = true;
     const startTime = staticThumbnail ? 0 : player.currentTime;
-    if (staticThumbnail) {
-      player.pause();
-      seekVideoPlayer(player, 0);
-      setCurrentTime(0);
-    }
-    previousVideoTime.current = startTime;
-    setExpanded(true);
-    showControls();
-    await setPlaybackAudioMode().catch(() => undefined);
-    if (separateAudioUri) {
+    logVideoDiagnostic('expanded player open requested', {
+      hasSeparateAudio: !!separateAudioUri,
+      playerStatus: player.status,
+      startTime,
+      staticThumbnail,
+      videoId: video.id,
+    });
+    flushRoundDiagnostics();
+
+    try {
+      expandedRef.current = true;
+      if (staticThumbnail) {
+        player.pause();
+        seekVideoPlayer(player, 0);
+        setCurrentTime(0);
+      }
+      previousVideoTime.current = startTime;
+      setExpanded(true);
+      showControls();
+      try {
+        await setPlaybackAudioMode();
+        logVideoDiagnostic('expanded player audio mode configured', { videoId: video.id });
+      } catch (error) {
+        warnVideoDiagnostic('expanded player audio mode configuration failed', error, {
+          videoId: video.id,
+        });
+      }
+      if (separateAudioUri) {
+        setPlayerMuted(player, true);
+        try {
+          await separateAudio.seekTo(startTime);
+        } catch (error) {
+          warnVideoDiagnostic('expanded player separate audio seek failed', error, {
+            startTime,
+            videoId: video.id,
+          });
+        }
+        separateAudio.play();
+        if (staticThumbnail) player.replay();
+        else player.play();
+      } else {
+        enablePlayerAudio(player);
+        if (staticThumbnail) player.replay();
+      }
+      logVideoDiagnostic('expanded player playback invoked', {
+        playerStatus: player.status,
+        startTime,
+        videoId: video.id,
+      });
+      flushRoundDiagnostics();
+    } catch (error) {
+      warnVideoDiagnostic('expanded player open failed', error, {
+        playerStatus: player.status,
+        startTime,
+        videoId: video.id,
+      });
+      expandedRef.current = false;
+      pauseAudioPlayer(separateAudio);
       setPlayerMuted(player, true);
-      await separateAudio.seekTo(startTime).catch(() => undefined);
-      separateAudio.play();
-      if (staticThumbnail) player.replay();
-      else player.play();
-    } else {
-      enablePlayerAudio(player);
-      if (staticThumbnail) player.replay();
+      setExpanded(false);
+      restoreAppAudioMode();
+      flushRoundDiagnostics();
     }
   };
 
   const closeExpanded = () => {
+    logVideoDiagnostic('expanded player close requested', {
+      currentTime: player.currentTime,
+      playerStatus: player.status,
+      videoId: video.id,
+    });
+    flushRoundDiagnostics();
     clearControlsTimer();
     clearScrubPreviewTimer();
     clearScrubCompletion();

@@ -1,9 +1,9 @@
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
 import { setAudioModeAsync } from 'expo-audio';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
@@ -12,11 +12,37 @@ import { ScreenshotTransitionProvider } from '@/components/screenshot-transition
 import { RoundSoundProvider } from '@/video/round-sound-provider';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 import { loadHomeBranding } from '@/utils/home-branding';
+import {
+  initializeFlightRecorder,
+  markFlightRecorderExpectedExit,
+  recordFlightRecorderMemoryWarning,
+  setFlightRecorderAppState,
+  setFlightRecorderRoute,
+} from '@/utils/flight-recorder';
 
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    initializeFlightRecorder();
+    const appStateSubscription = AppState.addEventListener('change', setFlightRecorderAppState);
+    const memoryWarningSubscription = AppState.addEventListener(
+      'memoryWarning',
+      recordFlightRecorderMemoryWarning,
+    );
+    return () => {
+      appStateSubscription.remove();
+      memoryWarningSubscription.remove();
+      markFlightRecorderExpectedExit('root-layout-unmounted');
+    };
+  }, []);
+
+  useEffect(() => {
+    setFlightRecorderRoute(pathname);
+  }, [pathname]);
 
   useEffect(() => {
     void loadHomeBranding()
