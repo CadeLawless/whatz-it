@@ -372,15 +372,25 @@ export default function DeckLibraryScreen() {
                     const exportPreparing = !videoReady && !exportFailed;
                     return (
                       <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
-                      <RoundVideoPlayer
-                        isSaving={savingVideoId === video.id}
-                        saveDisabled={!isRoundVideoReadyToSave(video)}
-                        onDelete={deleteFromPlayer}
-                        onSave={handleSave}
-                        staticThumbnail
-                        video={video}
-                        style={styles.video}
-                      />
+                      {exportPreparing ? (
+                        <View
+                          accessibilityLabel="Preparing round video"
+                          accessibilityRole="progressbar"
+                          style={[styles.video, styles.videoPreparing]}
+                        >
+                          <ActivityIndicator color="#459EFE" size="small" />
+                        </View>
+                      ) : (
+                        <RoundVideoPlayer
+                          isSaving={savingVideoId === video.id}
+                          saveDisabled={!isRoundVideoReadyToSave(video)}
+                          onDelete={deleteFromPlayer}
+                          onSave={handleSave}
+                          staticThumbnail
+                          video={video}
+                          style={styles.video}
+                        />
+                      )}
                       <Text numberOfLines={1} style={styles.videoDeckName}>
                         {deck?.title ?? 'Round video'}
                       </Text>
@@ -708,6 +718,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   video: { width: '100%', aspectRatio: 16 / 9 },
+  videoPreparing: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC' },
   videoDeckName: { color: '#111111', fontSize: 14, fontWeight: '900', marginTop: 10, marginHorizontal: 10 },
   videoDate: { color: '#64748B', fontSize: 11, marginTop: 2, marginHorizontal: 10 },
   videoActions: { flexDirection: 'row', gap: 7, marginTop: 10, marginHorizontal: 10 },

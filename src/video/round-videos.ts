@@ -7,6 +7,7 @@ const STORAGE_KEY = 'whatz-it:round-videos:v1';
 const MAX_STORED_VIDEOS = 10;
 const VIDEO_DIRECTORY_NAME = 'round-videos';
 const COMPLETED_EXPORT_PATTERN = /^(\d+-[a-z0-9]+)-export\.mp4$/i;
+const STALE_TEMPORARY_FILE_AGE_MS = 24 * 60 * 60 * 1000;
 
 export type RoundVideo = {
   id: string;
@@ -77,27 +78,31 @@ async function writeStoredMetadata(videos: RoundVideo[]) {
 }
 
 const activeExports = new Map<string, Promise<RoundVideo>>();
+const pendingManagedVideoIds = new Set<string>();
+let staleTemporaryCleanupStarted = false;
 
 export async function loadRoundVideos() {
   if (Platform.OS === 'web') return [];
   const { File, storedVideos, videoDirectory, videos } = await readHydratedMetadata();
-  const available = videos
-    .filter((video) => new File(video.uri).exists)
-    .map((video) => {
-      const audioUri = video.audioUri && new File(video.audioUri).exists ? video.audioUri : undefined;
-      let exportUri = video.exportUri && new File(video.exportUri).exists ? video.exportUri : undefined;
-      const hasLegacyIosOverlayExport =
-        Platform.OS === 'ios' &&
-        !!exportUri &&
-        !!video.events?.length &&
-        video.exportIncludesOverlays === undefined;
-      if (hasLegacyIosOverlayExport && exportUri) {
-        new File(exportUri).delete();
-        exportUri = undefined;
-      }
-      const requiresExport = video.requiresBrandedExport || !!video.events?.length;
-      return {
+  const available = videos.flatMap((video) => {
+    const sourceExists = new File(video.uri).exists;
+    const audioUri = video.audioUri && new File(video.audioUri).exists ? video.audioUri : undefined;
+    let exportUri = video.exportUri && new File(video.exportUri).exists ? video.exportUri : undefined;
+    const hasLegacyIosOverlayExport =
+      Platform.OS === 'ios' &&
+      !!exportUri &&
+      !!video.events?.length &&
+      video.exportIncludesOverlays === undefined;
+    if (hasLegacyIosOverlayExport && exportUri) {
+      new File(exportUri).delete();
+      exportUri = undefined;
+    }
+    if (!sourceExists && !exportUri) return [];
+    const requiresExport = video.requiresBrandedExport || !!video.events?.length;
+    return [
+      {
         ...video,
+        uri: sourceExists ? video.uri : exportUri!,
         audioUri,
         exportUri,
         exportIncludesOverlays: exportUri ? video.exportIncludesOverlays : undefined,
@@ -108,16 +113,20 @@ export async function loadRoundVideos() {
               ? ('failed' as const)
               : ('preparing' as const)
             : ('ready' as const),
-      };
-    });
+      },
+    ];
+  });
   const uniqueAvailable = deduplicateRoundVideosById(available);
   const recovered = recoverCompletedExports(videoDirectory, uniqueAvailable, File);
-  const next = [...uniqueAvailable, ...recovered]
+  const next = recovered
     .sort((a, b) => b.createdAt - a.createdAt)
-    .slice(0, MAX_STORED_VIDEOS);
+    .slice(0, MAX_STORED_VIDEOS)
+    .map(compactCompletedExport);
   if (JSON.stringify(next.map(toStoredRoundVideo)) !== JSON.stringify(storedVideos)) {
     await writeStoredMetadata(next);
   }
+  reconcileRoundVideoDirectory(videoDirectory, next, File);
+  void cleanupStaleTemporaryVideoFiles();
   return next;
 }
 
@@ -225,14 +234,21 @@ export async function storeRoundVideo(
     createdAt,
     events,
   };
+  const storedVideo = compactCompletedExport(video);
   const libraryLoadStartedAt = Date.now();
-  const previous = await loadRoundVideos();
+  pendingManagedVideoIds.add(id);
+  let previous: RoundVideo[];
+  try {
+    previous = await loadRoundVideos();
+  } finally {
+    pendingManagedVideoIds.delete(id);
+  }
   logVideoDiagnostic('round video library loaded during persistence', {
     diagnosticId,
     elapsedMs: Date.now() - libraryLoadStartedAt,
     previousVideoCount: previous.length,
   });
-  const next = [video, ...previous].slice(0, MAX_STORED_VIDEOS);
+  const next = [storedVideo, ...previous].slice(0, MAX_STORED_VIDEOS);
   const removed = previous.filter((item) => !next.some((kept) => kept.id === item.id));
   removed.forEach((item) => deleteVideoFiles(item, File));
   const metadataWriteStartedAt = Date.now();
@@ -242,9 +258,10 @@ export async function storeRoundVideo(
     elapsedMs: Date.now() - metadataWriteStartedAt,
     totalElapsedMs: Date.now() - persistenceStartedAt,
     videoCount: next.length,
-    videoId: video.id,
+    videoId: storedVideo.id,
   });
-  return video;
+  deleteSupersededVideoFiles(video, storedVideo, File);
+  return storedVideo;
 }
 
 export async function deleteRoundVideo(id: string) {
@@ -421,12 +438,7 @@ async function prepareLiveOverlayVideoExportOnce(
       segmentCount: segments.length,
       videoId: video.id,
     });
-    return updateStoredVideo({
-      ...video,
-      exportUri: destination.uri,
-      exportIncludesOverlays: true,
-      exportStatus: 'ready',
-    });
+    return persistCompletedExport(video, destination.uri, true);
   } catch (error) {
     warnVideoDiagnostic('live branded export failed', error, {
       elapsedMs: Date.now() - exportStartedAt,
@@ -563,6 +575,7 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
       videoId: video.id,
     });
     if (video.audioUri && exportedAudioTrackCount === 0 && !nativeAudioValidated) {
+      if (destination.exists) destination.delete();
       throw new Error('The native exporter returned a video with no audio track.');
     }
     if (video.audioUri && exportedAudioTrackCount === 0 && nativeAudioValidated) {
@@ -572,12 +585,7 @@ async function prepareRoundVideoExportOnce(video: RoundVideo): Promise<RoundVide
         { destinationUri: destination.uri },
       );
     }
-    return updateStoredVideo({
-      ...video,
-      exportUri: destination.uri,
-      exportIncludesOverlays: exportEvents.length > 0,
-      exportStatus: 'ready',
-    });
+    return persistCompletedExport(video, destination.uri, exportEvents.length > 0);
   } catch (error) {
     warnVideoDiagnostic('native export failed', error, {
       audioUri: video.audioUri,
@@ -690,6 +698,34 @@ async function updateStoredVideo(video: RoundVideo) {
   return video;
 }
 
+async function persistCompletedExport(
+  video: RoundVideo,
+  exportUri: string,
+  exportIncludesOverlays: boolean,
+) {
+  const completed = compactCompletedExport({
+    ...video,
+    exportUri,
+    exportIncludesOverlays,
+    exportStatus: 'ready',
+  });
+  await updateStoredVideo(completed);
+  const { File } = await import('expo-file-system');
+  deleteSupersededVideoFiles(video, completed, File);
+  return completed;
+}
+
+function compactCompletedExport(video: RoundVideo): RoundVideo {
+  if (video.exportStatus !== 'ready' || !video.exportUri) return video;
+  return {
+    ...video,
+    uri: video.exportUri,
+    audioUri: undefined,
+    playbackIncludesOverlays:
+      video.exportIncludesOverlays ?? video.playbackIncludesOverlays ?? false,
+  };
+}
+
 async function readHydratedMetadata() {
   const { Directory, File, Paths } = await import('expo-file-system');
   const videoDirectory = new Directory(Paths.document, VIDEO_DIRECTORY_NAME);
@@ -750,48 +786,58 @@ function recoverCompletedExports(
   videos: RoundVideo[],
   FileType: typeof import('expo-file-system').File,
 ) {
-  const knownFiles = new Set(
-    videos.flatMap((video) => [video.uri, video.audioUri, video.exportUri].filter(Boolean)),
-  );
-  const knownVideoIds = new Set(videos.map((video) => video.id.toLowerCase()));
-  const skippedExistingVideoIds: string[] = [];
-  const recovered = videoDirectory
+  const completedExports = new Map<string, import('expo-file-system').File>();
+  videoDirectory
     .list()
     .filter((entry): entry is import('expo-file-system').File => entry instanceof FileType)
-    .flatMap((file) => {
+    .forEach((file) => {
       const match = file.name.match(COMPLETED_EXPORT_PATTERN);
-      if (!match || knownFiles.has(file.uri)) return [];
-      const recoveredId = match[1];
-      const normalizedRecoveredId = recoveredId.toLowerCase();
-      if (knownVideoIds.has(normalizedRecoveredId)) {
-        skippedExistingVideoIds.push(recoveredId);
-        return [];
-      }
-      knownVideoIds.add(normalizedRecoveredId);
-      const createdAt = Number(recoveredId.split('-', 1)[0]);
-      return [
-        {
-          id: recoveredId,
-          uri: file.uri,
-          exportStatus: 'ready' as const,
-          deckId: 'recovered',
-          createdAt: Number.isFinite(createdAt) ? createdAt : file.creationTime ?? Date.now(),
-        },
-      ];
+      if (match) completedExports.set(match[1].toLowerCase(), file);
     });
-  if (skippedExistingVideoIds.length > 0) {
-    logVideoDiagnostic('completed export recovery skipped duplicate video ids', {
-      skippedCount: skippedExistingVideoIds.length,
-      skippedVideoIds: skippedExistingVideoIds,
+
+  const knownVideoIds = new Set(videos.map((video) => video.id.toLowerCase()));
+  const repaired = videos.map((video) => {
+    const completedExport = completedExports.get(video.id.toLowerCase());
+    const requiresExport = video.requiresBrandedExport || !!video.events?.length;
+    if (video.exportUri || !completedExport || !requiresExport) return video;
+    logVideoDiagnostic('completed round video export reattached to metadata', {
+      exportFile: completedExport.name,
+      videoId: video.id,
     });
-  }
+    return {
+      ...video,
+      exportUri: completedExport.uri,
+      exportIncludesOverlays: true,
+      exportStatus: 'ready' as const,
+    };
+  });
+
+  const recovered = [...completedExports].flatMap(([normalizedRecoveredId, file]) => {
+    if (knownVideoIds.has(normalizedRecoveredId)) return [];
+    knownVideoIds.add(normalizedRecoveredId);
+    const match = file.name.match(COMPLETED_EXPORT_PATTERN)!;
+    const recoveredId = match[1];
+    const createdAt = Number(recoveredId.split('-', 1)[0]);
+    return [
+      {
+        id: recoveredId,
+        uri: file.uri,
+        exportUri: file.uri,
+        playbackIncludesOverlays: true,
+        exportIncludesOverlays: true,
+        exportStatus: 'ready' as const,
+        deckId: 'recovered',
+        createdAt: Number.isFinite(createdAt) ? createdAt : file.creationTime ?? Date.now(),
+      },
+    ];
+  });
   if (recovered.length > 0) {
     logVideoDiagnostic('completed round videos recovered from device storage', {
       recoveredCount: recovered.length,
       recoveredFiles: recovered.map((video) => getManagedFileName(video.uri)),
     });
   }
-  return recovered;
+  return [...repaired, ...recovered];
 }
 
 function deduplicateRoundVideosById(videos: RoundVideo[]) {
@@ -827,4 +873,75 @@ function deleteVideoFiles(
     const file = new FileType(uri);
     if (file.exists) file.delete();
   });
+}
+
+function deleteSupersededVideoFiles(
+  previous: RoundVideo,
+  next: RoundVideo,
+  FileType: typeof import('expo-file-system').File,
+) {
+  const retainedUris = new Set([next.uri, next.audioUri, next.exportUri].filter(Boolean));
+  [previous.uri, previous.audioUri, previous.exportUri].forEach((uri) => {
+    if (!uri || retainedUris.has(uri)) return;
+    try {
+      const file = new FileType(uri);
+      if (file.exists) file.delete();
+    } catch (error) {
+      warnVideoDiagnostic('superseded round video file cleanup failed', error, { uri });
+    }
+  });
+}
+
+function reconcileRoundVideoDirectory(
+  videoDirectory: import('expo-file-system').Directory,
+  videos: RoundVideo[],
+  FileType: typeof import('expo-file-system').File,
+) {
+  const referencedFileNames = new Set(
+    videos.flatMap((video) => [video.uri, video.audioUri, video.exportUri])
+      .filter((uri): uri is string => !!uri)
+      .map(getManagedFileName),
+  );
+  const activeVideoIds = [...activeExports.keys(), ...pendingManagedVideoIds]
+    .map((id) => id.toLowerCase());
+  let deletedBytes = 0;
+  const deletedFiles: string[] = [];
+
+  videoDirectory.list().forEach((entry) => {
+    if (!(entry instanceof FileType) || referencedFileNames.has(entry.name)) return;
+    const normalizedName = entry.name.toLowerCase();
+    if (activeVideoIds.some((id) => normalizedName.startsWith(id))) return;
+    try {
+      const entrySize = entry.size;
+      entry.delete();
+      deletedBytes += entrySize;
+      deletedFiles.push(entry.name);
+    } catch (error) {
+      warnVideoDiagnostic('unreferenced round video file cleanup failed', error, {
+        fileName: entry.name,
+      });
+    }
+  });
+
+  if (deletedFiles.length > 0) {
+    logVideoDiagnostic('unreferenced round video files deleted', {
+      deletedBytes,
+      deletedCount: deletedFiles.length,
+      deletedFiles,
+    });
+  }
+}
+
+async function cleanupStaleTemporaryVideoFiles() {
+  if (staleTemporaryCleanupStarted) return;
+  staleTemporaryCleanupStarted = true;
+  try {
+    const { cleanupStaleVideoFiles } = await import('whatz-it-video-export');
+    const deletedCount = await cleanupStaleVideoFiles(STALE_TEMPORARY_FILE_AGE_MS);
+    if (deletedCount > 0) {
+      logVideoDiagnostic('stale temporary video files deleted', { deletedCount });
+    }
+  } catch (error) {
+    warnVideoDiagnostic('stale temporary video cleanup failed', error);
+  }
 }

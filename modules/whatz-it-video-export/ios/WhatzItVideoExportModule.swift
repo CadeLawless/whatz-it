@@ -90,6 +90,13 @@ public final class WhatzItVideoExportModule: Module {
       25
     }
 
+    AsyncFunction("cleanupStaleVideoFiles") { (maxAgeMs: Double) -> Int in
+      Self.cleanupStaleVideoFiles(
+        olderThan: maxAgeMs,
+        excluding: self.microphoneRecordingUrl
+      )
+    }
+
     Function("getSystemOutputVolume") {
       Double(AVAudioSession.sharedInstance().outputVolume)
     }
@@ -1108,6 +1115,45 @@ public final class WhatzItVideoExportModule: Module {
   private static func fileSize(at url: URL) -> Int64 {
     let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
     return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+  }
+
+  private static func cleanupStaleVideoFiles(
+    olderThan maxAgeMs: Double,
+    excluding activeUrl: URL?
+  ) -> Int {
+    let prefixes = [
+      "whatz-it-live-clean-",
+      "whatz-it-live-branded-",
+      "whatz-it-live-ready-",
+      "whatz-it-microphone-",
+      "whatz-it-overlay-",
+      "whatz-it-round-audio-",
+      "whatz-it-stitched-",
+    ]
+    let fileManager = FileManager.default
+    let temporaryDirectory = fileManager.temporaryDirectory
+    let cutoff = Date().addingTimeInterval(-max(0, maxAgeMs) / 1_000)
+    let activePath = activeUrl?.standardizedFileURL.path
+    let urls = (try? fileManager.contentsOfDirectory(
+      at: temporaryDirectory,
+      includingPropertiesForKeys: [.contentModificationDateKey],
+      options: [.skipsHiddenFiles]
+    )) ?? []
+    var deletedCount = 0
+
+    for url in urls {
+      guard prefixes.contains(where: { url.lastPathComponent.hasPrefix($0) }) else { continue }
+      guard url.standardizedFileURL.path != activePath else { continue }
+      let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+      guard let modifiedAt = values?.contentModificationDate, modifiedAt < cutoff else { continue }
+      do {
+        try fileManager.removeItem(at: url)
+        deletedCount += 1
+      } catch {
+        NSLog("[RoundVideoNative] Stale temporary cleanup failed file=%@ error=%@", url.lastPathComponent, error.localizedDescription)
+      }
+    }
+    return deletedCount
   }
 
   private static func run(_ exporter: AVAssetExportSession) async throws {

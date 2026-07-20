@@ -67,6 +67,31 @@ class WhatzItVideoExportModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("WhatzItVideoExport")
 
+    AsyncFunction("cleanupStaleVideoFiles") { maxAgeMs: Double ->
+      val context = appContext.reactContext?.applicationContext
+        ?: return@AsyncFunction 0
+      val prefixes = listOf(
+        "whatz-it-live-clean-",
+        "whatz-it-live-branded-",
+        "whatz-it-live-ready-",
+        "whatz-it-overlay-",
+        "whatz-it-round-audio-",
+        "whatz-it-stitched-",
+      )
+      val cutoff = System.currentTimeMillis() - max(0.0, maxAgeMs).toLong()
+      val directories = linkedSetOf(context.cacheDir)
+      System.getProperty("java.io.tmpdir")?.let { directories.add(File(it)) }
+      directories.sumOf { directory ->
+        directory.listFiles().orEmpty().count { file ->
+          val isStaleWhatzItFile =
+            prefixes.any { prefix -> file.name.startsWith(prefix) } &&
+              file.lastModified() > 0 &&
+              file.lastModified() < cutoff
+          isStaleWhatzItFile && file.delete()
+        }
+      }
+    }
+
     AsyncFunction("stitchRoundVideoSegments") {
         segments: List<RoundVideoSegment>,
         promise: Promise ->

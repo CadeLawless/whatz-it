@@ -62,6 +62,7 @@ type WhatzItVideoExportNativeModule = {
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
   cancelMicrophoneRecording(): Promise<void>;
+  cleanupStaleVideoFiles?(maxAgeMs: number): Promise<number>;
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
@@ -191,4 +192,8 @@ export function stopMicrophoneRecording() {
 
 export function cancelMicrophoneRecording() {
   return nativeModule.cancelMicrophoneRecording();
+}
+
+export function cleanupStaleVideoFiles(maxAgeMs: number) {
+  return nativeModule.cleanupStaleVideoFiles?.(maxAgeMs) ?? Promise.resolve(0);
 }

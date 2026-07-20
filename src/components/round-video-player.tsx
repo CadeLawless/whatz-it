@@ -81,9 +81,8 @@ export function RoundVideoPlayer({
   const [controlsVisible, setControlsVisible] = useState(true);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [videoSize, setVideoSize] = useState({ width: 16, height: 9 });
-  // Keep one source for this player's entire mounted lifetime. Replacing the raw
-  // recording with its finished export would otherwise restart visible playback.
-  const [playbackUri] = useState(() => video.uri);
+  // Play the same finished file that is retained in app storage and saved to the media library.
+  const playbackUri = video.exportUri ?? video.uri;
   const expandedRef = useRef(false);
   const previousVideoTime = useRef(0);
   const thumbnailTimeRef = useRef(0);
@@ -102,11 +101,11 @@ export function RoundVideoPlayer({
   const scrubSessionRef = useRef(0);
   const lastPlayerStatusRef = useRef('created');
   const [currentTime, setCurrentTime] = useState(0);
-  const separateAudioUri = video.audioUri;
+  const separateAudioUri = playbackUri === video.uri ? video.audioUri : undefined;
   const separateAudio = useAudioPlayer(separateAudioUri ?? null);
   const player = useVideoPlayer(playbackUri, (instance) => {
     instance.loop = true;
-    instance.muted = true;
+    instance.muted = !!separateAudioUri;
     instance.timeUpdateEventInterval = 0.1;
     if (!staticThumbnail) instance.play();
   });
