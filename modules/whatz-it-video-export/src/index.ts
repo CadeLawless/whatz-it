@@ -24,6 +24,23 @@ export type RoundVideoSegment = {
   audioUri: string | null;
 };
 
+export type VideoStorageMaintenanceResult = {
+  afterApplicationSupportBytes: number;
+  afterCachesBytes: number;
+  afterDocumentsBytes: number;
+  afterLibraryBytes: number;
+  afterTemporaryBytes: number;
+  afterTotalBytes: number;
+  beforeApplicationSupportBytes: number;
+  beforeCachesBytes: number;
+  beforeDocumentsBytes: number;
+  beforeLibraryBytes: number;
+  beforeTemporaryBytes: number;
+  beforeTotalBytes: number;
+  deletedBytes: number;
+  deletedFiles: number;
+};
+
 type WhatzItVideoExportNativeModule = {
   overlayExportVersion?: number;
   getSystemOutputVolume?(): number;
@@ -62,7 +79,7 @@ type WhatzItVideoExportNativeModule = {
   startMicrophoneRecording(): Promise<string>;
   stopMicrophoneRecording(): Promise<string>;
   cancelMicrophoneRecording(): Promise<void>;
-  cleanupStaleVideoFiles?(maxAgeMs: number): Promise<number>;
+  performVideoStorageMaintenance?(): Promise<VideoStorageMaintenanceResult>;
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
@@ -194,6 +211,6 @@ export function cancelMicrophoneRecording() {
   return nativeModule.cancelMicrophoneRecording();
 }
 
-export function cleanupStaleVideoFiles(maxAgeMs: number) {
-  return nativeModule.cleanupStaleVideoFiles?.(maxAgeMs) ?? Promise.resolve(0);
+export function performVideoStorageMaintenance() {
+  return nativeModule.performVideoStorageMaintenance?.() ?? Promise.resolve(null);
 }

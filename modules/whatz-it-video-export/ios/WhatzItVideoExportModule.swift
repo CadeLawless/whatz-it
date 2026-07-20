@@ -78,6 +78,7 @@ public final class WhatzItVideoExportModule: Module {
   private var microphoneEngine: AVAudioEngine?
   private var microphoneRecorder: AVAudioRecorder?
   private var microphoneRecordingUrl: URL?
+  private let storageCleanupCutoff = Date().addingTimeInterval(-2)
   private let recordingCueQueue = DispatchQueue(label: "com.whatzit.recording-cue-playback")
   private var recordingCueBuffers = [String: AVAudioPCMBuffer]()
   private var recordingCueNextPlayerIndex = 0
@@ -90,11 +91,28 @@ public final class WhatzItVideoExportModule: Module {
       25
     }
 
-    AsyncFunction("cleanupStaleVideoFiles") { (maxAgeMs: Double) -> Int in
-      Self.cleanupStaleVideoFiles(
-        olderThan: maxAgeMs,
-        excluding: self.microphoneRecordingUrl
+    AsyncFunction("performVideoStorageMaintenance") { () -> [String: Int64] in
+      let before = Self.readStorageDiagnostics()
+      let cleanup = Self.cleanupPreviousSessionTemporaryFiles(
+        modifiedBefore: self.storageCleanupCutoff
       )
+      let after = Self.readStorageDiagnostics()
+      return [
+        "afterApplicationSupportBytes": after.applicationSupportBytes,
+        "afterCachesBytes": after.cachesBytes,
+        "afterDocumentsBytes": after.documentsBytes,
+        "afterLibraryBytes": after.libraryBytes,
+        "afterTemporaryBytes": after.temporaryBytes,
+        "afterTotalBytes": after.totalBytes,
+        "beforeApplicationSupportBytes": before.applicationSupportBytes,
+        "beforeCachesBytes": before.cachesBytes,
+        "beforeDocumentsBytes": before.documentsBytes,
+        "beforeLibraryBytes": before.libraryBytes,
+        "beforeTemporaryBytes": before.temporaryBytes,
+        "beforeTotalBytes": before.totalBytes,
+        "deletedBytes": cleanup.deletedBytes,
+        "deletedFiles": cleanup.deletedFiles,
+      ]
     }
 
     Function("getSystemOutputVolume") {
@@ -1117,43 +1135,143 @@ public final class WhatzItVideoExportModule: Module {
     return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
   }
 
-  private static func cleanupStaleVideoFiles(
-    olderThan maxAgeMs: Double,
-    excluding activeUrl: URL?
-  ) -> Int {
-    let prefixes = [
-      "whatz-it-live-clean-",
-      "whatz-it-live-branded-",
-      "whatz-it-live-ready-",
-      "whatz-it-microphone-",
-      "whatz-it-overlay-",
-      "whatz-it-round-audio-",
-      "whatz-it-stitched-",
-    ]
-    let fileManager = FileManager.default
-    let temporaryDirectory = fileManager.temporaryDirectory
-    let cutoff = Date().addingTimeInterval(-max(0, maxAgeMs) / 1_000)
-    let activePath = activeUrl?.standardizedFileURL.path
-    let urls = (try? fileManager.contentsOfDirectory(
-      at: temporaryDirectory,
-      includingPropertiesForKeys: [.contentModificationDateKey],
-      options: [.skipsHiddenFiles]
-    )) ?? []
-    var deletedCount = 0
+  private struct StorageDiagnostics {
+    let applicationSupportBytes: Int64
+    let cachesBytes: Int64
+    let documentsBytes: Int64
+    let libraryBytes: Int64
+    let temporaryBytes: Int64
 
-    for url in urls {
-      guard prefixes.contains(where: { url.lastPathComponent.hasPrefix($0) }) else { continue }
-      guard url.standardizedFileURL.path != activePath else { continue }
-      let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
-      guard let modifiedAt = values?.contentModificationDate, modifiedAt < cutoff else { continue }
-      do {
-        try fileManager.removeItem(at: url)
-        deletedCount += 1
-      } catch {
-        NSLog("[RoundVideoNative] Stale temporary cleanup failed file=%@ error=%@", url.lastPathComponent, error.localizedDescription)
+    var totalBytes: Int64 { documentsBytes + libraryBytes + temporaryBytes }
+  }
+
+  private struct StorageCleanupResult {
+    var deletedBytes: Int64 = 0
+    var deletedFiles: Int64 = 0
+  }
+
+  private static func readStorageDiagnostics() -> StorageDiagnostics {
+    let fileManager = FileManager.default
+    let homeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+    let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+      ?? homeDirectory.appendingPathComponent("Documents", isDirectory: true)
+    let libraryDirectory = homeDirectory.appendingPathComponent("Library", isDirectory: true)
+    let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+      ?? libraryDirectory.appendingPathComponent("Caches", isDirectory: true)
+    let applicationSupportDirectory = fileManager.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first ?? libraryDirectory.appendingPathComponent("Application Support", isDirectory: true)
+    let temporaryDirectory = fileManager.temporaryDirectory
+
+    return StorageDiagnostics(
+      applicationSupportBytes: allocatedSize(at: applicationSupportDirectory),
+      cachesBytes: allocatedSize(at: cachesDirectory),
+      documentsBytes: allocatedSize(at: documentsDirectory),
+      libraryBytes: allocatedSize(at: libraryDirectory),
+      temporaryBytes: allocatedSize(at: temporaryDirectory)
+    )
+  }
+
+  private static func cleanupPreviousSessionTemporaryFiles(
+    modifiedBefore cutoff: Date
+  ) -> StorageCleanupResult {
+    let fileManager = FileManager.default
+    let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+    let expoAudioDirectory = cachesDirectory?.appendingPathComponent("ExpoAudio", isDirectory: true)
+    let directories = [fileManager.temporaryDirectory, expoAudioDirectory].compactMap { $0 }
+    var result = StorageCleanupResult()
+
+    for directory in directories {
+      let urls = (try? fileManager.contentsOfDirectory(
+        at: directory,
+        includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsSubdirectoryDescendants]
+      )) ?? []
+      for url in urls {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+        guard let modifiedAt = values?.contentModificationDate, modifiedAt < cutoff else { continue }
+        let deletedBytes = allocatedSize(at: url)
+        let deletedFiles = regularFileCount(at: url)
+        do {
+          try fileManager.removeItem(at: url)
+          result.deletedBytes += deletedBytes
+          result.deletedFiles += deletedFiles
+        } catch {
+          NSLog(
+            "[RoundVideoNative] Previous-session temporary cleanup failed file=%@ error=%@",
+            url.lastPathComponent,
+            error.localizedDescription
+          )
+        }
       }
     }
-    return deletedCount
+    return result
+  }
+
+  private static func allocatedSize(at url: URL) -> Int64 {
+    let fileManager = FileManager.default
+    var isDirectory: ObjCBool = false
+    guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return 0 }
+    if !isDirectory.boolValue { return allocatedFileSize(at: url) }
+
+    let keys: [URLResourceKey] = [
+      .fileAllocatedSizeKey,
+      .fileSizeKey,
+      .isRegularFileKey,
+      .totalFileAllocatedSizeKey,
+    ]
+    let enumerator = fileManager.enumerator(
+      at: url,
+      includingPropertiesForKeys: keys,
+      options: [],
+      errorHandler: nil
+    )
+    var bytes: Int64 = 0
+    while let fileUrl = enumerator?.nextObject() as? URL {
+      let values = try? fileUrl.resourceValues(forKeys: Set(keys))
+      guard values?.isRegularFile == true else { continue }
+      bytes += Int64(
+        values?.totalFileAllocatedSize
+          ?? values?.fileAllocatedSize
+          ?? values?.fileSize
+          ?? 0
+      )
+    }
+    return bytes
+  }
+
+  private static func allocatedFileSize(at url: URL) -> Int64 {
+    let values = try? url.resourceValues(forKeys: [
+      .fileAllocatedSizeKey,
+      .fileSizeKey,
+      .totalFileAllocatedSizeKey,
+    ])
+    return Int64(
+      values?.totalFileAllocatedSize
+        ?? values?.fileAllocatedSize
+        ?? values?.fileSize
+        ?? 0
+    )
+  }
+
+  private static func regularFileCount(at url: URL) -> Int64 {
+    let fileManager = FileManager.default
+    var isDirectory: ObjCBool = false
+    guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return 0 }
+    if !isDirectory.boolValue { return 1 }
+    let enumerator = fileManager.enumerator(
+      at: url,
+      includingPropertiesForKeys: [.isRegularFileKey],
+      options: [],
+      errorHandler: nil
+    )
+    var count: Int64 = 0
+    while let fileUrl = enumerator?.nextObject() as? URL {
+      let values = try? fileUrl.resourceValues(forKeys: [.isRegularFileKey])
+      if values?.isRegularFile == true { count += 1 }
+    }
+    return count
   }
 
   private static func run(_ exporter: AVAssetExportSession) async throws {

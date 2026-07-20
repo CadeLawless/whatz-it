@@ -7,7 +7,6 @@ const STORAGE_KEY = 'whatz-it:round-videos:v1';
 const MAX_STORED_VIDEOS = 10;
 const VIDEO_DIRECTORY_NAME = 'round-videos';
 const COMPLETED_EXPORT_PATTERN = /^(\d+-[a-z0-9]+)-export\.mp4$/i;
-const STALE_TEMPORARY_FILE_AGE_MS = 24 * 60 * 60 * 1000;
 
 export type RoundVideo = {
   id: string;
@@ -79,7 +78,21 @@ async function writeStoredMetadata(videos: RoundVideo[]) {
 
 const activeExports = new Map<string, Promise<RoundVideo>>();
 const pendingManagedVideoIds = new Set<string>();
-let staleTemporaryCleanupStarted = false;
+let storageMaintenancePromise: Promise<void> | null = null;
+
+export function initializeRoundVideoStorage() {
+  if (Platform.OS === 'web') return Promise.resolve();
+  storageMaintenancePromise ??= (async () => {
+    try {
+      const { performVideoStorageMaintenance } = await import('whatz-it-video-export');
+      const result = await performVideoStorageMaintenance();
+      if (result) logVideoDiagnostic('startup storage maintenance completed', result);
+    } catch (error) {
+      warnVideoDiagnostic('startup storage maintenance failed', error);
+    }
+  })();
+  return storageMaintenancePromise;
+}
 
 export async function loadRoundVideos() {
   if (Platform.OS === 'web') return [];
@@ -126,7 +139,6 @@ export async function loadRoundVideos() {
     await writeStoredMetadata(next);
   }
   reconcileRoundVideoDirectory(videoDirectory, next, File);
-  void cleanupStaleTemporaryVideoFiles();
   return next;
 }
 
@@ -929,19 +941,5 @@ function reconcileRoundVideoDirectory(
       deletedCount: deletedFiles.length,
       deletedFiles,
     });
-  }
-}
-
-async function cleanupStaleTemporaryVideoFiles() {
-  if (staleTemporaryCleanupStarted) return;
-  staleTemporaryCleanupStarted = true;
-  try {
-    const { cleanupStaleVideoFiles } = await import('whatz-it-video-export');
-    const deletedCount = await cleanupStaleVideoFiles(STALE_TEMPORARY_FILE_AGE_MS);
-    if (deletedCount > 0) {
-      logVideoDiagnostic('stale temporary video files deleted', { deletedCount });
-    }
-  } catch (error) {
-    warnVideoDiagnostic('stale temporary video cleanup failed', error);
   }
 }

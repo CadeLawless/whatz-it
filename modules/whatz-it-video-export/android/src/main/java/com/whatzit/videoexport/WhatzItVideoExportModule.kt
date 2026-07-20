@@ -63,33 +63,33 @@ class RoundVideoSegment(
 @OptIn(UnstableApi::class)
 class WhatzItVideoExportModule : Module() {
   private val activeExports = ConcurrentHashMap<String, Transformer>()
+  private val storageCleanupCutoffMs = System.currentTimeMillis() - 2_000
 
   override fun definition() = ModuleDefinition {
     Name("WhatzItVideoExport")
 
-    AsyncFunction("cleanupStaleVideoFiles") { maxAgeMs: Double ->
+    AsyncFunction("performVideoStorageMaintenance") {
       val context = appContext.reactContext?.applicationContext
-        ?: return@AsyncFunction 0
-      val prefixes = listOf(
-        "whatz-it-live-clean-",
-        "whatz-it-live-branded-",
-        "whatz-it-live-ready-",
-        "whatz-it-overlay-",
-        "whatz-it-round-audio-",
-        "whatz-it-stitched-",
+        ?: return@AsyncFunction emptyMap<String, Long>()
+      val before = readStorageDiagnostics(context)
+      val cleanup = cleanupPreviousSessionTemporaryFiles(context, storageCleanupCutoffMs)
+      val after = readStorageDiagnostics(context)
+      mapOf(
+        "afterApplicationSupportBytes" to after.applicationSupportBytes,
+        "afterCachesBytes" to after.cachesBytes,
+        "afterDocumentsBytes" to after.documentsBytes,
+        "afterLibraryBytes" to after.libraryBytes,
+        "afterTemporaryBytes" to after.temporaryBytes,
+        "afterTotalBytes" to after.totalBytes,
+        "beforeApplicationSupportBytes" to before.applicationSupportBytes,
+        "beforeCachesBytes" to before.cachesBytes,
+        "beforeDocumentsBytes" to before.documentsBytes,
+        "beforeLibraryBytes" to before.libraryBytes,
+        "beforeTemporaryBytes" to before.temporaryBytes,
+        "beforeTotalBytes" to before.totalBytes,
+        "deletedBytes" to cleanup.deletedBytes,
+        "deletedFiles" to cleanup.deletedFiles,
       )
-      val cutoff = System.currentTimeMillis() - max(0.0, maxAgeMs).toLong()
-      val directories = linkedSetOf(context.cacheDir)
-      System.getProperty("java.io.tmpdir")?.let { directories.add(File(it)) }
-      directories.sumOf { directory ->
-        directory.listFiles().orEmpty().count { file ->
-          val isStaleWhatzItFile =
-            prefixes.any { prefix -> file.name.startsWith(prefix) } &&
-              file.lastModified() > 0 &&
-              file.lastModified() < cutoff
-          isStaleWhatzItFile && file.delete()
-        }
-      }
     }
 
     AsyncFunction("stitchRoundVideoSegments") {
@@ -284,6 +284,84 @@ class WhatzItVideoExportModule : Module() {
   private fun fileSize(uri: String): Long {
     val parsed = Uri.parse(uri)
     return if (parsed.scheme == "file") File(parsed.path.orEmpty()).length() else 0
+  }
+
+  private data class StorageDiagnostics(
+    val applicationSupportBytes: Long,
+    val cachesBytes: Long,
+    val documentsBytes: Long,
+    val libraryBytes: Long,
+    val temporaryBytes: Long,
+    val totalBytes: Long,
+  )
+
+  private data class StorageCleanupResult(
+    var deletedBytes: Long = 0,
+    var deletedFiles: Long = 0,
+  )
+
+  private fun readStorageDiagnostics(context: android.content.Context): StorageDiagnostics {
+    val dataDirectory = File(context.applicationInfo.dataDir)
+    val temporaryDirectory = System.getProperty("java.io.tmpdir")?.let(::File)
+    return StorageDiagnostics(
+      applicationSupportBytes = allocatedSize(context.filesDir),
+      cachesBytes = allocatedSize(context.cacheDir),
+      documentsBytes = allocatedSize(context.filesDir),
+      libraryBytes = allocatedSize(dataDirectory),
+      temporaryBytes = temporaryDirectory?.let(::allocatedSize) ?: 0,
+      totalBytes = allocatedSize(dataDirectory),
+    )
+  }
+
+  private fun cleanupPreviousSessionTemporaryFiles(
+    context: android.content.Context,
+    cutoffMs: Long,
+  ): StorageCleanupResult {
+    val result = StorageCleanupResult()
+    val prefixes = listOf("VisionCamera_", "whatz-it-")
+    val temporaryDirectories = linkedSetOf(context.cacheDir)
+    System.getProperty("java.io.tmpdir")?.let { temporaryDirectories.add(File(it)) }
+
+    temporaryDirectories.forEach { directory ->
+      directory.listFiles().orEmpty().forEach { file ->
+        if (
+          file.isFile &&
+          file.lastModified() in 1L until cutoffMs &&
+          prefixes.any { prefix -> file.name.startsWith(prefix) }
+        ) {
+          deleteTemporaryEntry(file, result)
+        }
+      }
+    }
+
+    val expoAudioDirectory = File(context.cacheDir, "Audio")
+    expoAudioDirectory.listFiles().orEmpty().forEach { file ->
+      if (file.lastModified() in 1L until cutoffMs) deleteTemporaryEntry(file, result)
+    }
+    return result
+  }
+
+  private fun deleteTemporaryEntry(file: File, result: StorageCleanupResult) {
+    val deletedBytes = allocatedSize(file)
+    val deletedFiles = regularFileCount(file)
+    if (file.deleteRecursively()) {
+      result.deletedBytes += deletedBytes
+      result.deletedFiles += deletedFiles
+    } else {
+      Log.w("RoundVideoNative", "Previous-session temporary cleanup failed file=${file.name}")
+    }
+  }
+
+  private fun allocatedSize(file: File): Long {
+    if (!file.exists()) return 0
+    if (file.isFile) return file.length()
+    return file.listFiles().orEmpty().sumOf(::allocatedSize)
+  }
+
+  private fun regularFileCount(file: File): Long {
+    if (!file.exists()) return 0
+    if (file.isFile) return 1
+    return file.listFiles().orEmpty().sumOf(::regularFileCount)
   }
 
   private fun muxVideoAndAudio(

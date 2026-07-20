@@ -11,6 +11,7 @@ import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
+import { initializeRoundVideoStorage } from '@/video/round-videos';
 import { loadHomeBranding } from '@/utils/home-branding';
 import {
   initializeFlightRecorder,
@@ -28,6 +29,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     initializeFlightRecorder();
+    void initializeRoundVideoStorage();
     const appStateSubscription = AppState.addEventListener('change', setFlightRecorderAppState);
     const memoryWarningSubscription = AppState.addEventListener(
       'memoryWarning',
