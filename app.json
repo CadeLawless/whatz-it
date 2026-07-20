@@ -17,6 +17,19 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Allow WHATZ IT? to record the clue-givers during a round.",
         "NSMicrophoneUsageDescription": "Allow WHATZ IT? to record the clues and reactions during a round."
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyCollectedDataTypes": [],
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1"
+            ]
+          }
+        ]
       }
     },
     "android": {
@@ -30,8 +43,6 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -70,7 +81,9 @@
         "expo-audio",
         {
           "microphonePermission": "Allow WHATZ IT? to record the clues and reactions during a round.",
-          "recordAudioAndroid": true
+          "recordAudioAndroid": true,
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
         }
       ],
       [
