@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
+import type { PermissionStatus } from 'react-native-vision-camera';
 
 import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
@@ -28,7 +30,11 @@ import {
   saveRoundDuration,
 } from '@/storage/preferences';
 import { colors, radius, spacing, typography } from '@/theme';
-import { requestRoundMotionAccess } from '@/utils/round-motion-permission';
+import {
+  getRoundMotionPermissionStatus,
+  requestRoundMotionAccess,
+  type RoundMotionPermissionStatus,
+} from '@/utils/round-motion-permission';
 import { useRoundCameraPermissions } from '@/video/round-camera-permission';
 
 export default function DeckDetailsScreen() {
@@ -40,10 +46,15 @@ export default function DeckDetailsScreen() {
 
   const [duration, setDuration] = useState(DEFAULT_ROUND_DURATION);
   const [isStarting, setIsStarting] = useState(false);
+  const [motionPermissionStatus, setMotionPermissionStatus] =
+    useState<RoundMotionPermissionStatus | 'checking'>('checking');
 
   const screenRef = useRef<View>(null);
-  const { cameraStatus: cameraPermissionStatus, requestPendingPermissions } =
-    useRoundCameraPermissions();
+  const {
+    cameraStatus: cameraPermissionStatus,
+    microphoneStatus: microphonePermissionStatus,
+    requestPendingPermissions,
+  } = useRoundCameraPermissions();
   const isPortrait = usePortraitScreen();
   const { beginTransition, revealTransition } = useScreenshotTransition();
 
@@ -55,6 +66,24 @@ export default function DeckDetailsScreen() {
 
   useEffect(() => {
     loadRoundDuration().then(setDuration);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refreshMotionPermission = () => {
+      void getRoundMotionPermissionStatus().then((status) => {
+        if (active) setMotionPermissionStatus(status);
+      });
+    };
+
+    refreshMotionPermission();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshMotionPermission();
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -92,7 +121,8 @@ export default function DeckDetailsScreen() {
       return;
     }
 
-    await requestRoundMotionAccess();
+    const motionAccess = await requestRoundMotionAccess();
+    setMotionPermissionStatus(motionAccess);
     await requestPendingPermissions().catch(() => undefined);
 
     saveRoundDuration(safeDuration).catch(() => undefined);
@@ -115,6 +145,12 @@ export default function DeckDetailsScreen() {
 
     router.push('/ready' as Href);
   };
+
+  const roundSetupNotice = getRoundSetupNotice({
+    cameraStatus: cameraPermissionStatus,
+    microphoneStatus: microphonePermissionStatus,
+    motionStatus: motionPermissionStatus,
+  });
 
   return (
     <>
@@ -204,29 +240,34 @@ export default function DeckDetailsScreen() {
           />
 
           <View style={styles.startArea}>
-            {cameraPermissionStatus !== 'authorized' && (
-              <View style={styles.cameraDisclosure}>
-                <Text style={styles.cameraDisclosureText}>
-                  {cameraPermissionStatus === 'not-determined'
-                    ? 'Round videos are optional. WHATZ IT? will ask to use the camera and microphone. You can decline and play without video.'
-                    : cameraPermissionStatus === 'denied'
-                      ? 'Camera access is off, so WHATZ IT? will play without video. To record future rounds, enable Camera and Microphone in Settings.'
-                      : 'Camera access is unavailable, so WHATZ IT? will play without video.'}
-                </Text>
+            {roundSetupNotice && (
+              <View style={styles.roundSetupCard}>
+                <View style={styles.roundSetupHeader}>
+                  <Text style={styles.roundSetupTitle}>{roundSetupNotice.title}</Text>
 
-                {cameraPermissionStatus === 'denied' && (
-                  <Pressable
-                    accessibilityHint="Opens the system settings for WHATZ IT?"
-                    accessibilityRole="link"
-                    onPress={() => void Linking.openSettings().catch(() => undefined)}
-                    style={({ pressed }) => [
-                      styles.settingsLink,
-                      pressed && styles.settingsLinkPressed,
-                    ]}
-                  >
-                    <Text style={styles.settingsLinkText}>OPEN SETTINGS</Text>
-                  </Pressable>
-                )}
+                  {roundSetupNotice.showSettings && (
+                    <Pressable
+                      accessibilityHint="Opens the system settings for WHATZ IT?"
+                      accessibilityRole="link"
+                      onPress={() => void Linking.openSettings().catch(() => undefined)}
+                      style={({ pressed }) => [
+                        styles.settingsLink,
+                        pressed && styles.settingsLinkPressed,
+                      ]}
+                    >
+                      <Text style={styles.settingsLinkText}>OPEN SETTINGS</Text>
+                    </Pressable>
+                  )}
+                </View>
+
+                <View style={styles.roundSetupMessages}>
+                  {roundSetupNotice.messages.map((message) => (
+                    <View key={message} style={styles.roundSetupMessageRow}>
+                      <View style={styles.roundSetupDot} />
+                      <Text style={styles.roundSetupMessage}>{message}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
             )}
 
@@ -250,6 +291,68 @@ export default function DeckDetailsScreen() {
       </SafeAreaView>
     </>
   );
+}
+
+function getRoundSetupNotice({
+  cameraStatus,
+  microphoneStatus,
+  motionStatus,
+}: {
+  cameraStatus: PermissionStatus;
+  microphoneStatus: PermissionStatus;
+  motionStatus: RoundMotionPermissionStatus | 'checking';
+}) {
+  const motionOff = motionStatus === 'denied' || motionStatus === 'unavailable';
+  const cameraOff = cameraStatus === 'denied' || cameraStatus === 'restricted';
+  const microphoneOff =
+    microphoneStatus === 'denied' || microphoneStatus === 'restricted';
+  const hasUndeterminedPermission =
+    motionStatus === 'not-determined' ||
+    cameraStatus === 'not-determined' ||
+    microphoneStatus === 'not-determined';
+
+  const messages: string[] = [];
+  if (motionOff) {
+    messages.push(
+      motionStatus === 'denied'
+        ? 'Motion access is off. Pass and Correct buttons will appear during the round.'
+        : 'Motion controls are unavailable. Pass and Correct buttons will appear during the round.',
+    );
+  }
+  if (cameraOff) {
+    messages.push('Camera access is off. This round will not be recorded.');
+  } else if (microphoneOff) {
+    messages.push('Microphone access is off. Videos will be recorded without sound.');
+  }
+
+  if (messages.length === 0) {
+    if (!hasUndeterminedPermission) return null;
+    return {
+      messages: [
+        'Motion controls and round videos are optional. You can still play if you decline.',
+      ],
+      showSettings: false,
+      title: 'OPTIONAL FEATURES',
+    };
+  }
+
+  const title =
+    messages.length > 1
+      ? 'ROUND SETUP'
+      : motionOff
+        ? 'MANUAL CONTROLS ON'
+        : cameraOff
+          ? 'VIDEO RECORDING OFF'
+          : 'VIDEO SOUND OFF';
+
+  return {
+    messages,
+    showSettings:
+      motionStatus === 'denied' ||
+      cameraStatus === 'denied' ||
+      microphoneStatus === 'denied',
+    title,
+  };
 }
 
 const MAXIMUM_TITLE_FONT_SIZE = 32;
@@ -570,25 +673,63 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
 
-  cameraDisclosure: {
-    alignItems: 'center',
+  roundSetupCard: {
     gap: spacing.sm,
-    paddingTop: spacing.sm,
     paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.background,
   },
 
-  cameraDisclosureText: {
+  roundSetupHeader: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+
+  roundSetupTitle: {
+    flex: 1,
+    color: colors.play,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+
+  roundSetupMessages: {
+    gap: 6,
+  },
+
+  roundSetupMessageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+
+  roundSetupDot: {
+    width: 6,
+    height: 6,
+    marginTop: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.play,
+  },
+
+  roundSetupMessage: {
+    flex: 1,
     color: colors.muted,
     fontSize: 13,
-    lineHeight: 19,
+    lineHeight: 18,
     fontWeight: '500',
-    textAlign: 'center',
   },
 
   settingsLink: {
     minHeight: 36,
     justifyContent: 'center',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     borderRadius: radius.pill,
   },
 

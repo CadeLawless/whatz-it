@@ -11,6 +11,7 @@ export function useRoundCameraPermissions() {
   const {
     canRequestPermission: canRequestMicrophonePermission,
     requestPermission: requestMicrophonePermission,
+    status: microphoneStatus,
   } = useMicrophonePermission();
 
   const requestPendingPermissions = useCallback(async () => {
@@ -32,6 +33,7 @@ export function useRoundCameraPermissions() {
 
   return {
     cameraStatus,
+    microphoneStatus,
     requestPendingPermissions,
   };
 }

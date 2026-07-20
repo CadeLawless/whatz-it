@@ -2,18 +2,23 @@ import { DeviceMotion } from 'expo-sensors';
 import { Platform } from 'react-native';
 
 export type RoundMotionAccess = 'granted' | 'denied' | 'unavailable';
+export type RoundMotionPermissionStatus = RoundMotionAccess | 'not-determined';
 
 export async function requestRoundMotionAccess(): Promise<RoundMotionAccess> {
-  return resolveRoundMotionAccess(true);
+  const currentStatus = await getRoundMotionPermissionStatus();
+  if (currentStatus !== 'not-determined') return currentStatus;
+
+  const requestedPermission = await DeviceMotion.requestPermissionsAsync().catch(() => null);
+  if (!requestedPermission) return 'unavailable';
+  return requestedPermission.granted ? 'granted' : 'denied';
 }
 
 export async function getRoundMotionAccess(): Promise<RoundMotionAccess> {
-  return resolveRoundMotionAccess(false);
+  const currentStatus = await getRoundMotionPermissionStatus();
+  return currentStatus === 'not-determined' ? 'denied' : currentStatus;
 }
 
-async function resolveRoundMotionAccess(
-  requestIfNeeded: boolean,
-): Promise<RoundMotionAccess> {
+export async function getRoundMotionPermissionStatus(): Promise<RoundMotionPermissionStatus> {
   if (Platform.OS === 'web') return 'unavailable';
 
   const available = await DeviceMotion.isAvailableAsync().catch(() => false);
@@ -22,9 +27,5 @@ async function resolveRoundMotionAccess(
   const currentPermission = await DeviceMotion.getPermissionsAsync().catch(() => null);
   if (!currentPermission) return 'unavailable';
   if (currentPermission.granted) return 'granted';
-  if (!requestIfNeeded || !currentPermission.canAskAgain) return 'denied';
-
-  const requestedPermission = await DeviceMotion.requestPermissionsAsync().catch(() => null);
-  if (!requestedPermission) return 'unavailable';
-  return requestedPermission.granted ? 'granted' : 'denied';
+  return currentPermission.canAskAgain ? 'not-determined' : 'denied';
 }
