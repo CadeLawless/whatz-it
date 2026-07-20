@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
 import { DeviceMotion } from 'expo-sensors';
 
 import {
@@ -7,6 +6,7 @@ import {
   rememberRoundTiltCalibration,
 } from '@/game/round-tilt-calibration';
 import { isForeheadPosition, normalizePortraitCanvasTilt } from '@/game/tilt-detector';
+import { getRoundMotionAccess } from '@/utils/round-motion-permission';
 import { logRoundDiagnostic } from '@/video/video-diagnostics';
 
 export type ForeheadPositionStatus =
@@ -35,26 +35,13 @@ export function useForeheadPosition(enabled: boolean) {
       // the baseline and republishes it only after the current placement check.
       clearRoundTiltCalibration();
       setStatus('checking');
-      if (Platform.OS === 'web') {
+      const motionAccess = await getRoundMotionAccess();
+      if (!active) return;
+      if (motionAccess === 'unavailable') {
         setStatus('unavailable');
         return;
       }
-
-      const available = await DeviceMotion.isAvailableAsync().catch(() => false);
-      if (!active) return;
-      if (!available) {
-        setStatus('unavailable');
-        return;
-      }
-
-      const currentPermission = await DeviceMotion.getPermissionsAsync().catch(() => null);
-      let granted = currentPermission?.granted ?? true;
-      if (!granted && currentPermission?.canAskAgain) {
-        const requested = await DeviceMotion.requestPermissionsAsync().catch(() => null);
-        granted = requested?.granted ?? false;
-      }
-      if (!active) return;
-      if (!granted) {
+      if (motionAccess === 'denied') {
         setStatus('denied');
         return;
       }

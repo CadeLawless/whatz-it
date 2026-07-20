@@ -28,6 +28,7 @@ import {
   saveRoundDuration,
 } from '@/storage/preferences';
 import { colors, radius, spacing, typography } from '@/theme';
+import { requestRoundMotionAccess } from '@/utils/round-motion-permission';
 import { useRoundCameraPermissions } from '@/video/round-camera-permission';
 
 export default function DeckDetailsScreen() {
@@ -91,6 +92,7 @@ export default function DeckDetailsScreen() {
       return;
     }
 
+    await requestRoundMotionAccess();
     await requestPendingPermissions().catch(() => undefined);
 
     saveRoundDuration(safeDuration).catch(() => undefined);

@@ -40,7 +40,6 @@ export default function ReadyScreen() {
   const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
   const [introEndsAt, setIntroEndsAt] = useState<number | null>(null);
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
-  const [manualReady, setManualReady] = useState(false);
   const [orientationSettled, setOrientationSettled] = useState(false);
   const [introComplete, setIntroComplete] = useState(false);
   const [soundsPrepared, setSoundsPrepared] = useState(false);
@@ -64,7 +63,10 @@ export default function ReadyScreen() {
     retryLoading,
   } = useRoundSounds();
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
-  const positionReady = foreheadStatus === 'ready' || manualReady;
+  const positionReady =
+    foreheadStatus === 'ready' ||
+    foreheadStatus === 'denied' ||
+    foreheadStatus === 'unavailable';
   const recordingPrepared =
     recordingPreparation === 'ready' ||
     recordingPreparation === 'permission-denied' ||
@@ -443,15 +445,6 @@ export default function ReadyScreen() {
                 <>
                   <Text style={styles.positionTitle}>{getPositionMessage(foreheadStatus)}</Text>
                   <Text style={styles.instructions}>Tilt down for correct, tilt up to pass</Text>
-                  {(foreheadStatus === 'unavailable' || foreheadStatus === 'denied') && (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setManualReady(true)}
-                      style={styles.manualButton}
-                    >
-                      <Text style={styles.manualButtonText}>START COUNTDOWN</Text>
-                    </Pressable>
-                  )}
                 </>
               )}
             </View>

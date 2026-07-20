@@ -301,6 +301,11 @@ export default function GameScreen() {
         : '#439EFE';
   const cardFontSize = getCardFontSize(currentCard.text, width, height);
   const bylineFontSize = getBylineFontSize(width, height);
+  const showManualControls =
+    Platform.OS === 'web' || tiltStatus === 'denied' || tiltStatus === 'unavailable';
+  const manualControlHeight = Math.round(Math.max(52, Math.min(70, height * 0.16)));
+  const manualControlMaxWidth = Math.round(Math.min(720, width * 0.82));
+  const manualControlFontSize = Math.round(Math.max(12, Math.min(16, height * 0.034)));
 
   return (
     <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
@@ -331,7 +336,10 @@ export default function GameScreen() {
                   ? `${currentCard.text} by ${currentCard.byline}`
                   : currentCard.text
               }
-              style={styles.cardArea}
+              style={[
+                styles.cardArea,
+                showManualControls && { paddingBottom: manualControlHeight + spacing.xl },
+              ]}
             >
               <View style={styles.cardCopy}>
                 <Text
@@ -360,26 +368,52 @@ export default function GameScreen() {
               </View>
             </View>
 
-            {Platform.OS === 'web' && (
-              <View style={styles.controls}>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={locked}
-                  onPress={() => handleAnswer('passed')}
-                  style={({ pressed }) => [styles.control, styles.passButton, pressed && styles.controlPressed]}
-                >
-                  <Text style={styles.controlIcon}>×</Text>
-                  <Text style={styles.controlText}>PASS</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={locked}
-                  onPress={() => handleAnswer('correct')}
-                  style={({ pressed }) => [styles.control, styles.correctButton, pressed && styles.controlPressed]}
-                >
-                  <Text style={styles.controlIcon}>✓</Text>
-                  <Text style={styles.controlText}>CORRECT</Text>
-                </Pressable>
+            {showManualControls && (
+              <View pointerEvents="box-none" style={styles.controlsDock}>
+                <View style={[styles.controls, { maxWidth: manualControlMaxWidth }]}>
+                  <Pressable
+                    accessibilityLabel="Pass"
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: locked }}
+                    disabled={locked}
+                    onPress={() => handleAnswer('passed')}
+                    style={({ pressed }) => [
+                      styles.control,
+                      styles.passButton,
+                      { minHeight: manualControlHeight },
+                      locked && styles.controlDisabled,
+                      pressed && styles.controlPressed,
+                    ]}
+                  >
+                    <Text style={styles.controlIcon}>×</Text>
+                    <Text
+                      style={[styles.controlText, { fontSize: manualControlFontSize }]}
+                    >
+                      PASS
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel="Correct"
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: locked }}
+                    disabled={locked}
+                    onPress={() => handleAnswer('correct')}
+                    style={({ pressed }) => [
+                      styles.control,
+                      styles.correctButton,
+                      { minHeight: manualControlHeight },
+                      locked && styles.controlDisabled,
+                      pressed && styles.controlPressed,
+                    ]}
+                  >
+                    <Text style={styles.controlIcon}>✓</Text>
+                    <Text
+                      style={[styles.controlText, { fontSize: manualControlFontSize }]}
+                    >
+                      CORRECT
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             )}
 
@@ -594,26 +628,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     opacity: 0.72,
   },
-  controls: {
+  controlsDock: {
     position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
-    bottom: spacing.sm,
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: spacing.md,
+    alignItems: 'center',
+  },
+  controls: {
+    width: '100%',
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   control: {
     flex: 1,
-    minHeight: 54,
-    borderRadius: radius.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    borderWidth: 3,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  passButton: { backgroundColor: colors.pass },
-  correctButton: { backgroundColor: colors.correct },
+  passButton: { backgroundColor: colors.pass, borderColor: colors.passBorder },
+  correctButton: { backgroundColor: colors.correct, borderColor: colors.correctBorder },
+  controlDisabled: { opacity: 0.55 },
   controlPressed: { transform: [{ scale: 0.98 }], opacity: 0.86 },
-  controlIcon: { color: '#000000', fontSize: 24, fontWeight: '900', lineHeight: 26 },
-  controlText: { color: '#000000', fontSize: 11, fontWeight: '900', letterSpacing: 1.1 },
+  controlIcon: { color: '#000000', fontSize: 26, fontWeight: '900', lineHeight: 28 },
+  controlText: { color: '#000000', fontWeight: '900', letterSpacing: 1.1 },
   feedback: {
     ...StyleSheet.absoluteFill,
     zIndex: 50,

@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
 import { DeviceMotion } from 'expo-sensors';
 
 import { getRecentRoundTiltCalibration } from '@/game/round-tilt-calibration';
@@ -9,6 +8,7 @@ import {
   normalizePortraitCanvasTilt,
   updateTiltDetector,
 } from '@/game/tilt-detector';
+import { getRoundMotionAccess } from '@/utils/round-motion-permission';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 export type TiltControlStatus = 'checking' | 'calibrating' | 'ready' | 'unavailable' | 'denied';
@@ -48,31 +48,14 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
       setStatus('checking');
       detector.current = createTiltDetectorState();
 
-      // Browser support varies widely and some Expo web implementations report
-      // availability without exposing the listener API. The web MVP therefore
-      // uses the reliable button controls and reserves tilt input for native apps.
-      if (Platform.OS === 'web') {
+      const motionAccess = await getRoundMotionAccess();
+      if (!active) return;
+      if (motionAccess === 'unavailable') {
         setStatus('unavailable');
-        logRoundDiagnostic('tilt controls unavailable on web');
+        logRoundDiagnostic('tilt controls unavailable');
         return;
       }
-
-      const available = await DeviceMotion.isAvailableAsync().catch(() => false);
-      if (!active) return;
-      if (!available) {
-        setStatus('unavailable');
-        warnRoundDiagnostic('tilt controls unavailable', new Error('DeviceMotion unavailable'));
-        return;
-      }
-
-      const currentPermission = await DeviceMotion.getPermissionsAsync().catch(() => null);
-      let granted = currentPermission?.granted ?? true;
-      if (!granted && currentPermission?.canAskAgain) {
-        const requested = await DeviceMotion.requestPermissionsAsync().catch(() => null);
-        granted = requested?.granted ?? false;
-      }
-      if (!active) return;
-      if (!granted) {
+      if (motionAccess === 'denied') {
         setStatus('denied');
         warnRoundDiagnostic('tilt controls permission denied', new Error('DeviceMotion denied'));
         return;
