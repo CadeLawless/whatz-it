@@ -1,7 +1,13 @@
 import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
-import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import {
+  type Href,
+  Stack,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   Pressable,
@@ -37,6 +43,12 @@ import {
 } from '@/utils/round-motion-permission';
 import { useRoundCameraPermissions } from '@/video/round-camera-permission';
 
+type RoundSetupNotice = {
+  messages: string[];
+  showSettings: boolean;
+  title: string;
+};
+
 export default function DeckDetailsScreen() {
   const { width } = useWindowDimensions();
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
@@ -46,6 +58,8 @@ export default function DeckDetailsScreen() {
 
   const [duration, setDuration] = useState(DEFAULT_ROUND_DURATION);
   const [isStarting, setIsStarting] = useState(false);
+  const [frozenRoundSetupNotice, setFrozenRoundSetupNotice] =
+    useState<RoundSetupNotice | null>(null);
   const [motionPermissionStatus, setMotionPermissionStatus] =
     useState<RoundMotionPermissionStatus | 'checking'>('checking');
 
@@ -92,6 +106,13 @@ export default function DeckDetailsScreen() {
     }
   }, [isPortrait, revealTransition]);
 
+  useFocusEffect(
+    useCallback(() => {
+      setIsStarting(false);
+      setFrozenRoundSetupNotice(null);
+    }, []),
+  );
+
   if (!isPortrait) {
     return <PortraitTransition style={styles.orientationGate} />;
   }
@@ -113,6 +134,7 @@ export default function DeckDetailsScreen() {
       return;
     }
 
+    setFrozenRoundSetupNotice(roundSetupNotice);
     setIsStarting(true);
     const safeDuration = clampRoundDuration(duration);
 
@@ -151,6 +173,9 @@ export default function DeckDetailsScreen() {
     microphoneStatus: microphonePermissionStatus,
     motionStatus: motionPermissionStatus,
   });
+  const displayedRoundSetupNotice = isStarting
+    ? frozenRoundSetupNotice
+    : roundSetupNotice;
 
   return (
     <>
@@ -240,21 +265,23 @@ export default function DeckDetailsScreen() {
           />
 
           <View style={styles.startArea}>
-            {roundSetupNotice && (
+            {displayedRoundSetupNotice && (
               <View style={styles.roundSetupCard}>
                 <View style={styles.roundSetupHeader}>
-                  <Text style={styles.roundSetupTitle}>{roundSetupNotice.title}</Text>
+                  <Text style={styles.roundSetupTitle}>
+                    {displayedRoundSetupNotice.title}
+                  </Text>
                 </View>
 
                 <View style={styles.roundSetupMessages}>
-                  {roundSetupNotice.messages.map((message) => (
+                  {displayedRoundSetupNotice.messages.map((message) => (
                     <View key={message} style={styles.roundSetupMessageRow}>
                       <View style={styles.roundSetupDot} />
                       <Text style={styles.roundSetupMessage}>{message}</Text>
                     </View>
                   ))}
                 </View>
-                {roundSetupNotice.showSettings && (
+                {displayedRoundSetupNotice.showSettings && (
                   <Pressable
                     accessibilityHint="Opens the system settings for WHATZ IT?"
                     accessibilityRole="link"
@@ -300,7 +327,7 @@ function getRoundSetupNotice({
   cameraStatus: PermissionStatus;
   microphoneStatus: PermissionStatus;
   motionStatus: RoundMotionPermissionStatus | 'checking';
-}) {
+}): RoundSetupNotice | null {
   const motionOff = motionStatus === 'denied' || motionStatus === 'unavailable';
   const cameraOff = cameraStatus === 'denied' || cameraStatus === 'restricted';
   const microphoneOff =
