@@ -145,7 +145,7 @@ export default function ResultsScreen() {
     if (preparedVideo?.exportStatus === 'failed') {
       setSaveNotice({
         title: 'Export failed',
-        message: 'The video and its audio are safe in WHATZ IT. Please send the [RoundVideo] terminal logs.',
+        message: 'The video and its audio are safe inside the WHATZ IT? app. Please send the [RoundVideo] terminal logs.',
       });
     }
   };

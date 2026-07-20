@@ -8,6 +8,7 @@ import { captureRef } from 'react-native-view-shot';
 import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
+import { RecordingIndicator } from '@/components/recording-indicator';
 import { getDeckById } from '@/data/decks';
 import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
@@ -455,6 +456,7 @@ export default function ReadyScreen() {
               )}
             </View>
           </View>
+          {isRecording && <RecordingIndicator />}
         </SafeAreaView>
       </LandscapeViewport>
     </View>

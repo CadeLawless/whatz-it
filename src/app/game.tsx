@@ -15,6 +15,7 @@ import { captureRef } from 'react-native-view-shot';
 
 import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
+import { RecordingIndicator } from '@/components/recording-indicator';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { getDeckById } from '@/data/decks';
 import { useRound } from '@/game/round-context';
@@ -412,6 +413,8 @@ export default function GameScreen() {
               </Text>
             </View>
           )}
+
+          {isRecording && <RecordingIndicator />}
 
           {round.status !== 'finished' && round.status !== 'feedback' && (
             <View pointerEvents="box-none" style={styles.closeButton}>

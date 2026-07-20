@@ -799,7 +799,7 @@ export function RoundVideoPlayer({
               message={
                 deleteError
                   ? `The video could not be deleted. ${deleteError}`
-                  : 'This removes the video from WHATZ IT on this device.'
+                  : 'This removes the video from WHATZ IT? on this device.'
               }
               onCancel={cancelDelete}
               onConfirm={() => void confirmDelete()}

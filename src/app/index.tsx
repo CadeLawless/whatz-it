@@ -208,7 +208,7 @@ export default function DeckLibraryScreen() {
       if (prepared.exportStatus === 'failed') {
         setSaveNotice({
           title: 'Export failed',
-          message: 'The video and its audio are safe in WHATZ IT. Please send the [RoundVideo] terminal logs.',
+          message: 'The video and its audio are safe inside the WHATZ IT? app. Please send the [RoundVideo] terminal logs.',
         });
       }
     } finally {
@@ -273,7 +273,7 @@ export default function DeckLibraryScreen() {
         <View style={styles.brandCard}>
           <View
             accessible
-            accessibilityLabel="Whatz It?"
+            accessibilityLabel="WHATZ IT?"
             style={[styles.brand, { width: brandWidth }]}
           >
             <Image
@@ -472,7 +472,7 @@ export default function DeckLibraryScreen() {
             </Text>
             <View style={styles.privacySupportLinks}>
               <Pressable
-                accessibilityHint="Opens the WHATZ IT privacy policy in your browser"
+                accessibilityHint="Opens the WHATZ IT? privacy policy in your browser"
                 accessibilityRole="link"
                 onPress={() =>
                   openExternalLink(
@@ -489,8 +489,8 @@ export default function DeckLibraryScreen() {
               </Pressable>
               <View accessibilityElementsHidden style={styles.privacySupportDivider} />
               <Pressable
-                accessibilityHint="Opens your email app to contact WHATZ IT support"
-                accessibilityLabel={`Email WHATZ IT support at ${SUPPORT_EMAIL}`}
+                accessibilityHint="Opens your email app to contact WHATZ IT? support"
+                accessibilityLabel={`Email WHATZ IT? support at ${SUPPORT_EMAIL}`}
                 accessibilityRole="link"
                 onPress={() =>
                   openExternalLink(
@@ -520,7 +520,7 @@ export default function DeckLibraryScreen() {
         message={
           deleteError
             ? `The video could not be deleted. ${deleteError}`
-            : 'This removes the video from WHATZ IT on this device.'
+            : 'This removes the video from WHATZ IT? on this device.'
         }
         onCancel={cancelDelete}
         onConfirm={confirmDelete}

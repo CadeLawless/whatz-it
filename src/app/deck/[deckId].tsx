@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import * as Linking from 'expo-linking';
 import { type Href, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -27,6 +28,7 @@ import {
   saveRoundDuration,
 } from '@/storage/preferences';
 import { colors, radius, spacing, typography } from '@/theme';
+import { useRoundCameraPermissions } from '@/video/round-camera-permission';
 
 export default function DeckDetailsScreen() {
   const { width } = useWindowDimensions();
@@ -39,6 +41,8 @@ export default function DeckDetailsScreen() {
   const [isStarting, setIsStarting] = useState(false);
 
   const screenRef = useRef<View>(null);
+  const { cameraStatus: cameraPermissionStatus, requestPendingPermissions } =
+    useRoundCameraPermissions();
   const isPortrait = usePortraitScreen();
   const { beginTransition, revealTransition } = useScreenshotTransition();
 
@@ -86,6 +90,8 @@ export default function DeckDetailsScreen() {
       setIsStarting(false);
       return;
     }
+
+    await requestPendingPermissions().catch(() => undefined);
 
     saveRoundDuration(safeDuration).catch(() => undefined);
 
@@ -195,21 +201,49 @@ export default function DeckDetailsScreen() {
             }
           />
 
-          <Pressable
-            accessibilityRole="button"
-            disabled={isStarting}
-            onPress={handleStart}
-            style={({ pressed }) => [
-              styles.startButton,
-              pressed && styles.startButtonPressed,
-            ]}
-          >
-            <Text style={styles.startButtonText}>
-              LET&apos;S PLAY
-            </Text>
+          <View style={styles.startArea}>
+            {cameraPermissionStatus !== 'authorized' && (
+              <View style={styles.cameraDisclosure}>
+                <Text style={styles.cameraDisclosureText}>
+                  {cameraPermissionStatus === 'not-determined'
+                    ? 'Round videos are optional. WHATZ IT? will ask to use the camera and microphone. You can decline and play without video.'
+                    : cameraPermissionStatus === 'denied'
+                      ? 'Camera access is off, so WHATZ IT? will play without video. To record future rounds, enable Camera and Microphone in Settings.'
+                      : 'Camera access is unavailable, so WHATZ IT? will play without video.'}
+                </Text>
 
-            <Text style={styles.startArrow}>→</Text>
-          </Pressable>
+                {cameraPermissionStatus === 'denied' && (
+                  <Pressable
+                    accessibilityHint="Opens the system settings for WHATZ IT?"
+                    accessibilityRole="link"
+                    onPress={() => void Linking.openSettings().catch(() => undefined)}
+                    style={({ pressed }) => [
+                      styles.settingsLink,
+                      pressed && styles.settingsLinkPressed,
+                    ]}
+                  >
+                    <Text style={styles.settingsLinkText}>OPEN SETTINGS</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            <Pressable
+              accessibilityRole="button"
+              disabled={isStarting}
+              onPress={handleStart}
+              style={({ pressed }) => [
+                styles.startButton,
+                pressed && styles.startButtonPressed,
+              ]}
+            >
+              <Text style={styles.startButtonText}>
+                LET&apos;S PLAY
+              </Text>
+
+              <Text style={styles.startArrow}>→</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </>
@@ -528,9 +562,47 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
 
-  startButton: {
+  startArea: {
     marginTop: 'auto',
     marginBottom: 0,
+    gap: spacing.md,
+  },
+
+  cameraDisclosure: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+
+  cameraDisclosureText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+
+  settingsLink: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+  },
+
+  settingsLinkPressed: {
+    opacity: 0.65,
+  },
+
+  settingsLinkText: {
+    color: colors.play,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+
+  startButton: {
     minHeight: 76,
     paddingHorizontal: spacing.xl,
     flexDirection: 'row',

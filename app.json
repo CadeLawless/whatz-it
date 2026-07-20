@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "WHATZ IT",
+    "name": "WHATZ IT?",
     "slug": "whatz-it",
     "owner": "cader-taders-team",
     "version": "1.0.0",
@@ -15,8 +15,8 @@
       "requireFullScreen": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Allow WHATZ IT to record the clue-givers during a round.",
-        "NSMicrophoneUsageDescription": "Allow WHATZ IT to record the clues and reactions during a round."
+        "NSCameraUsageDescription": "Allow WHATZ IT? to record the clue-givers during a round.",
+        "NSMicrophoneUsageDescription": "Allow WHATZ IT? to record the clues and reactions during a round."
       }
     },
     "android": {
@@ -48,7 +48,7 @@
       [
         "expo-sensors",
         {
-          "motionPermission": "Allow WHATZ IT to detect correct and passed cards when you tilt your device."
+          "motionPermission": "Allow WHATZ IT? to detect correct and passed cards when you tilt your device."
         }
       ],
       [
@@ -69,7 +69,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow WHATZ IT to record the clues and reactions during a round.",
+          "microphonePermission": "Allow WHATZ IT? to record the clues and reactions during a round.",
           "recordAudioAndroid": true
         }
       ],
@@ -77,7 +77,7 @@
         "expo-media-library",
         {
           "photosPermission": false,
-          "savePhotosPermission": "Allow WHATZ IT to save a round video when you tap Save Video.",
+          "savePhotosPermission": "Allow WHATZ IT? to save a round video when you tap Save Video.",
           "granularPermissions": [
             "video"
           ]
