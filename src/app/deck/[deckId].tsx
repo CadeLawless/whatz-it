@@ -69,6 +69,7 @@ export default function DeckDetailsScreen() {
 
   const screenRef = useRef<View>(null);
   const settingsReturnPending = useRef(false);
+  const settingsReturnWrite = useRef<Promise<void> | null>(null);
   const settingsWasBackgrounded = useRef(false);
   const {
     cameraStatus: cameraPermissionStatus,
@@ -83,6 +84,12 @@ export default function DeckDetailsScreen() {
     1,
     (width - spacing.lg * 2 - spacing.xl * 2) * 0.59,
   );
+  const armSettingsReturn = useCallback(() => {
+    settingsReturnPending.current = true;
+    const write = saveSettingsReturnDeckId(deckId).catch(() => undefined);
+    settingsReturnWrite.current = write;
+    return write;
+  }, [deckId]);
 
   useEffect(() => {
     loadRoundDuration().then(setDuration);
@@ -98,15 +105,22 @@ export default function DeckDetailsScreen() {
 
     refreshMotionPermission();
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state !== 'active' && settingsReturnPending.current) {
+      if (state !== 'active' && !settingsWasBackgrounded.current) {
         settingsWasBackgrounded.current = true;
+        if (!settingsReturnPending.current) {
+          void armSettingsReturn();
+        }
       }
       if (state === 'active') {
         refreshMotionPermission();
         if (settingsReturnPending.current && settingsWasBackgrounded.current) {
           settingsReturnPending.current = false;
           settingsWasBackgrounded.current = false;
-          void clearSettingsReturnDeckId().catch(() => undefined);
+          const pendingWrite = settingsReturnWrite.current;
+          settingsReturnWrite.current = null;
+          void (pendingWrite ?? Promise.resolve())
+            .then(clearSettingsReturnDeckId)
+            .catch(() => undefined);
         }
       }
     });
@@ -114,7 +128,7 @@ export default function DeckDetailsScreen() {
       active = false;
       subscription.remove();
     };
-  }, []);
+  }, [armSettingsReturn]);
 
   useEffect(() => {
     if (isPortrait) {
@@ -186,12 +200,12 @@ export default function DeckDetailsScreen() {
 
   const handleOpenSettings = async () => {
     try {
-      await saveSettingsReturnDeckId(deck.id);
-      settingsReturnPending.current = true;
+      await armSettingsReturn();
       settingsWasBackgrounded.current = false;
       await Linking.openSettings();
     } catch {
       settingsReturnPending.current = false;
+      settingsReturnWrite.current = null;
       settingsWasBackgrounded.current = false;
       await clearSettingsReturnDeckId().catch(() => undefined);
     }
