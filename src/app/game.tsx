@@ -442,7 +442,15 @@ export default function GameScreen() {
             </View>
           )}
 
-          {isRecording && <RecordingIndicator />}
+          {isRecording && (
+            <RecordingIndicator
+              style={
+                showManualControls
+                  ? styles.recordingIndicatorWithManualControls
+                  : undefined
+              }
+            />
+          )}
 
           {round.status !== 'finished' && round.status !== 'feedback' && (
             <View pointerEvents="box-none" style={styles.closeButton}>
@@ -527,6 +535,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   closeButton: { position: 'absolute', top: 30, left: 30, zIndex: 70 },
+  recordingIndicatorWithManualControls: {
+    top: 37,
+    bottom: 'auto',
+    left: 90,
+  },
   topRow: {
     height: 72,
     flexShrink: 0,
