@@ -197,6 +197,14 @@ export default function DeckDetailsScreen() {
     }
   };
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/');
+  };
+
   const roundSetupNotice = getRoundSetupNotice({
     cameraStatus: cameraPermissionStatus,
     microphoneStatus: microphonePermissionStatus,
@@ -224,7 +232,7 @@ export default function DeckDetailsScreen() {
           <Pressable
             accessibilityLabel="Back to Decks"
             accessibilityRole="button"
-            onPress={() => router.back()}
+            onPress={handleBack}
             style={({ pressed }) => [
               styles.backButton,
               pressed && styles.backButtonPressed,

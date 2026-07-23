@@ -2,7 +2,7 @@ import { type Href, Stack, usePathname, useRouter } from 'expo-router';
 import { setAudioModeAsync } from 'expo-audio';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -29,7 +29,8 @@ export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
   const [rootHasLaidOut, setRootHasLaidOut] = useState(false);
   const [settingsReturnPath, setSettingsReturnPath] =
-    useState<Href | null | undefined>(undefined);
+    useState<string | null | undefined>(undefined);
+  const settingsReturnHandled = useRef(false);
   const pathname = usePathname();
   const router = useRouter();
 
@@ -59,7 +60,7 @@ export default function RootLayout() {
     ]).then(([, deckId]) => {
       setSettingsReturnPath(
         deckId && getDeckById(deckId)
-          ? (`/deck/${encodeURIComponent(deckId)}` as Href)
+          ? `/deck/${encodeURIComponent(deckId)}`
           : null,
       );
       setIsReady(true);
@@ -67,9 +68,16 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!isReady || settingsReturnPath === undefined) return;
+    if (
+      !isReady ||
+      settingsReturnPath === undefined ||
+      settingsReturnHandled.current
+    ) {
+      return;
+    }
+    settingsReturnHandled.current = true;
     if (settingsReturnPath && pathname !== settingsReturnPath) {
-      router.replace(settingsReturnPath);
+      router.replace(settingsReturnPath as Href);
     }
   }, [isReady, pathname, router, settingsReturnPath]);
 
