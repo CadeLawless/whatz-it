@@ -440,11 +440,13 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       ],
     );
 
-    if (!enabled || !device) return null;
+    if (!device) return null;
     return (
       <Camera
         device={device}
-        isActive
+        // Keep the native preview and capture outputs mounted while inactive.
+        // Deallocating the session during output teardown can trip an AVFoundation assertion.
+        isActive={enabled}
         // Toggle the recorded front-camera image from the prior behavior so it
         // has the expected left/right orientation in playback and exports.
         mirrorMode="off"
