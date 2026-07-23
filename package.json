@@ -5,11 +5,11 @@
   "dependencies": {
     "@expo/ui": "~57.0.7",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "expo": "~57.0.7",
+    "expo": "~57.0.8",
     "expo-asset": "~57.0.5",
-    "expo-audio": "~57.0.2",
+    "expo-audio": "~57.0.3",
     "expo-constants": "~57.0.5",
-    "expo-dev-client": "~57.0.7",
+    "expo-dev-client": "~57.0.8",
     "expo-device": "~57.0.1",
     "expo-file-system": "~57.0.1",
     "expo-font": "~57.0.1",
@@ -17,17 +17,17 @@
     "expo-haptics": "~57.0.1",
     "expo-image": "~57.0.1",
     "expo-keep-awake": "~57.0.1",
-    "expo-linking": "~57.0.3",
+    "expo-linking": "~57.0.4",
     "expo-media-library": "~57.0.3",
-    "expo-router": "~57.0.7",
+    "expo-router": "~57.0.8",
     "expo-screen-orientation": "~57.0.1",
     "expo-sensors": "~57.0.2",
-    "expo-splash-screen": "~57.0.4",
+    "expo-splash-screen": "~57.0.5",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.1",
     "expo-system-ui": "~57.0.1",
-    "expo-video": "~57.0.1",
-    "expo-web-browser": "~57.0.1",
+    "expo-video": "~57.0.2",
+    "expo-web-browser": "~57.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
@@ -36,7 +36,7 @@
     "react-native-nitro-modules": "^0.36.1",
     "react-native-reanimated": "4.5.0",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "4.25.2",
+    "react-native-screens": "~4.26.0",
     "react-native-view-shot": "5.1.0",
     "react-native-vision-camera": "^5.1.0",
     "react-native-web": "~0.21.0",
@@ -61,6 +61,17 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/game/*.test.ts"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-nitro-image",
+          "whatz-it-live-overlay",
+          "whatz-it-video-export"
+        ]
+      }
+    }
   },
   "private": true
 }
