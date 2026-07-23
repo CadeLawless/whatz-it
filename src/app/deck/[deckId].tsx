@@ -87,12 +87,31 @@ export default function DeckDetailsScreen() {
     1,
     (width - spacing.lg * 2 - spacing.xl * 2) * 0.59,
   );
-  const armSettingsReturn = useCallback(() => {
-    settingsReturnPending.current = true;
-    const write = saveSettingsReturnDeckId(deckId).catch(() => undefined);
-    settingsReturnWrite.current = write;
-    return write;
-  }, [deckId]);
+  const armSettingsReturn = useCallback(
+    (source: 'background' | 'explicit') => {
+      settingsReturnPending.current = true;
+      const permissions =
+        source === 'background' && motionPermissionStatus !== 'checking'
+          ? {
+              camera: cameraPermissionStatus,
+              microphone: microphonePermissionStatus,
+              motion: motionPermissionStatus,
+            }
+          : undefined;
+      const write = saveSettingsReturnDeckId(deckId, {
+        source,
+        permissions,
+      }).catch(() => undefined);
+      settingsReturnWrite.current = write;
+      return write;
+    },
+    [
+      cameraPermissionStatus,
+      deckId,
+      microphonePermissionStatus,
+      motionPermissionStatus,
+    ],
+  );
 
   useEffect(() => {
     loadRoundDuration().then(setDuration);
@@ -119,7 +138,7 @@ export default function DeckDetailsScreen() {
       if (state !== 'active' && !settingsWasBackgrounded.current) {
         settingsWasBackgrounded.current = true;
         if (!settingsReturnPending.current) {
-          void armSettingsReturn();
+          void armSettingsReturn('background');
         }
       }
       if (state === 'active') {
@@ -141,17 +160,14 @@ export default function DeckDetailsScreen() {
     };
   }, [armSettingsReturn]);
 
-  useEffect(() => {
-    if (isPortrait) {
-      revealTransition('deck');
-    }
-  }, [isPortrait, revealTransition]);
-
   useFocusEffect(
     useCallback(() => {
       setIsStarting(false);
       setFrozenRoundSetupNotice(null);
-    }, []),
+      if (isPortrait) {
+        void revealTransition('deck');
+      }
+    }, [isPortrait, revealTransition]),
   );
 
   if (!isPortrait) {
@@ -211,7 +227,7 @@ export default function DeckDetailsScreen() {
 
   const handleOpenSettings = async () => {
     try {
-      await armSettingsReturn();
+      await armSettingsReturn('explicit');
       settingsWasBackgrounded.current = false;
       await Linking.openSettings();
     } catch {

@@ -11,10 +11,14 @@ import { getDeckById } from '@/data/decks';
 import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';
-import { consumeSettingsReturnDeckId } from '@/storage/settings-return';
+import {
+  consumeSettingsReturnRequest,
+  settingsPermissionsChanged,
+} from '@/storage/settings-return';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 import { initializeRoundVideoStorage } from '@/video/round-videos';
 import { loadHomeBranding } from '@/utils/home-branding';
+import { getSettingsPermissionSnapshot } from '@/utils/settings-permission-snapshot';
 import {
   initializeFlightRecorder,
   markFlightRecorderExpectedExit,
@@ -59,7 +63,7 @@ export default function RootLayout() {
   useEffect(() => {
     void Promise.all([
       loadHomeBranding().catch(() => undefined),
-      consumeSettingsReturnDeckId().catch(() => null),
+      getSettingsReturnDeckId().catch(() => null),
     ]).then(([, deckId]) => {
       setSettingsReturnDeckId(deckId && getDeckById(deckId) ? deckId : null);
       setIsReady(true);
@@ -201,3 +205,15 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
 });
+
+async function getSettingsReturnDeckId() {
+  const request = await consumeSettingsReturnRequest();
+  if (!request) return null;
+  if (request.source === 'explicit') return request.deckId;
+  if (!request.permissions) return null;
+
+  const currentPermissions = await getSettingsPermissionSnapshot();
+  return settingsPermissionsChanged(request.permissions, currentPermissions)
+    ? request.deckId
+    : null;
+}
