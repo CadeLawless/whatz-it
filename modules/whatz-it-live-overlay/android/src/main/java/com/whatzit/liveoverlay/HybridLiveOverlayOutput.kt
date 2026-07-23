@@ -21,6 +21,10 @@ import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
 
+private inline fun logNativeDiagnostic(tag: String, message: () -> String) {
+  if (BuildConfig.DEBUG) Log.i(tag, message())
+}
+
 internal class HybridLiveOverlayOutput : HybridCameraOutputSpec(), NativeCameraOutput {
   private val encoderExecutor: ExecutorService =
     Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "whatz-it-live-overlay") }
@@ -93,10 +97,9 @@ internal class HybridLiveOverlayOutput : HybridCameraOutputSpec(), NativeCameraO
       resetRecordingState(deleteOutputs = true)
       renderer = LiveOverlayRenderer(headshotUri, wordmarkUri)
       recordingRequested = true
-      Log.i(
-        TAG,
-        "Android live overlay recorder armed headshot=${headshotUri != null} wordmark=${wordmarkUri != null}",
-      )
+      logNativeDiagnostic(TAG) {
+        "Android live overlay recorder armed headshot=${headshotUri != null} wordmark=${wordmarkUri != null}"
+      }
     }
   }
 
@@ -185,10 +188,9 @@ internal class HybridLiveOverlayOutput : HybridCameraOutputSpec(), NativeCameraO
     brandedVideoWriter = brandedWriter
     firstTimestampNs = timestampNs
     lastTimestampNs = timestampNs
-    Log.i(
-      TAG,
-      "Android dual live writers started width=$outputWidth height=$outputHeight sourceWidth=$sourceWidth sourceHeight=$sourceHeight clean=${cleanWriter.file.name} branded=${brandedWriter.file.name}",
-    )
+    logNativeDiagnostic(TAG) {
+      "Android dual live writers started width=$outputWidth height=$outputHeight sourceWidth=$sourceWidth sourceHeight=$sourceHeight clean=${cleanWriter.file.name} branded=${brandedWriter.file.name}"
+    }
   }
 
   private fun finishRecording(): LiveOverlayRecordingResult {
@@ -216,10 +218,9 @@ internal class HybridLiveOverlayOutput : HybridCameraOutputSpec(), NativeCameraO
         width = outputWidth.toDouble(),
         height = outputHeight.toDouble(),
       )
-      Log.i(
-        TAG,
-        "Android dual live recorder completed durationMs=$durationMs cleanFrames=${cleanWriter.encodedFrameCount} brandedFrames=${brandedWriter.encodedFrameCount} droppedFrames=$droppedFrameCount width=$outputWidth height=$outputHeight",
-      )
+      logNativeDiagnostic(TAG) {
+        "Android dual live recorder completed durationMs=$durationMs cleanFrames=${cleanWriter.encodedFrameCount} brandedFrames=${brandedWriter.encodedFrameCount} droppedFrames=$droppedFrameCount width=$outputWidth height=$outputHeight"
+      }
       resetRecordingState(deleteOutputs = false)
       return result
     } catch (error: Throwable) {

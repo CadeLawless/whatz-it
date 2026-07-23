@@ -5,10 +5,12 @@ const ROUND_DIAGNOSTICS_ENABLED = true;
 export function logRoundDiagnostic(stage: string, details: Record<string, unknown> = {}) {
   if (!ROUND_DIAGNOSTICS_ENABLED) return;
   recordFlightEvent(stage, details);
-  console.info(`[RoundDiagnostic] ${stage}`, {
-    at: new Date().toISOString(),
-    ...details,
-  });
+  if (__DEV__) {
+    console.info(`[RoundDiagnostic] ${stage}`, {
+      at: new Date().toISOString(),
+      ...details,
+    });
+  }
 }
 
 export function warnRoundDiagnostic(
@@ -18,11 +20,13 @@ export function warnRoundDiagnostic(
 ) {
   if (!ROUND_DIAGNOSTICS_ENABLED) return;
   recordFlightEvent(stage, { error: describeDiagnosticError(error), ...details }, { level: 'warn' });
-  console.warn(`[RoundDiagnostic] ${stage}`, {
-    at: new Date().toISOString(),
-    error: describeDiagnosticError(error),
-    ...details,
-  });
+  if (__DEV__) {
+    console.warn(`[RoundDiagnostic] ${stage}`, {
+      at: new Date().toISOString(),
+      error: describeDiagnosticError(error),
+      ...details,
+    });
+  }
 }
 
 export function logVideoDiagnostic(stage: string, details: Record<string, unknown> = {}) {

@@ -45,6 +45,10 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.math.min
 
+private inline fun logNativeDiagnostic(tag: String, message: () -> String) {
+  if (BuildConfig.DEBUG) Log.i(tag, message())
+}
+
 @OptimizedRecord
 class VideoOverlayEvent(
   @Field val atMs: Double,
@@ -109,17 +113,15 @@ class WhatzItVideoExportModule : Module() {
         }
         val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
         val composition = Composition.Builder(listOf(sequence)).build()
-        Log.i(
-          "RoundVideoNative",
+        logNativeDiagnostic("RoundVideoNative") {
           "Segment stitch started id=$exportId segmentCount=${segments.size}"
-        )
+        }
         val listener = object : Transformer.Listener {
           override fun onCompleted(composition: Composition, exportResult: ExportResult) {
             activeExports.remove(exportId)
-            Log.i(
-              "RoundVideoNative",
+            logNativeDiagnostic("RoundVideoNative") {
               "Segment stitch completed id=$exportId elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt} outputBytes=${outputFile.length()}"
-            )
+            }
             promise.resolve(Uri.fromFile(outputFile).toString())
           }
 
@@ -169,10 +171,9 @@ class WhatzItVideoExportModule : Module() {
             (max(0.0, microphoneOffsetMs) * 1_000.0).toLong(),
             outputFile,
           )
-          Log.i(
-            "RoundVideoNative",
-            "Android live overlay mux completed elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt} outputBytes=${outputFile.length()}",
-          )
+          logNativeDiagnostic("RoundVideoNative") {
+            "Android live overlay mux completed elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt} outputBytes=${outputFile.length()}"
+          }
           promise.resolve(Uri.fromFile(outputFile).toString())
         } catch (error: Exception) {
           outputFile.delete()
@@ -231,18 +232,16 @@ class WhatzItVideoExportModule : Module() {
       val editedMediaItem = EditedMediaItem.Builder(MediaItem.fromUri(Uri.parse(inputUri)))
         .setEffects(effects)
         .build()
-      Log.i(
-        "RoundVideoNative",
+      logNativeDiagnostic("RoundVideoNative") {
         "Overlay export started id=$exportId eventCount=${events.size} hasSeparateAudio=${audioUri != null} inputBytes=${fileSize(inputUri)}"
-      )
+      }
 
       val listener = object : Transformer.Listener {
         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
           activeExports.remove(exportId)
-          Log.i(
-            "RoundVideoNative",
+          logNativeDiagnostic("RoundVideoNative") {
             "Overlay export completed id=$exportId elapsedMs=${SystemClock.elapsedRealtime() - operationStartedAt} outputBytes=${outputFile.length()}"
-          )
+          }
           promise.resolve(Uri.fromFile(outputFile).toString())
         }
 

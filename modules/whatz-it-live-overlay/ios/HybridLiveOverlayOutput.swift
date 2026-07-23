@@ -7,6 +7,12 @@ import Metal
 import NitroModules
 import VisionCamera
 
+private func logNativeDiagnostic(_ format: String, _ arguments: CVarArg...) {
+  #if DEBUG
+  withVaList(arguments) { NSLogv(format, $0) }
+  #endif
+}
+
 private final class LiveOverlaySampleBufferDelegate: NSObject,
   AVCaptureVideoDataOutputSampleBufferDelegate
 {
@@ -202,7 +208,7 @@ final class HybridLiveOverlayOutput: HybridCameraOutputSpec, NativeCameraOutput 
         headshotPath: headshotPath,
         wordmarkPath: wordmarkPath
       )
-      NSLog(
+      logNativeDiagnostic(
         "[RoundVideoNative] Live overlay recorder armed headshot=%@ wordmark=%@",
         headshotPath == nil ? "false" : "true",
         wordmarkPath == nil ? "false" : "true"
@@ -275,7 +281,7 @@ final class HybridLiveOverlayOutput: HybridCameraOutputSpec, NativeCameraOutput 
             height: Double(height)
           )
           self.resetRecordingState(deleteOutput: false)
-          NSLog(
+          logNativeDiagnostic(
             "[RoundVideoNative] Dual live recorder completed durationMs=%.0f cleanFrames=%ld brandedFrames=%ld droppedFrames=%ld width=%ld height=%ld clean=%@ branded=%@",
             durationMs,
             cleanEncodedFrameCount,
@@ -421,7 +427,7 @@ final class HybridLiveOverlayOutput: HybridCameraOutputSpec, NativeCameraOutput 
     self.brandedVideoWriter = brandedVideoWriter
     firstTimestamp = timestamp
     lastTimestamp = timestamp
-    NSLog(
+    logNativeDiagnostic(
       "[RoundVideoNative] Dual live writers started width=%ld height=%ld sourceWidth=%ld sourceHeight=%ld clean=%@ branded=%@",
       outputWidth,
       outputHeight,

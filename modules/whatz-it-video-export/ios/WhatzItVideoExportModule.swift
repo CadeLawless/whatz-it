@@ -4,6 +4,12 @@ import ExpoModulesCore
 import ImageIO
 import UIKit
 
+private func logNativeDiagnostic(_ format: String, _ arguments: CVarArg...) {
+  #if DEBUG
+  withVaList(arguments) { NSLogv(format, $0) }
+  #endif
+}
+
 struct VideoOverlayEventRecord: Record {
   @Field var atMs: Double = 0
   @Field var kind: String = "card"
@@ -228,7 +234,7 @@ public final class WhatzItVideoExportModule: Module {
       let outputUrl = FileManager.default.temporaryDirectory
         .appendingPathComponent("whatz-it-microphone-\(UUID().uuidString).m4a")
       let capturePath = try self.startMicrophoneCapture(at: outputUrl, recordingSounds: [])
-      NSLog("[RoundAudioNative] Microphone capture selected path=%@ uri=%@", capturePath, outputUrl.absoluteString)
+      logNativeDiagnostic("[RoundAudioNative] Microphone capture selected path=%@ uri=%@", capturePath, outputUrl.absoluteString)
       return outputUrl.absoluteString
     }
 
@@ -244,7 +250,7 @@ public final class WhatzItVideoExportModule: Module {
         at: outputUrl,
         recordingSounds: recordingSounds
       )
-      NSLog("[RoundAudioNative] Microphone capture selected path=%@ uri=%@", capturePath, outputUrl.absoluteString)
+      logNativeDiagnostic("[RoundAudioNative] Microphone capture selected path=%@ uri=%@", capturePath, outputUrl.absoluteString)
       return outputUrl.absoluteString
     }
 
@@ -265,7 +271,7 @@ public final class WhatzItVideoExportModule: Module {
         let averagePower = recorder.averagePower(forChannel: 0)
         let peakPower = recorder.peakPower(forChannel: 0)
         recorder.stop()
-        NSLog(
+        logNativeDiagnostic(
           "[RoundAudioNative] Fallback recorder levels duration=%.3f averagePower=%.1f peakPower=%.1f",
           duration,
           averagePower,
@@ -279,7 +285,7 @@ public final class WhatzItVideoExportModule: Module {
       self.microphoneRecordingUrl = nil
       let attributes = try? FileManager.default.attributesOfItem(atPath: outputUrl.path)
       let fileSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-      NSLog(
+      logNativeDiagnostic(
         "[RoundAudioNative] Microphone capture stopped path=%@ bytes=%lld uri=%@",
         capturePath,
         fileSize,
@@ -301,7 +307,7 @@ public final class WhatzItVideoExportModule: Module {
       self.microphoneEngine = nil
       self.microphoneRecorder = nil
       self.microphoneRecordingUrl = nil
-      NSLog("[RoundAudioNative] Microphone capture cancelled")
+      logNativeDiagnostic("[RoundAudioNative] Microphone capture cancelled")
     }
 
   }
@@ -358,7 +364,7 @@ public final class WhatzItVideoExportModule: Module {
         }
         let outputNode = engine.outputNode
         let outputFormat = outputNode.outputFormat(forBus: 0)
-        NSLog(
+        logNativeDiagnostic(
           "[RoundAudioNative] Recording audio engine started inputVoiceProcessing=%@ outputVoiceProcessing=%@ inputSampleRate=%.0f inputChannels=%u outputSampleRate=%.0f outputChannels=%u preparedCueCount=%ld",
           inputNode.isVoiceProcessingEnabled ? "true" : "false",
           outputNode.isVoiceProcessingEnabled ? "true" : "false",
@@ -450,7 +456,7 @@ public final class WhatzItVideoExportModule: Module {
           }
           playbackFormat = playbackFormat ?? buffer.format
           recordingCueBuffers[recordingSound.sound] = buffer
-          NSLog(
+          logNativeDiagnostic(
             "[RoundAudioNative] Recording cue buffer prepared sound=%@ durationMs=%.0f sampleRate=%.0f channels=%u",
             recordingSound.sound,
             Double(buffer.frameLength) / buffer.format.sampleRate * 1_000,
@@ -476,7 +482,7 @@ public final class WhatzItVideoExportModule: Module {
           engine.connect(player, to: engine.mainMixerNode, format: playbackFormat)
         }
       }
-      NSLog(
+      logNativeDiagnostic(
         "[RoundAudioNative] Recording cue playback prepared sounds=%ld players=%ld",
         recordingCueBuffers.count,
         recordingCuePlayers.count
@@ -526,7 +532,7 @@ public final class WhatzItVideoExportModule: Module {
       player.volume = Float(max(0, min(1, volume)))
       player.scheduleBuffer(buffer, at: nil, options: .interrupts)
       player.play()
-      NSLog(
+      logNativeDiagnostic(
         "[RoundAudioNative] Recording cue started sound=%@ volume=%.3f playerIndex=%ld engineRunning=%@",
         sound,
         player.volume,
@@ -546,7 +552,7 @@ public final class WhatzItVideoExportModule: Module {
       recordingCueBuffers.removeAll()
       recordingCueNextPlayerIndex = 0
       recordingCuePlayers.removeAll()
-      NSLog("[RoundAudioNative] Recording cue playback cleared")
+      logNativeDiagnostic("[RoundAudioNative] Recording cue playback cleared")
     }
   }
 
@@ -612,7 +618,7 @@ public final class WhatzItVideoExportModule: Module {
     let outputRoutes = audioSession.currentRoute.outputs
       .map { "\($0.portType.rawValue):\($0.portName)" }
       .joined(separator: ",")
-    NSLog(
+    logNativeDiagnostic(
       "[RoundAudioNative] Audio session active category=%@ mode=%@ sampleRate=%.0f ioBufferMs=%.1f inputGain=%.2f outputVolume=%.2f haptics=%@ inputs=%@ outputs=%@",
       audioSession.category.rawValue,
       audioSession.mode.rawValue,
@@ -635,7 +641,7 @@ public final class WhatzItVideoExportModule: Module {
     outputUrl: URL
   ) async throws {
     let operationStartedAt = Date()
-    NSLog(
+    logNativeDiagnostic(
       "[RoundVideoNative] Audio mix operation started video=%@ microphone=%@ requestedCues=%ld microphoneOffsetMs=%.0f",
       videoUrl.lastPathComponent,
       microphoneUrl.lastPathComponent,
@@ -728,7 +734,7 @@ public final class WhatzItVideoExportModule: Module {
     let minimumCueVolume = insertedCueVolumes.min() ?? clampedCueVolume
     let maximumCueVolume = insertedCueVolumes.max() ?? clampedCueVolume
     audioMix.inputParameters = [microphoneParameters] + effectParameters
-    NSLog(
+    logNativeDiagnostic(
       "[RoundAudioNative] Export audio mix prepared requestedCues=%ld insertedCues=%ld cueTracks=%ld baseCueVolume=%.3f compensatedCueVolumeMin=%.3f compensatedCueVolumeMax=%.3f microphoneVolume=1.000 microphoneOffsetMs=%.0f videoDurationMs=%.0f microphoneDurationMs=%.0f",
       cues.count,
       insertedCueCount,
@@ -755,7 +761,7 @@ public final class WhatzItVideoExportModule: Module {
       duration: CMTimeMinimum(videoDuration, composition.duration)
     )
     try await run(exporter)
-    NSLog(
+    logNativeDiagnostic(
       "[RoundAudioNative] Export audio mix completed output=%@ insertedCues=%ld elapsedMs=%.0f outputBytes=%lld",
       outputUrl.lastPathComponent,
       insertedCueCount,
@@ -829,7 +835,7 @@ public final class WhatzItVideoExportModule: Module {
     exporter.outputFileType = .mp4
     exporter.shouldOptimizeForNetworkUse = false
     do {
-      NSLog(
+      logNativeDiagnostic(
         "[RoundVideoNative] Live overlay mux started video=%@ audio=%@ offsetMs=%.0f durationMs=%.0f",
         videoUrl.lastPathComponent,
         audioUrl?.lastPathComponent ?? "none",
@@ -847,7 +853,7 @@ public final class WhatzItVideoExportModule: Module {
           throw VideoExportError.missingExportedAudioTrack
         }
       }
-      NSLog(
+      logNativeDiagnostic(
         "[RoundVideoNative] Live overlay mux completed elapsedMs=%.0f outputBytes=%lld output=%@",
         Date().timeIntervalSince(operationStartedAt) * 1_000,
         Self.fileSize(at: outputUrl),
@@ -871,7 +877,7 @@ public final class WhatzItVideoExportModule: Module {
     }
 
     let operationStartedAt = Date()
-    NSLog("[RoundVideoNative] Segment stitch started segmentCount=%ld", segments.count)
+    logNativeDiagnostic("[RoundVideoNative] Segment stitch started segmentCount=%ld", segments.count)
     let composition = AVMutableComposition()
     guard let outputVideoTrack = composition.addMutableTrack(
       withMediaType: .video,
@@ -946,7 +952,7 @@ public final class WhatzItVideoExportModule: Module {
     exporter.shouldOptimizeForNetworkUse = false
     do {
       try await run(exporter)
-      NSLog(
+      logNativeDiagnostic(
         "[RoundVideoNative] Segment stitch completed segmentCount=%ld elapsedMs=%.0f outputBytes=%lld output=%@",
         segments.count,
         Date().timeIntervalSince(operationStartedAt) * 1_000,
@@ -994,7 +1000,7 @@ public final class WhatzItVideoExportModule: Module {
     wordmarkUrl: URL?
   ) async throws {
     let operationStartedAt = Date()
-    NSLog(
+    logNativeDiagnostic(
       "[RoundVideoNative] Overlay export operation started input=%@ audio=%@ eventCount=%ld",
       inputUrl.lastPathComponent,
       audioUrl?.lastPathComponent ?? "embedded-or-none",
@@ -1095,7 +1101,7 @@ public final class WhatzItVideoExportModule: Module {
     videoExporter.canPerformMultiplePassesOverSourceMediaData = false
     videoExporter.videoComposition = videoComposition
     let overlayRenderStartedAt = Date()
-    NSLog(
+    logNativeDiagnostic(
       "[RoundVideoNative] Overlay render started preset=%@ renderWidth=%.0f renderHeight=%.0f durationMs=%.0f multiPass=false hasAudio=%@",
       preset,
       renderSize.width,
@@ -1104,7 +1110,7 @@ public final class WhatzItVideoExportModule: Module {
       audioAsset == nil ? "false" : "true"
     )
     try await run(videoExporter)
-    NSLog(
+    logNativeDiagnostic(
       "[RoundVideoNative] Overlay render completed output=%@ elapsedMs=%.0f outputBytes=%lld",
       outputUrl.lastPathComponent,
       Date().timeIntervalSince(overlayRenderStartedAt) * 1_000,
@@ -1120,7 +1126,7 @@ public final class WhatzItVideoExportModule: Module {
     if audioAsset != nil && finishedAudioTracks.isEmpty {
       throw VideoExportError.missingExportedAudioTrack
     }
-    NSLog(
+    logNativeDiagnostic(
       "[RoundVideoNative] Overlay export operation completed elapsedMs=%.0f videoTracks=%ld audioTracks=%ld outputBytes=%lld output=%@",
       Date().timeIntervalSince(operationStartedAt) * 1_000,
       finishedVideoTracks.count,
