@@ -170,13 +170,10 @@ internal class HybridLiveOverlayOutput : HybridCameraOutputSpec(), NativeCameraO
   }
 
   private fun initializeWriters(sourceWidth: Int, sourceHeight: Int, timestampNs: Long) {
-    if (sourceWidth >= sourceHeight) {
-      outputWidth = TARGET_LONG_EDGE
-      outputHeight = TARGET_SHORT_EDGE
-    } else {
-      outputWidth = TARGET_SHORT_EDGE
-      outputHeight = TARGET_LONG_EDGE
-    }
+    // Round screens have a fixed landscape capture contract. Do not let a
+    // transient portrait first frame permanently choose a portrait encoder.
+    outputWidth = TARGET_LONG_EDGE
+    outputHeight = TARGET_SHORT_EDGE
     val cleanWriter = LiveVideoWriter("whatz-it-live-clean-", outputWidth, outputHeight)
     val brandedWriter = try {
       LiveVideoWriter("whatz-it-live-branded-", outputWidth, outputHeight)

@@ -3,6 +3,7 @@ import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'r
 import { Platform, StyleSheet } from 'react-native';
 import {
   Camera,
+  type CameraOrientation,
   CommonResolutions,
   type Recorder,
   VisionCamera,
@@ -23,6 +24,10 @@ import {
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
 const ROUND_VIDEO_TARGET_BIT_RATE = 5_000_000;
+// Ready and Game render a clockwise-rotated landscape canvas while the native
+// screen stays portrait. Capture must follow that fixed canvas orientation
+// instead of a motion-driven device orientation that may be unavailable.
+const ROUND_CAMERA_ORIENTATION: CameraOrientation = 'left';
 
 export type RoundCameraRef = {
   startRecording: (maxDuration: number) => Promise<number | null>;
@@ -105,13 +110,18 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         return null;
       }
     }, []);
-    const cameraOutputs = useMemo(
+    const cameraOutputs = useMemo(() => {
       // The live path replaces the normal recorder. Attaching both outputs
       // makes the camera encode two 720p streams and was the main source of
       // stalls in the first prototype.
-      () => (liveOverlayOutput ? [liveOverlayOutput.cameraOutput] : [videoOutput]),
-      [liveOverlayOutput, videoOutput],
-    );
+      const outputs = liveOverlayOutput ? [liveOverlayOutput.cameraOutput] : [videoOutput];
+      // Apply this before Camera mounts so the first captured frame cannot
+      // initialize the writer with transient portrait dimensions.
+      for (const output of outputs) {
+        output.outputOrientation = ROUND_CAMERA_ORIENTATION;
+      }
+      return outputs;
+    }, [liveOverlayOutput, videoOutput]);
     const recorderRef = useRef<Recorder | null>(null);
     const resultPromiseRef = useRef<Promise<string> | null>(null);
     const microphoneRef = useRef<{ uri: string; offsetMs: number } | null>(null);
@@ -459,6 +469,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           // Prepare native resources before ReadyScreen starts any countdown audio.
           void Promise.all([prepareMicrophone(), loadLiveOverlayBrandingUris()]).then(() => onReady());
         }}
+        orientationSource="custom"
         outputs={cameraOutputs}
         pointerEvents="none"
         resizeMode="cover"
