@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { Platform } from 'react-native';
 
-import { getDeckById } from '@/data/decks';
+import { getDeckById } from '@/data/packs';
 import { getDailyCardPool } from '@/game/daily-card-memory';
 import { initialRoundState, roundReducer } from '@/game/game-reducer';
 import type { CardOutcome, RoundState } from '@/game/game-types';

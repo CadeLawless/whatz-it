@@ -24,7 +24,7 @@ import type { PermissionStatus } from 'react-native-vision-camera';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { TimerPicker } from '@/components/timer-picker';
-import { getDeckById } from '@/data/decks';
+import { getDeckById } from '@/data/packs';
 import { useRound } from '@/game/round-context';
 import {
   clampRoundDuration,

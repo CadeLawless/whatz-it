@@ -17,7 +17,7 @@ import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { RecordingIndicator } from '@/components/recording-indicator';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
-import { getDeckById } from '@/data/decks';
+import { getDeckById } from '@/data/packs';
 import { useRound } from '@/game/round-context';
 import { formatRoundClock } from '@/game/round-duration';
 import { getRemainingSecondsFromMs, useRoundTimer } from '@/hooks/use-round-timer';

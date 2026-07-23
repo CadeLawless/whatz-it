@@ -4,6 +4,8 @@ export type Card = {
   byline?: string;
 };
 
+export type DeckAccess = 'free' | 'paid';
+
 export type Deck = {
   id: string;
   order: number;
@@ -11,5 +13,17 @@ export type Deck = {
   description: string;
   coverImage?: number;
   version: number;
+  packId: string;
+  access: DeckAccess;
+  price?: number;
   cards: Card[];
+};
+
+export type DeckPack = {
+  id: string;
+  order: number;
+  title: string;
+  access: DeckAccess;
+  price?: number;
+  decks: Deck[];
 };

@@ -9,7 +9,7 @@ import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { RecordingIndicator } from '@/components/recording-indicator';
-import { getDeckById } from '@/data/decks';
+import { getDeckById } from '@/data/packs';
 import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { useRoundTimer } from '@/hooks/use-round-timer';

@@ -8,7 +8,7 @@ import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
-import { getDeckById } from '@/data/decks';
+import { getDeckById } from '@/data/packs';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
