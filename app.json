@@ -72,9 +72,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F7F5EF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#4BCBFD",
+          "image": "./assets/images/branding/albert-headshot.png",
+          "imageWidth": 152
         }
       ],
       [
