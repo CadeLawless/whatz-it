@@ -210,8 +210,8 @@ const styles = StyleSheet.create({
 async function getSettingsReturnDeckId() {
   const request = await consumeSettingsReturnRequest();
   if (!request) return null;
-  if (request.sessionId !== Constants.sessionId) return null;
   if (request.source === 'explicit') return request.deckId;
+  if (request.sessionId !== Constants.sessionId) return null;
   if (!request.permissions) return null;
 
   const currentPermissions = await getSettingsPermissionSnapshot();
