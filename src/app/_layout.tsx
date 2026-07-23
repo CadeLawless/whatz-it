@@ -84,7 +84,7 @@ export default function RootLayout() {
         pathname: '/deck/[deckId]',
         params: {
           deckId: settingsReturnDeckId,
-          transition: 'apple-slide',
+          transition: 'settings-restore',
         },
       });
     }
