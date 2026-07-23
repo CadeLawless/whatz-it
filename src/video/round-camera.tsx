@@ -137,7 +137,11 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           return false;
         }
         if (!microphoneRecorder.getStatus().canRecord) {
-          await microphoneRecorder.prepareToRecordAsync();
+          // Supplying the options makes Expo Audio create a new native recorder
+          // with a fresh output URL. Re-preparing without options reuses the
+          // previous URL on iOS, so a resumed segment overwrites the microphone
+          // file captured before the app was backgrounded.
+          await microphoneRecorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY);
         }
         microphonePreparedRef.current = true;
         logVideoDiagnostic('microphone preparation completed', {
