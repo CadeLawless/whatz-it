@@ -35,6 +35,10 @@ import {
   loadRoundDuration,
   saveRoundDuration,
 } from '@/storage/preferences';
+import {
+  clearSettingsReturnDeckId,
+  saveSettingsReturnDeckId,
+} from '@/storage/settings-return';
 import { colors, radius, spacing, typography } from '@/theme';
 import {
   getRoundMotionPermissionStatus,
@@ -64,6 +68,8 @@ export default function DeckDetailsScreen() {
     useState<RoundMotionPermissionStatus | 'checking'>('checking');
 
   const screenRef = useRef<View>(null);
+  const settingsReturnPending = useRef(false);
+  const settingsWasBackgrounded = useRef(false);
   const {
     cameraStatus: cameraPermissionStatus,
     microphoneStatus: microphonePermissionStatus,
@@ -92,7 +98,17 @@ export default function DeckDetailsScreen() {
 
     refreshMotionPermission();
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshMotionPermission();
+      if (state !== 'active' && settingsReturnPending.current) {
+        settingsWasBackgrounded.current = true;
+      }
+      if (state === 'active') {
+        refreshMotionPermission();
+        if (settingsReturnPending.current && settingsWasBackgrounded.current) {
+          settingsReturnPending.current = false;
+          settingsWasBackgrounded.current = false;
+          void clearSettingsReturnDeckId().catch(() => undefined);
+        }
+      }
     });
     return () => {
       active = false;
@@ -166,6 +182,19 @@ export default function DeckDetailsScreen() {
     }
 
     router.push('/ready' as Href);
+  };
+
+  const handleOpenSettings = async () => {
+    try {
+      await saveSettingsReturnDeckId(deck.id);
+      settingsReturnPending.current = true;
+      settingsWasBackgrounded.current = false;
+      await Linking.openSettings();
+    } catch {
+      settingsReturnPending.current = false;
+      settingsWasBackgrounded.current = false;
+      await clearSettingsReturnDeckId().catch(() => undefined);
+    }
   };
 
   const roundSetupNotice = getRoundSetupNotice({
@@ -285,7 +314,7 @@ export default function DeckDetailsScreen() {
                   <Pressable
                     accessibilityHint="Opens the system settings for WHATZ IT?"
                     accessibilityRole="link"
-                    onPress={() => void Linking.openSettings().catch(() => undefined)}
+                    onPress={() => void handleOpenSettings()}
                     style={({ pressed }) => [
                       styles.settingsLink,
                       pressed && styles.settingsLinkPressed,

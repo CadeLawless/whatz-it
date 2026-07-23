@@ -1,4 +1,4 @@
-import { Stack, usePathname } from 'expo-router';
+import { type Href, Stack, usePathname, useRouter } from 'expo-router';
 import { setAudioModeAsync } from 'expo-audio';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -7,9 +7,11 @@ import { AppState, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
+import { getDeckById } from '@/data/decks';
 import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';
+import { consumeSettingsReturnDeckId } from '@/storage/settings-return';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 import { initializeRoundVideoStorage } from '@/video/round-videos';
 import { loadHomeBranding } from '@/utils/home-branding';
@@ -25,7 +27,11 @@ void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
+  const [rootHasLaidOut, setRootHasLaidOut] = useState(false);
+  const [settingsReturnPath, setSettingsReturnPath] =
+    useState<Href | null | undefined>(undefined);
   const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
     initializeFlightRecorder();
@@ -47,10 +53,25 @@ export default function RootLayout() {
   }, [pathname]);
 
   useEffect(() => {
-    void loadHomeBranding()
-      .catch(() => undefined)
-      .finally(() => setIsReady(true));
+    void Promise.all([
+      loadHomeBranding().catch(() => undefined),
+      consumeSettingsReturnDeckId().catch(() => null),
+    ]).then(([, deckId]) => {
+      setSettingsReturnPath(
+        deckId && getDeckById(deckId)
+          ? (`/deck/${encodeURIComponent(deckId)}` as Href)
+          : null,
+      );
+      setIsReady(true);
+    });
   }, []);
+
+  useEffect(() => {
+    if (!isReady || settingsReturnPath === undefined) return;
+    if (settingsReturnPath && pathname !== settingsReturnPath) {
+      router.replace(settingsReturnPath);
+    }
+  }, [isReady, pathname, router, settingsReturnPath]);
 
   useEffect(() => {
     logRoundDiagnostic('root audio mode configuration started');
@@ -64,11 +85,22 @@ export default function RootLayout() {
       .catch((error) => warnRoundDiagnostic('root audio mode configuration failed', error));
   }, []);
 
-  const handleRootLayout = useCallback(() => {
-    if (isReady) SplashScreen.hide();
-  }, [isReady]);
+  useEffect(() => {
+    if (
+      rootHasLaidOut &&
+      isReady &&
+      settingsReturnPath !== undefined &&
+      (!settingsReturnPath || pathname === settingsReturnPath)
+    ) {
+      SplashScreen.hide();
+    }
+  }, [isReady, pathname, rootHasLaidOut, settingsReturnPath]);
 
-  if (!isReady) return null;
+  const handleRootLayout = useCallback(() => {
+    setRootHasLaidOut(true);
+  }, []);
+
+  if (!isReady || settingsReturnPath === undefined) return null;
 
   return (
     <View onLayout={handleRootLayout} style={styles.root}>
