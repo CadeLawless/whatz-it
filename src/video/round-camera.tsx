@@ -454,7 +454,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       ],
     );
 
-    if (!device) return null;
+    // VisionCamera creates its native session as soon as Camera mounts, even
+    // when isActive is false. Keep it unmounted until access is authorized so
+    // declining optional recording never surfaces as a camera-session error.
+    if (!device || VisionCamera.cameraPermissionStatus !== 'authorized') return null;
     return (
       <Camera
         device={device}
