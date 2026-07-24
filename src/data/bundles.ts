@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
   "schemaVersion": 5,
-  "revision": 14,
-  "updatedAt": "2026-07-24T21:20:03Z",
+  "revision": 15,
+  "updatedAt": "2026-07-24T21:28:30Z",
   "decks": [
     {
       "id": "celebrity-shuffle",
@@ -3506,18 +3506,40 @@ const bundleCatalog: PortableCatalog =
         {"id":"sunday-is-coming","text":"Sunday Is Coming","byline":"Phil Wickham"},
         {"id":"this-is-our-god","text":"This Is Our God","byline":"Phil Wickham"},
         {"id":"that-s-my-king","text":"That's My King","byline":"CeCe Winans"},
-        {"id":"holy-hands","text":"Holy Hands","byline":"Gable Price and Friends"}
+        {"id":"holy-hands","text":"Holy Hands","byline":"Gable Price and Friends"},
+        {"id":"won-t-stop-now","text":"Won't Stop Now","byline":"Elevation Worship"},
+        {"id":"echo","text":"Echo","byline":"Elevation Worship"},
+        {"id":"never-lost","text":"Never Lost","byline":"Elevation Worship"},
+        {"id":"rattle","text":"RATTLE!","byline":"Elevation Worship"},
+        {"id":"your-nature","text":"Your Nature","byline":"Kari Jobe"},
+        {"id":"steadfast","text":"Steadfast","byline":"Kari Jobe"},
+        {"id":"his-name-is-jesus","text":"His Name Is Jesus","byline":"Phil Wickham"},
+        {"id":"great-things","text":"Great Things","byline":"Phil Wickham"},
+        {"id":"what-an-awesome-god","text":"What an Awesome God","byline":"Phil Wickham"},
+        {"id":"you-make-me-brave","text":"You Make Me Brave","byline":"Bethel Music"},
+        {"id":"above-all","text":"Above All","byline":"Paul Baloche"},
+        {"id":"10-000-reasons-bless-the-lord","text":"10,000 Reasons (Bless the Lord)","byline":"Matt Redman"},
+        {"id":"i-will-follow","text":"I Will Follow","byline":"Chris Tomlin"},
+        {"id":"jesus-messiah","text":"Jesus Messiah","byline":"Chris Tomlin"},
+        {"id":"whom-shall-i-fear-god-of-angel-armies","text":"Whom Shall I Fear (God of Angel Armies)","byline":"Chris Tomlin"},
+        {"id":"god-you-re-so-good","text":"God, You're So Good","byline":"Passion"},
+        {"id":"i-ve-witnessed-it","text":"I've Witnessed It","byline":"Passion"},
+        {"id":"honey-in-the-rock","text":"Honey in the Rock","byline":"Brooke Ligertwood & Brandon Lake"},
+        {"id":"the-lord-will-provide","text":"The Lord Will Provide","byline":"Passion"},
+        {"id":"i-speak-jesus","text":"I Speak Jesus","byline":"Charity Gayle"},
+        {"id":"firm-foundation-he-won-t","text":"Firm Foundation (He Won't)","byline":"Cody Carnes"}
       ]
     },
     {
-      "id": "new-deck",
+      "id": "worship-icons",
       "order": 17,
-      "title": "Worship Artists",
+      "title": "Worship Icons",
       "description": "The biggest names in Christian music.",
       "coverImage": "",
       "version": 1,
-      "tags": [],
-      "access": "free",
+      "tags": ["worship music","worship artists","christian","christian music","christian singers","worship artists","faith","christianity","music","artists","singers","songs"],
+      "access": "paid",
+      "price": 1.99,
       "cards": [
         {"id":"chris-tomlin","text":"Chris Tomlin"},
         {"id":"phil-wickham","text":"Phil Wickham"},
@@ -3706,8 +3728,8 @@ const bundleCatalog: PortableCatalog =
     }
   ],
   "deckOrders": {
-    "free": ["celebrity-shuffle","fast-food","movie-mania","music-mix","act-it-out","binge-worthy","road-trip","90s-kids","animal-antics","fictional-who-am-i","gone-viral","sports-icons","history-buff","kidding-around","snack-attack","new-deck"],
-    "paid": ["life-your-voice"]
+    "free": ["celebrity-shuffle","fast-food","movie-mania","music-mix","act-it-out","binge-worthy","road-trip","90s-kids","animal-antics","fictional-who-am-i","gone-viral","sports-icons","history-buff","kidding-around","snack-attack"],
+    "paid": ["life-your-voice","worship-icons"]
   }
 }
 /* DECK_MANAGER_CATALOG_END */;
