@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
   "schemaVersion": 5,
-  "revision": 10,
-  "updatedAt": "2026-07-24T14:49:22Z",
+  "revision": 12,
+  "updatedAt": "2026-07-24T15:01:04Z",
   "decks": [
     {
       "id": "celebrity-shuffle",
