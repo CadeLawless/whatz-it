@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
   "schemaVersion": 5,
-  "revision": 15,
-  "updatedAt": "2026-07-24T21:28:30Z",
+  "revision": 16,
+  "updatedAt": "2026-07-24T21:29:19Z",
   "decks": [
     {
       "id": "celebrity-shuffle",
@@ -3355,7 +3355,7 @@ const bundleCatalog: PortableCatalog =
       "order": 16,
       "title": "Lift Your Voice",
       "description": "From church classics to today's worship favorites!",
-      "coverImage": "",
+      "coverImage": "assets/images/decks/lift-your-voice.webp",
       "version": 1,
       "tags": ["worship","praise","church","worship bands","worship music","music","artists","singer","songs","christian"],
       "access": "paid",
@@ -3747,6 +3747,7 @@ const deckCoverImages: Record<string, number> =
   "assets/images/decks/history-buff.webp": require("../../assets/images/decks/history-buff.webp"),
   "assets/images/decks/internet-famous.webp": require("../../assets/images/decks/internet-famous.webp"),
   "assets/images/decks/kidding-around.webp": require("../../assets/images/decks/kidding-around.webp"),
+  "assets/images/decks/lift-your-voice.webp": require("../../assets/images/decks/lift-your-voice.webp"),
   "assets/images/decks/movie-mania.webp": require("../../assets/images/decks/movie-mania.webp"),
   "assets/images/decks/name-that-tune.webp": require("../../assets/images/decks/name-that-tune.webp"),
   "assets/images/decks/road-trip.webp": require("../../assets/images/decks/road-trip.webp"),
