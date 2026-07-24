@@ -13,17 +13,17 @@ export type Deck = {
   description: string;
   coverImage?: number;
   version: number;
-  packId: string;
   access: DeckAccess;
   price?: number;
   cards: Card[];
 };
 
-export type DeckPack = {
+export type Bundle = {
   id: string;
   order: number;
   title: string;
   access: DeckAccess;
   price?: number;
+  deckIds: string[];
   decks: Deck[];
 };

@@ -7,7 +7,7 @@ import { AppState, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
-import { getDeckById } from '@/data/packs';
+import { getDeckById } from '@/data/bundles';
 import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';

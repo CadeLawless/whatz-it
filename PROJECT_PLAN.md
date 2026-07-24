@@ -484,7 +484,7 @@ Monetization should begin only after the free core loop is reliable and testers 
 
 ### Potential Phase 2 Features
 
-- Paid deck packs through Apple and Google in-app purchases.
+- Paid deck bundles through Apple and Google in-app purchases.
 - RevenueCat or a similar entitlement service for cross-platform purchase management.
 - Downloadable deck manifests and content files.
 - Remote deck catalog hosted on a storage service or CDN.
