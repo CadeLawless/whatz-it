@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 22,
-    "updatedAt": "2026-07-27T15:12:13Z",
+    "revision": 23,
+    "updatedAt": "2026-07-27T15:15:02Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -15650,18 +15650,6 @@ const bundleCatalog: PortableCatalog =
                     "byline": "MercyMe"
                 }
             ]
-        },
-        {
-            "order": 20,
-            "cards": [],
-            "id": "yup",
-            "title": "Haha funny deck",
-            "description": "best funny deck",
-            "version": 1,
-            "coverImage": "assets/images/decks/goose.png",
-            "tags": [],
-            "access": "paid",
-            "price": 100
         }
     ],
     "bundles": [
@@ -15723,8 +15711,7 @@ const bundleCatalog: PortableCatalog =
             "life-your-voice",
             "worship-icons",
             "bible-characters",
-            "new-deck",
-            "yup"
+            "new-deck"
         ]
     }
 }
@@ -15741,7 +15728,6 @@ const deckCoverImages: Record<string, number> =
   "assets/images/decks/celebrity-shuffle.webp": require("../../assets/images/decks/celebrity-shuffle.webp"),
   "assets/images/decks/fast-food.webp": require("../../assets/images/decks/fast-food.webp"),
   "assets/images/decks/fictional-who-am-i.webp": require("../../assets/images/decks/fictional-who-am-i.webp"),
-  "assets/images/decks/goose.png": require("../../assets/images/decks/goose.png"),
   "assets/images/decks/history-buff.webp": require("../../assets/images/decks/history-buff.webp"),
   "assets/images/decks/internet-famous.webp": require("../../assets/images/decks/internet-famous.webp"),
   "assets/images/decks/kidding-around.webp": require("../../assets/images/decks/kidding-around.webp"),
