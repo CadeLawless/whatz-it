@@ -22,6 +22,7 @@ export type Bundle = {
   id: string;
   order: number;
   title: string;
+  description: string;
   access: DeckAccess;
   price?: number;
   deckIds: string[];

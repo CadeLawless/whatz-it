@@ -15657,6 +15657,7 @@ const bundleCatalog: PortableCatalog =
             "id": "free-bundle",
             "order": 1,
             "title": "Free Bundle",
+            "description": "",
             "access": "free",
             "deckIds": [
                 "celebrity-shuffle",
@@ -15680,6 +15681,7 @@ const bundleCatalog: PortableCatalog =
             "id": "growing-up-christian",
             "order": 2,
             "title": "Growing up Christian",
+            "description": "",
             "access": "paid",
             "price": 9.99,
             "deckIds": [
