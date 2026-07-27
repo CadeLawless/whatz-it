@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 24,
-    "updatedAt": "2026-07-27T15:44:55Z",
+    "revision": 25,
+    "updatedAt": "2026-07-27T15:45:11Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -15691,8 +15691,8 @@ const bundleCatalog: PortableCatalog =
     ],
     "deckOrders": {
         "free": [
-            "fast-food",
             "celebrity-shuffle",
+            "fast-food",
             "movie-mania",
             "music-mix",
             "act-it-out",
