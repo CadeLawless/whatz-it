@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 25,
-    "updatedAt": "2026-07-27T15:45:11Z",
+    "revision": 26,
+    "updatedAt": "2026-07-27T16:09:32Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -15650,6 +15650,18 @@ const bundleCatalog: PortableCatalog =
                     "byline": "MercyMe"
                 }
             ]
+        },
+        {
+            "order": 20,
+            "cards": [],
+            "id": "pizza-time",
+            "title": "Pizza Time",
+            "description": "",
+            "version": 1,
+            "coverImage": "assets/images/decks/pizza-time.webp",
+            "tags": [],
+            "access": "paid",
+            "price": 5
         }
     ],
     "bundles": [
@@ -15711,7 +15723,8 @@ const bundleCatalog: PortableCatalog =
             "life-your-voice",
             "worship-icons",
             "bible-characters",
-            "new-deck"
+            "new-deck",
+            "pizza-time"
         ]
     }
 }
@@ -15734,6 +15747,7 @@ const deckCoverImages: Record<string, number> =
   "assets/images/decks/lift-your-voice.webp": require("../../assets/images/decks/lift-your-voice.webp"),
   "assets/images/decks/movie-mania.webp": require("../../assets/images/decks/movie-mania.webp"),
   "assets/images/decks/name-that-tune.webp": require("../../assets/images/decks/name-that-tune.webp"),
+  "assets/images/decks/pizza-time.webp": require("../../assets/images/decks/pizza-time.webp"),
   "assets/images/decks/road-trip.webp": require("../../assets/images/decks/road-trip.webp"),
   "assets/images/decks/snack-attack.webp": require("../../assets/images/decks/snack-attack.webp"),
   "assets/images/decks/sports-icons.webp": require("../../assets/images/decks/sports-icons.webp"),
