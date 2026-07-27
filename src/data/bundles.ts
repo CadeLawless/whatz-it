@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 29,
-    "updatedAt": "2026-07-27T16:23:48Z",
+    "revision": 30,
+    "updatedAt": "2026-07-27T18:42:58Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -15681,7 +15681,7 @@ const bundleCatalog: PortableCatalog =
             "id": "growing-up-christian",
             "order": 2,
             "title": "Growing up Christian",
-            "description": "",
+            "description": "If you grew up Christian, or are one now, this bundle's for you!",
             "access": "paid",
             "price": 9.99,
             "deckIds": [
