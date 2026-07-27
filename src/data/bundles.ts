@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 31,
-    "updatedAt": "2026-07-27T20:49:03Z",
+    "revision": 32,
+    "updatedAt": "2026-07-27T20:51:02Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -16055,10 +16055,10 @@ const bundleCatalog: PortableCatalog =
             "access": "paid",
             "price": 9.99,
             "deckIds": [
+                "growing-up-christian",
                 "life-your-voice",
                 "worship-icons",
-                "bible-characters",
-                "growing-up-christian"
+                "bible-characters"
             ]
         }
     ],
