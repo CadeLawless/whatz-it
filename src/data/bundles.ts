@@ -23,8 +23,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 27,
-    "updatedAt": "2026-07-27T16:10:52Z",
+    "revision": 28,
+    "updatedAt": "2026-07-27T16:21:44Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -15650,6 +15650,18 @@ const bundleCatalog: PortableCatalog =
                     "byline": "MercyMe"
                 }
             ]
+        },
+        {
+            "order": 20,
+            "cards": [],
+            "id": "music-rocks",
+            "title": "Music Rocks",
+            "description": "",
+            "version": 1,
+            "coverImage": "assets/images/decks/music-rocks.webp",
+            "tags": [],
+            "access": "paid",
+            "price": 10
         }
     ],
     "bundles": [
@@ -15711,7 +15723,8 @@ const bundleCatalog: PortableCatalog =
             "life-your-voice",
             "worship-icons",
             "bible-characters",
-            "new-deck"
+            "new-deck",
+            "music-rocks"
         ]
     }
 }
@@ -15733,6 +15746,7 @@ const deckCoverImages: Record<string, number> =
   "assets/images/decks/kidding-around.webp": require("../../assets/images/decks/kidding-around.webp"),
   "assets/images/decks/lift-your-voice.webp": require("../../assets/images/decks/lift-your-voice.webp"),
   "assets/images/decks/movie-mania.webp": require("../../assets/images/decks/movie-mania.webp"),
+  "assets/images/decks/music-rocks.webp": require("../../assets/images/decks/music-rocks.webp"),
   "assets/images/decks/name-that-tune.webp": require("../../assets/images/decks/name-that-tune.webp"),
   "assets/images/decks/road-trip.webp": require("../../assets/images/decks/road-trip.webp"),
   "assets/images/decks/snack-attack.webp": require("../../assets/images/decks/snack-attack.webp"),
