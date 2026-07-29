@@ -1,0 +1,3 @@
+C:/dev/whatz-it/modules/whatz-it-live-overlay/android/.cxx/Debug/107114mx/x86_64/CMakeFiles/WhatzItLiveOverlay.dir
+C:/dev/whatz-it/modules/whatz-it-live-overlay/android/.cxx/Debug/107114mx/x86_64/CMakeFiles/edit_cache.dir
+C:/dev/whatz-it/modules/whatz-it-live-overlay/android/.cxx/Debug/107114mx/x86_64/CMakeFiles/rebuild_cache.dir
