@@ -17,6 +17,19 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+**/local.properties
+
+# Local native module build outputs
+/modules/*/android/build/
+/modules/*/android/.cxx/
+/modules/*/android/.gradle/
+/modules/*/android/.externalNativeBuild/
+/modules/*/android/captures/
+/modules/*/ios/build/
+/modules/*/ios/DerivedData/
+/modules/*/ios/Pods/
+xcuserdata/
+*.xcuserstate
 
 # Metro
 .metro-health-check*
