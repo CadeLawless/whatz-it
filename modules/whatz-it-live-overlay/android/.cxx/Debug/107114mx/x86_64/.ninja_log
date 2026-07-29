@@ -1,0 +1,6 @@
+# ninja log v5
+2	1824	8070589867105232	CMakeFiles/WhatzItLiveOverlay.dir/src/main/cpp/cpp-adapter.cpp.o	2697e119c4d407fe
+32	4562	8070589894398502	CMakeFiles/WhatzItLiveOverlay.dir/C_/dev/whatz-it/modules/whatz-it-live-overlay/nitrogen/generated/android/WhatzItLiveOverlayOnLoad.cpp.o	a954c393e0f449ee
+23	8339	8070589932006904	CMakeFiles/WhatzItLiveOverlay.dir/C_/dev/whatz-it/modules/whatz-it-live-overlay/nitrogen/generated/android/c++/JHybridLiveOverlayOutputFactorySpec.cpp.o	2e050e94e119a340
+13	9379	8070589942499937	CMakeFiles/WhatzItLiveOverlay.dir/C_/dev/whatz-it/modules/whatz-it-live-overlay/nitrogen/generated/shared/c++/HybridLiveOverlayOutputFactorySpec.cpp.o	3544aa6fc8d211a3
+9379	9516	8070589944036545	../../../../build/intermediates/cxx/Debug/107114mx/obj/x86_64/libWhatzItLiveOverlay.so	cc7d5eb38563dcb4
