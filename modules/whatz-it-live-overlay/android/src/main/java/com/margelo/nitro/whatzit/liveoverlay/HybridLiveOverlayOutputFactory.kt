@@ -29,5 +29,5 @@ class HybridLiveOverlayOutputFactory : HybridLiveOverlayOutputFactorySpec() {
       ?: Promise.async { throw IllegalStateException("The Android live-overlay camera output is unavailable.") }
 
   override fun cancelRecording(): Promise<Unit> =
-    output?.cancelRecording() ?: Promise.resolved()
+    output?.cancelRecording() ?: Promise.resolved(Unit)
 }
