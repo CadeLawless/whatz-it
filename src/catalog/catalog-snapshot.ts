@@ -7,6 +7,7 @@ export type CatalogDeck = Deck & {
   cardCount: number;
   cardContentVersion: number;
   coverPath?: string;
+  coverUri?: string;
   installationStatus: 'installed' | 'not_owned' | 'pending' | 'failed';
 };
 

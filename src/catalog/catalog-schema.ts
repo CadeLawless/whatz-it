@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const CATALOG_DATABASE_NAME = 'whatz-it-catalog.db';
-export const CATALOG_DATABASE_VERSION = 1;
+export const CATALOG_DATABASE_VERSION = 2;
 
 const CREATE_SCHEMA_SQL = `
 CREATE TABLE catalog_state (
@@ -26,9 +26,16 @@ CREATE TABLE decks (
   price_minor_units INTEGER,
   tags_json TEXT NOT NULL,
   card_count INTEGER NOT NULL,
+  content_hash TEXT,
+  content_bytes INTEGER,
+  content_url TEXT,
   cover_path TEXT,
   cover_hash TEXT,
+  cover_bytes INTEGER,
+  cover_url TEXT,
   thumbnail_hash TEXT,
+  thumbnail_bytes INTEGER,
+  thumbnail_url TEXT,
   lifecycle_status TEXT NOT NULL DEFAULT 'active'
     CHECK (lifecycle_status IN ('active', 'retired'))
 );
@@ -116,9 +123,21 @@ export async function migrateCatalogDatabase(database: SQLiteDatabase) {
       }>('PRAGMA user_version');
       if ((transactionVersion?.user_version ?? 0) !== 0) return;
       await transaction.execAsync(CREATE_SCHEMA_SQL);
-      await transaction.execAsync(
-        `PRAGMA user_version = ${CATALOG_DATABASE_VERSION}`,
-      );
+      await transaction.execAsync(`PRAGMA user_version = ${CATALOG_DATABASE_VERSION}`);
+    });
+  }
+  if (currentVersion === 1) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(`
+        ALTER TABLE decks ADD COLUMN content_hash TEXT;
+        ALTER TABLE decks ADD COLUMN content_bytes INTEGER;
+        ALTER TABLE decks ADD COLUMN content_url TEXT;
+        ALTER TABLE decks ADD COLUMN cover_bytes INTEGER;
+        ALTER TABLE decks ADD COLUMN cover_url TEXT;
+        ALTER TABLE decks ADD COLUMN thumbnail_bytes INTEGER;
+        ALTER TABLE decks ADD COLUMN thumbnail_url TEXT;
+        PRAGMA user_version = 2;
+      `);
     });
   }
 }

@@ -106,7 +106,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
 
   return {
     state: {
-      localSchemaVersion: 1,
+      localSchemaVersion: 2,
       catalogSchemaVersion: catalog.schemaVersion,
       catalogRevision: catalog.revision,
       source: 'bundled' as const,

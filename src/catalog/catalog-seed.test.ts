@@ -6,7 +6,10 @@ import { describe, it } from 'node:test';
 
 import { configuredCatalogSource } from './catalog-feature';
 import { createCatalogSeed, type CatalogSeedSource } from './catalog-seed';
-import { catalogSchemaSqlForTests } from './catalog-schema';
+import {
+  catalogSchemaSqlForTests,
+  migrateCatalogDatabase,
+} from './catalog-schema';
 
 const source = readFileSync(
   fileURLToPath(new URL('../data/bundles.ts', import.meta.url)),
@@ -22,6 +25,7 @@ describe('bundled SQLite catalog seed', () => {
   it('preserves the complete discoverable catalog and ordering', () => {
     const seed = createCatalogSeed(catalog);
 
+    assert.equal(seed.state.localSchemaVersion, 2);
     assert.equal(seed.state.catalogSchemaVersion, 5);
     assert.equal(seed.state.catalogRevision, 32);
     assert.equal(seed.decks.length, 20);
@@ -82,6 +86,14 @@ describe('bundled SQLite catalog seed', () => {
       assert.match(catalogSchemaSqlForTests, new RegExp(`CREATE TABLE ${table} \\(`));
     }
     assert.doesNotMatch(catalogSchemaSqlForTests, /\bBLOB\b/i);
+    for (const column of [
+      'content_hash',
+      'content_url',
+      'cover_url',
+      'thumbnail_url',
+    ]) {
+      assert.match(catalogSchemaSqlForTests, new RegExp(`\\b${column}\\b`));
+    }
   });
 
   it('applies the complete schema to SQLite with foreign keys enabled', () => {
@@ -116,6 +128,55 @@ describe('bundled SQLite catalog seed', () => {
           )
           .run('missing-deck', 1, 'missing-card', 0, 'Invalid'),
       );
+    } finally {
+      database.close();
+    }
+  });
+
+  it('migrates the initial development schema without deleting its catalog', async () => {
+    const database = new DatabaseSync(':memory:');
+    try {
+      database.exec(`
+        CREATE TABLE decks (
+          deck_id TEXT PRIMARY KEY NOT NULL,
+          cover_path TEXT,
+          cover_hash TEXT,
+          thumbnail_hash TEXT
+        );
+        INSERT INTO decks (deck_id) VALUES ('kept-deck');
+        PRAGMA user_version = 1;
+      `);
+      type MigrationAdapter = {
+        execAsync: (sql: string) => Promise<void>;
+        getFirstAsync: (sql: string) => Promise<Record<string, unknown> | undefined>;
+        withExclusiveTransactionAsync: (
+          operation: (transaction: MigrationAdapter) => Promise<void>,
+        ) => Promise<void>;
+      };
+      const adapter: MigrationAdapter = {
+        execAsync: async (sql: string) => database.exec(sql),
+        getFirstAsync: async (sql: string) =>
+          database.prepare(sql).get() ?? undefined,
+        withExclusiveTransactionAsync: async (
+          operation: (transaction: typeof adapter) => Promise<void>,
+        ) => operation(adapter),
+      };
+
+      await migrateCatalogDatabase(
+        adapter as unknown as Parameters<typeof migrateCatalogDatabase>[0],
+      );
+
+      assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 2);
+      assert.equal(
+        database.prepare('SELECT deck_id FROM decks').get()?.deck_id,
+        'kept-deck',
+      );
+      const columns = database
+        .prepare('PRAGMA table_info(decks)')
+        .all()
+        .map((row) => String(row.name));
+      assert.equal(columns.includes('content_hash'), true);
+      assert.equal(columns.includes('thumbnail_url'), true);
     } finally {
       database.close();
     }

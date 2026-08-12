@@ -70,9 +70,13 @@ export class SqliteCatalogRepository implements CatalogRepository {
     const [deckRows, cardRows, bundleRows, membershipRows, orderRows] =
       await Promise.all([
         this.database.getAllAsync<DeckRow>(
-          `SELECT d.*, i.status AS installation_status
+          `SELECT d.*, i.status AS installation_status,
+                  cover_media.local_uri AS cover_uri
            FROM decks d
            JOIN deck_installations i ON i.deck_id = d.deck_id
+           LEFT JOIN media_files cover_media
+             ON cover_media.content_hash = d.cover_hash
+            AND cover_media.status = 'ready'
            WHERE d.lifecycle_status = 'active'
            ORDER BY d.title COLLATE NOCASE, d.deck_id`,
         ),
@@ -120,6 +124,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
       cardCount: row.card_count,
       cardContentVersion: row.card_content_version,
       ...(row.cover_path ? { coverPath: row.cover_path } : {}),
+      ...(row.cover_uri ? { coverUri: row.cover_uri } : {}),
       installationStatus: row.installation_status,
     }));
     const memberships = new Map<string, string[]>();
@@ -204,6 +209,7 @@ type DeckRow = {
   tags_json: string;
   card_count: number;
   cover_path: string | null;
+  cover_uri: string | null;
   installation_status: CatalogDeck['installationStatus'];
 };
 type CardRow = {
