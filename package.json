@@ -61,7 +61,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/game/*.test.ts"
+    "test": "tsx --test src/game/*.test.ts src/catalog/*.test.ts"
   },
   "expo": {
     "doctor": {

@@ -16119,6 +16119,8 @@ const deckCoverImages: Record<string, number> =
 
 export type StandaloneDeck = Deck;
 
+export const bundledCatalog = bundleCatalog;
+
 export const decks: StandaloneDeck[] = bundleCatalog.decks.map((deck) => ({
     id: deck.id,
     order: deck.order,
