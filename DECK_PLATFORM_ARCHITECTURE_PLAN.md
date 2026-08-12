@@ -484,6 +484,29 @@ implementation: <https://docs.expo.dev/versions/v57.0.0/sdk/sqlite/>.
 - Keep a temporary bundled-catalog adapter behind a feature flag during
   migration and remove it only after rollback confidence is established.
 
+### 8.3 Bundled-baseline release workflow
+
+- Database publication remains the live source of truth and immediately feeds
+  device synchronization; Hostinger does not receive Git credentials and does
+  not push directly into the mobile repository.
+- Every publication deterministically generates a revision-addressed baseline
+  export. A change to a free/starter deck's metadata, cards, cover, order, or
+  bundle membership—and the addition or removal of a starter deck—marks the
+  app baseline as needing refresh.
+- Before an app-store release, a release-preparation command fetches the active
+  baseline export and immutable free content/media, verifies every revision,
+  size, and SHA-256 hash, regenerates the bundled catalog and Metro static image
+  registry, and runs parity tests before the generated files are committed.
+- Existing installations do not wait for an app release: after one successful
+  foreground/resume synchronization, updated metadata and persisted thumbnails
+  remain browsable offline, and verified free-deck cards and covers remain
+  playable offline. A brief network connection that ends before the atomic sync
+  completes does not count as a successful synchronization.
+- Future binaries may therefore grow their bundled free starter baseline, but
+  ordinary Deck Manager publications do not enlarge an already-installed app
+  or require a new app-store build. Paid card payloads are never included in
+  the bundled baseline.
+
 ## 9. Synchronization Protocol
 
 ### 9.1 Catalog sync triggers
@@ -869,6 +892,8 @@ the database path with no Git repository write required.
 - Convert static deck lookups across all screens and round state.
 - Add local metadata paging, search/filter foundations, and media file manager.
 - Add background catalog synchronization and automatic free-deck updates.
+- Add deterministic baseline export/import tooling, stale-baseline detection,
+  and release-time parity verification for free starter content and media.
 - Preserve a feature-flagged bundled fallback for rollout.
 - Confirm all free starter decks work after a clean offline installation.
 
