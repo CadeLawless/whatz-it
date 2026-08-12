@@ -101,7 +101,8 @@
       "expo-status-bar",
       "expo-web-browser",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -23,6 +23,7 @@
     "expo-screen-orientation": "~57.0.1",
     "expo-sensors": "~57.0.2",
     "expo-splash-screen": "~57.0.5",
+    "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.1",
     "expo-system-ui": "~57.0.1",
