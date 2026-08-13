@@ -11,6 +11,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
+        "APP_VARIANT": "preview",
         "EXPO_PUBLIC_CATALOG_SOURCE": "sqlite",
         "EXPO_PUBLIC_CATALOG_MANIFEST_URL": "https://api-staging.playwhatzit.com/api/v1/catalog/manifest"
       }
