@@ -194,6 +194,25 @@ function RootLayoutContent() {
           }}
         />
         <Stack.Screen
+          name="store/bundle/[bundleId]"
+          options={{
+            headerShown: false,
+            orientation: 'portrait',
+            title: 'Bundle details',
+          }}
+        />
+        <Stack.Screen
+          name="store/deck-preview/[deckId]"
+          options={{
+            contentStyle: { backgroundColor: colors.surface },
+            headerShown: false,
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.72, 0.95],
+            sheetGrabberVisible: true,
+            title: 'Deck preview',
+          }}
+        />
+        <Stack.Screen
           name="ready"
           options={{
             headerShown: false,

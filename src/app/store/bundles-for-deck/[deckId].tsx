@@ -47,7 +47,18 @@ export default function BundlesForDeckSheet() {
         {bundles.map((bundle) => {
           const previewDeck = bundle.decks[0];
           return (
-            <View key={bundle.id} style={styles.bundleRow}>
+            <Pressable
+              accessibilityHint="Opens bundle details"
+              accessibilityRole="link"
+              key={bundle.id}
+              onPress={() =>
+                router.replace({
+                  pathname: '/store/bundle/[bundleId]',
+                  params: { bundleId: bundle.id },
+                })
+              }
+              style={({ pressed }) => [styles.bundleRow, pressed && styles.pressed]}
+            >
               <View style={styles.bundleCover}>
                 {previewDeck?.coverUri || previewDeck?.coverImage ? (
                   <Image
@@ -66,11 +77,10 @@ export default function BundlesForDeckSheet() {
                 <Text numberOfLines={2} style={styles.bundleDescription}>
                   {bundle.description || `${bundle.decks.length} decks in one collection.`}
                 </Text>
-                <Text style={styles.bundleMeta}>
-                  {bundle.decks.length} DECKS · DETAILS COMING SOON
-                </Text>
+                <Text style={styles.bundleMeta}>{bundle.decks.length} DECKS</Text>
               </View>
-            </View>
+              <Text accessibilityElementsHidden style={styles.rowChevron}>›</Text>
+            </Pressable>
           );
         })}
       </ScrollView>
@@ -134,5 +144,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.45,
   },
+  rowChevron: { color: colors.play, fontSize: 28, fontWeight: '400' },
   pressed: { opacity: 0.72 },
 });

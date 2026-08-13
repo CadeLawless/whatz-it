@@ -275,6 +275,12 @@ export function StorefrontExplore({
                 catalog={catalog}
                 fanSide={index % 2 === 0 ? 'right' : 'left'}
                 key={bundle.id}
+                onPress={() =>
+                  router.push({
+                    pathname: '/store/bundle/[bundleId]',
+                    params: { bundleId: bundle.id },
+                  })
+                }
               />
             ))}
           </View>
@@ -405,10 +411,12 @@ function BundleBrowseCard({
   bundle,
   catalog,
   fanSide,
+  onPress,
 }: {
   bundle: CatalogBundleSummary;
   catalog: CatalogSnapshot;
   fanSide: 'left' | 'right';
+  onPress: () => void;
 }) {
   const decks = useMemo(
     () => bundle.deckIds.map((id) => catalog.getDeckById(id)).filter(Boolean).slice(0, 4),
@@ -416,9 +424,10 @@ function BundleBrowseCard({
   );
   return (
     <Pressable
-      accessibilityHint="Bundle details are coming soon"
+      accessibilityHint="Opens bundle details"
       accessibilityLabel={`${bundle.title}, ${bundle.deckIds.length} decks`}
       accessibilityRole="button"
+      onPress={onPress}
       style={({ pressed }) => [
         styles.bundleCard,
         fanSide === 'left' && styles.bundleCardReversed,
