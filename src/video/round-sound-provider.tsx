@@ -1,5 +1,6 @@
 import {
   type AudioPlayer,
+  setAudioModeAsync,
   setIsAudioActiveAsync,
   useAudioPlayer,
   useAudioPlayerStatus,
@@ -23,17 +24,19 @@ import {
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
 const PLAYER_OPTIONS = {
+  downloadFirst: true,
   keepAudioSessionActive: true,
   updateInterval: 100,
 } as const;
 const AUDIO_LOAD_TIMEOUT_MS = 10_000;
+const AUDIO_RECOVERY_LOAD_WAIT_MS = 750;
 
 type RoundSoundContextValue = {
   isReady: boolean;
   loadTimedOut: boolean;
   play: (sound: RoundSoundId) => Promise<boolean>;
   prepareForRound: () => Promise<boolean>;
-  retryLoading: () => void;
+  recoverAudio: (reloadAll?: boolean) => Promise<void>;
 };
 
 const RoundSoundContext = createContext<RoundSoundContextValue | null>(null);
@@ -114,6 +117,8 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   );
   const tickIndex = useRef(0);
   const previousStatusKeys = useRef(new Map<string, string>());
+  const audioModePromise = useRef<Promise<boolean> | null>(null);
+  const automaticRecoveryAttempted = useRef(false);
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const isReady = namedStatuses.every(([, status]) => status.isLoaded && !status.error);
   const effectiveLoadTimedOut = loadTimedOut && !isReady;
@@ -135,6 +140,55 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     };
   }, [regularPlayers, tickPlayers]);
 
+  const configureAudioSession = useCallback(async () => {
+    if (!audioModePromise.current) {
+      audioModePromise.current = setAudioModeAsync({
+        allowsRecording: false,
+        interruptionMode: 'mixWithOthers',
+        playsInSilentMode: true,
+        shouldRouteThroughEarpiece: false,
+      })
+        .then(() => true)
+        .catch((error) => {
+          warnRoundDiagnostic('initial audio mode configuration failed', error);
+          audioModePromise.current = null;
+          return false;
+        });
+    }
+    const modeReady = await audioModePromise.current;
+    if (!modeReady) return false;
+    try {
+      // Camera preparation may change the shared mode to play-and-record.
+      // Reactivate that current mode for every cue without overwriting it.
+      await setIsAudioActiveAsync(true);
+      logRoundDiagnostic('current audio session activated');
+      return true;
+    } catch (error) {
+      warnRoundDiagnostic('audio session activation failed', error);
+      return false;
+    }
+  }, []);
+
+  const reloadPlayers = useCallback((reloadAll = false) => {
+    const reloaded: string[] = [];
+    for (const [sound, player] of Object.entries(regularPlayers) as [
+      Exclude<RoundSoundId, 'final-tick'>,
+      AudioPlayer,
+    ][]) {
+      if (reloadAll || !player.isLoaded || player.currentStatus.error) {
+        player.replace(getRoundSoundSource(sound));
+        reloaded.push(sound);
+      }
+    }
+    for (const [index, player] of tickPlayers.entries()) {
+      if (reloadAll || !player.isLoaded || player.currentStatus.error) {
+        player.replace(getRoundSoundSource('final-tick'));
+        reloaded.push(`final-tick-${index + 1}`);
+      }
+    }
+    logRoundDiagnostic('audio players reloaded', { reloadAll, reloaded });
+  }, [regularPlayers, tickPlayers]);
+
   useEffect(() => {
     logRoundDiagnostic('audio provider mounted', {
       playerCount: namedStatuses.length,
@@ -142,6 +196,10 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     });
     return () => logRoundDiagnostic('audio provider unmounted');
   }, [namedStatuses.length]);
+
+  useEffect(() => {
+    void configureAudioSession();
+  }, [configureAudioSession]);
 
   useEffect(() => {
     for (const [name, status] of namedStatuses) {
@@ -177,15 +235,32 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
       isReady,
       ...snapshot,
     });
-    if (isReady) return;
+    if (isReady) {
+      automaticRecoveryAttempted.current = false;
+      return;
+    }
     const timeout = setTimeout(() => {
       setLoadTimedOut(true);
-      warnRoundDiagnostic('audio loading timed out', new Error('Not all audio players loaded'), {
-        pendingPlayers: getLoadSnapshot().pendingPlayers,
-      });
+      const snapshot = getLoadSnapshot();
+      warnRoundDiagnostic(
+        'audio loading timed out; gameplay remains available',
+        new Error('Not all audio players loaded'),
+        snapshot,
+      );
+      if (!automaticRecoveryAttempted.current) {
+        automaticRecoveryAttempted.current = true;
+        reloadPlayers();
+        void configureAudioSession();
+      }
     }, AUDIO_LOAD_TIMEOUT_MS);
     return () => clearTimeout(timeout);
-  }, [getLoadSnapshot, isReady, readinessSignature]);
+  }, [
+    configureAudioSession,
+    getLoadSnapshot,
+    isReady,
+    readinessSignature,
+    reloadPlayers,
+  ]);
 
   useEffect(() => {
     if (!tick1Status.didJustFinish || !tick1.isLoaded) return;
@@ -200,12 +275,14 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   }, [tick2, tick2Status.didJustFinish]);
 
   const play = useCallback(
-    (sound: RoundSoundId) => {
+    async (sound: RoundSoundId) => {
       logRoundDiagnostic('audio cue requested from provider', {
         sound,
         isReady,
         tickIndex: tickIndex.current,
       });
+      const sessionReady = await configureAudioSession();
+      if (!sessionReady) return false;
       if (sound !== 'final-tick') {
         if (sound === 'round-end') {
           // The tick file is 1.129 seconds long. Stop the final tail at the
@@ -214,63 +291,93 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
             if (player.playing) player.pause();
           }
         }
-        return playRoundSound(regularPlayers[sound], sound);
+        const player = regularPlayers[sound];
+        if (!player.isLoaded || player.currentStatus.error) {
+          warnRoundDiagnostic(
+            'audio cue unavailable; reloading for a later cue',
+            player.currentStatus.error,
+            { sound },
+          );
+          player.replace(getRoundSoundSource(sound));
+          return false;
+        }
+        return playRoundSound(player, sound);
       }
       const player = tickPlayers[tickIndex.current % tickPlayers.length];
       tickIndex.current += 1;
+      if (!player.isLoaded || player.currentStatus.error) {
+        warnRoundDiagnostic(
+          'countdown audio cue unavailable; reloading for a later cue',
+          player.currentStatus.error,
+          { sound },
+        );
+        player.replace(getRoundSoundSource('final-tick'));
+        return false;
+      }
       return playRoundSound(player, sound);
     },
-    [isReady, regularPlayers, tickPlayers],
+    [configureAudioSession, isReady, regularPlayers, tickPlayers],
   );
 
   const prepareForRound = useCallback(async () => {
-    logRoundDiagnostic('round audio preparation requested', { isReady });
-    if (!isReady) {
-      warnRoundDiagnostic('round audio preparation blocked', new Error('Players are not loaded'), {
-        pendingPlayers: getLoadSnapshot().pendingPlayers,
-      });
-      return false;
-    }
+    const before = getLoadSnapshot();
+    logRoundDiagnostic('round audio preparation requested', { isReady, ...before });
     try {
-      await setIsAudioActiveAsync(true);
-      logRoundDiagnostic('audio session activated for round');
+      const sessionReady = await configureAudioSession();
       tickIndex.current = 0;
-      const players = [...Object.values(regularPlayers), ...tickPlayers];
-      const results = await Promise.all(players.map(rewindRoundSoundPlayer));
-      const prepared = results.every(Boolean);
-      logRoundDiagnostic('round audio preparation completed', { prepared, rewindResults: results });
+      const players: [string, AudioPlayer][] = [
+        ...Object.entries(regularPlayers),
+        ['final-tick-a', tickPlayers[0]],
+        ['final-tick-b', tickPlayers[1]],
+      ];
+      const results = await Promise.all(
+        players.map(async ([name, player]) => ({
+          name,
+          prepared: await rewindRoundSoundPlayer(player),
+        })),
+      );
+      const failedPlayers = results
+        .filter((result) => !result.prepared)
+        .map((result) => result.name);
+      const prepared = sessionReady && failedPlayers.length === 0;
+      logRoundDiagnostic('round audio preparation completed', {
+        prepared,
+        sessionReady,
+        failedPlayers,
+      });
       return prepared;
     } catch (error) {
       warnRoundDiagnostic('round audio preparation failed', error);
       return false;
     }
-  }, [getLoadSnapshot, isReady, regularPlayers, tickPlayers]);
+  }, [configureAudioSession, getLoadSnapshot, isReady, regularPlayers, tickPlayers]);
 
-  const retryLoading = useCallback(() => {
-    logRoundDiagnostic('manual audio loading retry requested');
+  const recoverAudio = useCallback(async (reloadAll = false) => {
+    logRoundDiagnostic('audio recovery requested', { reloadAll });
     setLoadTimedOut(false);
-    for (const [sound, player] of Object.entries(regularPlayers) as [
-      Exclude<RoundSoundId, 'final-tick'>,
-      AudioPlayer,
-    ][]) {
-      if (!player.isLoaded) {
-        logRoundDiagnostic('replacing unloaded audio source', { sound });
-        player.replace(getRoundSoundSource(sound));
-      }
-    }
-    for (const [index, player] of tickPlayers.entries()) {
-      if (!player.isLoaded) {
-        logRoundDiagnostic('replacing unloaded countdown source', { index });
-        player.replace(getRoundSoundSource('final-tick'));
-      }
-    }
-  }, [regularPlayers, tickPlayers]);
+    reloadPlayers(reloadAll);
+    await Promise.all([
+      configureAudioSession(),
+      waitForPlayersToLoad(
+        [...Object.values(regularPlayers), ...tickPlayers],
+        AUDIO_RECOVERY_LOAD_WAIT_MS,
+      ),
+    ]);
+  }, [configureAudioSession, regularPlayers, reloadPlayers, tickPlayers]);
 
   const value = useMemo(
-    () => ({ isReady, loadTimedOut: effectiveLoadTimedOut, play, prepareForRound, retryLoading }),
-    [effectiveLoadTimedOut, isReady, play, prepareForRound, retryLoading],
+    () => ({ isReady, loadTimedOut: effectiveLoadTimedOut, play, prepareForRound, recoverAudio }),
+    [effectiveLoadTimedOut, isReady, play, prepareForRound, recoverAudio],
   );
   return <RoundSoundContext.Provider value={value}>{children}</RoundSoundContext.Provider>;
+}
+
+async function waitForPlayersToLoad(players: AudioPlayer[], timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (players.every((player) => player.isLoaded && !player.currentStatus.error)) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
 }
 
 export function useRoundSounds() {

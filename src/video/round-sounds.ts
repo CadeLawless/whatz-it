@@ -34,8 +34,8 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
 };
 
 // Begin native decoder/buffer preparation as soon as the app bundle loads.
-// The persistent sound provider still verifies that every player is loaded
-// before allowing a round to begin.
+// Playback remains optional feedback: a failed preload is retried later and
+// never prevents the visual/haptic round flow from beginning.
 for (const [sound, source] of Object.entries(ROUND_SOUND_SOURCES)) {
   void preload(source)
     .then(() => logRoundDiagnostic('native audio preload completed', { sound }))

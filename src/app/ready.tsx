@@ -11,6 +11,7 @@ import { useScreenshotTransition } from '@/components/screenshot-transition-prov
 import { RecordingIndicator } from '@/components/recording-indicator';
 import { useCatalog } from '@/catalog/catalog-provider';
 import { type RecordingPreparation, useRound } from '@/game/round-context';
+import { canStartReadyIntro } from '@/game/ready-intro-gate';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { useRoundTimer } from '@/hooks/use-round-timer';
 import { colors, radius, spacing } from '@/theme';
@@ -21,6 +22,7 @@ import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnosti
 
 const GET_READY_SOUND_MS = 2410;
 const READY_TRANSITION_MS = 450;
+const AUDIO_STARTUP_GRACE_MS = 1500;
 
 export default function ReadyScreen() {
   const { catalog } = useCatalog();
@@ -45,6 +47,7 @@ export default function ReadyScreen() {
   const [introComplete, setIntroComplete] = useState(false);
   const [soundsPrepared, setSoundsPrepared] = useState(false);
   const [soundPreparationFailed, setSoundPreparationFailed] = useState(false);
+  const [audioStartupGraceComplete, setAudioStartupGraceComplete] = useState(false);
   const [recordingPreparation, setRecordingPreparation] =
     useState<RecordingPreparation | 'preparing'>('preparing');
   const [isLeaving, setIsLeaving] = useState(false);
@@ -62,7 +65,7 @@ export default function ReadyScreen() {
     loadTimedOut: soundLoadTimedOut,
     play: playSound,
     prepareForRound,
-    retryLoading,
+    recoverAudio,
   } = useRoundSounds();
 
   useEffect(() => {
@@ -198,6 +201,7 @@ export default function ReadyScreen() {
       soundPreparationFailed,
       soundsPrepared,
       soundsReady,
+      audioStartupGraceComplete,
     };
     const signature = JSON.stringify(details);
     if (signature === previousGateSignature.current) return;
@@ -210,17 +214,33 @@ export default function ReadyScreen() {
     soundPreparationStarted.current = true;
     logRoundDiagnostic('ready screen starting round audio preparation');
     let active = true;
-    void prepareForRound().then((prepared) => {
+    void prepareForRound().then(async (initiallyPrepared) => {
+      let prepared = initiallyPrepared;
+      if (!prepared) {
+        // Recreate every player after a native rewind/session failure. A
+        // player can report loaded and still reject a seek on some devices.
+        await recoverAudio(true);
+        if (active) prepared = await prepareForRound();
+      }
       logRoundDiagnostic('ready screen received audio preparation result', { active, prepared });
       if (!active) return;
       setSoundsPrepared(prepared);
       setSoundPreparationFailed(!prepared);
+      setAudioStartupGraceComplete(true);
       if (!prepared) soundPreparationStarted.current = false;
     });
     return () => {
       active = false;
     };
-  }, [prepareForRound, soundsReady]);
+  }, [prepareForRound, recoverAudio, soundsReady]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      logRoundDiagnostic('audio startup grace elapsed; gameplay remains available');
+      setAudioStartupGraceComplete(true);
+    }, AUDIO_STARTUP_GRACE_MS);
+    return () => clearTimeout(timeout);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -250,15 +270,15 @@ export default function ReadyScreen() {
   }, [orientationSettled, revealTransition]);
 
   useEffect(() => {
-    if (
-      !positionReady ||
-      !orientationSettled ||
-      !recordingPrepared ||
-      !soundsPrepared ||
-      !appActive ||
-      isLeaving ||
-      introStarted.current
-    ) return;
+    if (!canStartReadyIntro({
+      appActive,
+      audioStartupGraceComplete,
+      introStarted: introStarted.current,
+      isLeaving,
+      orientationSettled,
+      positionReady,
+      recordingPrepared,
+    })) return;
     introStarted.current = true;
     logRoundDiagnostic('ready intro gates passed; starting recording before audio', {
       recordingPreparation,
@@ -304,13 +324,13 @@ export default function ReadyScreen() {
   }, [
     isLeaving,
     appActive,
+    audioStartupGraceComplete,
     orientationSettled,
     playSound,
     positionReady,
     recordOverlayEvent,
     recordingPreparation,
     recordingPrepared,
-    soundsPrepared,
     startRecording,
   ]);
 
@@ -346,20 +366,6 @@ export default function ReadyScreen() {
     await cancelRecording();
     setRecordingPreparation('preparing');
     setRecordingPreparation(await prepareRecording());
-  };
-
-  const handleRetryAudio = async () => {
-    logRoundDiagnostic('manual audio retry requested from ready screen');
-    if (introStarted.current) {
-      await cancelRecording();
-      setRecordingPreparation('preparing');
-      setRecordingPreparation(await prepareRecording());
-    }
-    introStarted.current = false;
-    soundPreparationStarted.current = false;
-    setSoundsPrepared(false);
-    setSoundPreparationFailed(false);
-    retryLoading();
   };
 
   const handlePlayWithoutVideo = async () => {
@@ -408,21 +414,7 @@ export default function ReadyScreen() {
             <Text style={styles.deckName}>{deck.title}</Text>
 
             <View style={styles.center}>
-              {soundLoadTimedOut || soundPreparationFailed ? (
-                <>
-                  <Text style={styles.positionTitle}>AUDIO NOT READY</Text>
-                  <Text style={styles.instructions}>
-                    The round is paused so no game sounds are missed.
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => void handleRetryAudio()}
-                    style={styles.manualButton}
-                  >
-                    <Text style={styles.manualButtonText}>RETRY AUDIO</Text>
-                  </Pressable>
-                </>
-              ) : recordingPreparation === 'error' ? (
+              {recordingPreparation === 'error' ? (
                 <>
                   <Text style={styles.positionTitle}>CAMERA NOT READY</Text>
                   <Text style={styles.instructions}>
@@ -462,6 +454,13 @@ export default function ReadyScreen() {
                 </>
               )}
             </View>
+            {(soundLoadTimedOut || soundPreparationFailed) && (
+              <View accessibilityLiveRegion="polite" style={styles.soundNotice}>
+                <Text style={styles.soundNoticeText}>
+                  Sound is recovering. The round will continue.
+                </Text>
+              </View>
+            )}
           </View>
           {isRecording && (
             <RecordingIndicator
@@ -559,4 +558,17 @@ const styles = StyleSheet.create({
   manualButtonText: { color: '#000000', fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
   skipVideoButton: { marginTop: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   skipVideoButtonText: { color: colors.white, fontSize: 11, fontWeight: '900', letterSpacing: 1.1 },
+  soundNotice: {
+    position: 'absolute',
+    right: spacing.lg,
+    bottom: spacing.md,
+    left: spacing.lg,
+    alignItems: 'center',
+  },
+  soundNoticeText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
 });

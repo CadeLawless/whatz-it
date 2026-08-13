@@ -1,5 +1,4 @@
 import { Stack, usePathname, useRouter } from 'expo-router';
-import { setAudioModeAsync } from 'expo-audio';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,7 +14,6 @@ import {
   consumeSettingsReturnRequest,
   settingsPermissionsChanged,
 } from '@/storage/settings-return';
-import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 import { initializeRoundVideoStorage } from '@/video/round-videos';
 import { loadHomeBranding } from '@/utils/home-branding';
 import { getSettingsPermissionSnapshot } from '@/utils/settings-permission-snapshot';
@@ -111,18 +109,6 @@ function RootLayoutContent() {
     settingsReturnDeckId,
     settingsReturnPath,
   ]);
-
-  useEffect(() => {
-    logRoundDiagnostic('root audio mode configuration started');
-    setAudioModeAsync({
-      allowsRecording: false,
-      interruptionMode: 'mixWithOthers',
-      playsInSilentMode: true,
-      shouldRouteThroughEarpiece: false,
-    })
-      .then(() => logRoundDiagnostic('root audio mode configuration completed'))
-      .catch((error) => warnRoundDiagnostic('root audio mode configuration failed', error));
-  }, []);
 
   useEffect(() => {
     if (
