@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   Pressable,
@@ -10,9 +9,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
+import { DeckDetailsHeader } from '@/components/deck-details-header';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
-import { colors, spacing } from '@/theme';
+import { colors, radius, spacing, typography } from '@/theme';
 
 export default function StoreDeckDetailsScreen() {
   const { catalog } = useCatalog();
@@ -63,38 +63,13 @@ export default function StoreDeckDetailsScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <Pressable
-            accessibilityLabel="Back to Explore"
-            accessibilityRole="button"
-            onPress={() => router.back()}
-            style={({ pressed }) => [styles.backLink, pressed && styles.pressed]}
-          >
-            <Text style={styles.backChevron}>‹</Text>
-            <Text style={styles.backText}>Back to Explore</Text>
-          </Pressable>
-
-          <View style={styles.coverShadow}>
-            <View style={styles.cover}>
-              {deck.coverUri || deck.coverImage ? (
-                <Image
-                  accessibilityLabel={`${deck.title} cover`}
-                  cachePolicy="memory-disk"
-                  contentFit="cover"
-                  source={deck.coverUri || deck.coverImage}
-                  style={StyleSheet.absoluteFill}
-                />
-              ) : (
-                <View style={styles.coverFallback}>
-                  <Text style={styles.coverFallbackText}>{deck.title}</Text>
-                </View>
-              )}
-            </View>
-          </View>
+          <DeckDetailsHeader
+            backLabel="Back to Explore"
+            deck={deck}
+            onBack={() => router.back()}
+          />
 
           <View style={styles.copy}>
-            <Text style={styles.title}>{deck.title}</Text>
-            <Text style={styles.description}>{deck.description}</Text>
-
             <View style={styles.metadata}>
               <Text style={styles.metadataText}>{deck.cardCount} CARDS</Text>
               {bundles.length > 0 && (
@@ -132,51 +107,13 @@ export default function StoreDeckDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.surface },
   content: {
-    alignItems: 'center',
-    gap: 24,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: 36,
+    flexGrow: 1,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
   },
-  backLink: {
-    minHeight: 44,
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  backChevron: { color: '#2563EB', fontSize: 34, lineHeight: 36 },
-  backText: { color: '#2563EB', fontSize: 16, fontWeight: '800' },
-  coverShadow: {
-    width: '64%',
-    maxWidth: 260,
-    aspectRatio: 2 / 3,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.20)',
-  },
-  cover: {
-    flex: 1,
-    overflow: 'hidden',
-    borderRadius: 18,
-    backgroundColor: '#DBEAFE',
-  },
-  coverFallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  coverFallbackText: {
-    color: '#1E3A8A',
-    textAlign: 'center',
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  copy: { alignSelf: 'stretch', gap: 13 },
-  title: { color: '#111827', fontSize: 30, lineHeight: 34, fontWeight: '900' },
-  description: { color: '#64748B', fontSize: 16, lineHeight: 24 },
+  copy: { gap: 13, marginTop: spacing.xl },
   metadata: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   metadataText: {
     color: '#2563EB',
@@ -199,13 +136,11 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   purchaseCard: {
-    alignSelf: 'stretch',
     gap: 10,
+    marginTop: spacing.xl,
     padding: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    borderRadius: radius.xl,
+    backgroundColor: colors.background,
   },
   purchaseTitle: { color: '#111827', fontSize: 18, fontWeight: '900' },
   purchaseCopy: { color: '#64748B', fontSize: 14, lineHeight: 20 },
@@ -214,7 +149,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
-    borderRadius: 24,
+    borderRadius: radius.pill,
     backgroundColor: '#CBD5E1',
   },
   purchaseButtonText: {
@@ -229,10 +164,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
     padding: 28,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
   },
-  notFoundTitle: { color: '#111827', fontSize: 24, fontWeight: '900' },
-  notFoundText: { color: '#64748B', textAlign: 'center', fontSize: 15 },
+  notFoundTitle: { ...typography.title, color: colors.ink },
+  notFoundText: { ...typography.body, color: colors.muted, textAlign: 'center' },
   backButton: {
     minHeight: 44,
     justifyContent: 'center',
@@ -248,5 +183,5 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
   },
   pressed: { opacity: 0.72 },
-  orientationGate: { backgroundColor: colors.background },
+  orientationGate: { flex: 1 },
 });
