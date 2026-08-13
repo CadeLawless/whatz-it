@@ -9,7 +9,11 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_CATALOG_SOURCE": "sqlite",
+        "EXPO_PUBLIC_CATALOG_MANIFEST_URL": "https://api-staging.playwhatzit.com/api/v1/catalog/manifest"
+      }
     },
     "production": {
       "autoIncrement": true
