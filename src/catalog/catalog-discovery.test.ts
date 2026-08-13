@@ -5,6 +5,8 @@ import { describe, it } from 'node:test';
 import {
   MemoryCatalogDiscoveryRepository,
   SqliteCatalogDiscoveryRepository,
+  type CatalogDeckCursor,
+  type CatalogDeckPage,
   type CatalogDeckSummary,
   type CatalogBundleSummary,
 } from './catalog-discovery';
@@ -110,6 +112,45 @@ describe('local catalog discovery', () => {
       );
     });
   });
+
+  it('pages a thousand-deck catalog without gaps or duplicates', async () => {
+    const largeCatalog = Array.from({ length: 1_000 }, (_, index) =>
+      deck(
+        `deck-${index.toString().padStart(4, '0')}`,
+        `Catalog Deck ${(index % 50).toString().padStart(2, '0')}`,
+        `Synthetic deck ${index}`,
+        index % 3 === 0 ? 'free' : 'paid',
+        index % 3 === 0 ? 'installed' : 'not_owned',
+        [index % 2 === 0 ? 'even' : 'odd', `group-${index % 10}`],
+      ),
+    );
+    await withCatalog(largeCatalog, [], async (repository) => {
+      const ids: string[] = [];
+      let after: CatalogDeckCursor | undefined;
+      do {
+        const page: CatalogDeckPage = await repository.queryDecks({ limit: 37, after });
+        assert.equal(page.decks.length <= 37, true);
+        ids.push(...page.decks.map(({ id }) => id));
+        after = page.nextCursor ?? undefined;
+      } while (after);
+      assert.equal(ids.length, 1_000);
+      assert.equal(new Set(ids).size, 1_000);
+
+      const evenIds: string[] = [];
+      after = undefined;
+      do {
+        const page: CatalogDeckPage = await repository.queryDecks({
+          tags: ['even'],
+          limit: 100,
+          after,
+        });
+        evenIds.push(...page.decks.map(({ id }) => id));
+        after = page.nextCursor ?? undefined;
+      } while (after);
+      assert.equal(evenIds.length, 500);
+      assert.equal(new Set(evenIds).size, 500);
+    });
+  });
 });
 
 async function withRepositories(
@@ -119,8 +160,20 @@ async function withRepositories(
       | SqliteCatalogDiscoveryRepository,
   ) => Promise<void>,
 ) {
-  await operation(new MemoryCatalogDiscoveryRepository(fixtureDecks, fixtureBundles));
-  const database = createDatabase();
+  return withCatalog(fixtureDecks, fixtureBundles, operation);
+}
+
+async function withCatalog(
+  decks: CatalogDeckSummary[],
+  bundles: CatalogBundleSummary[],
+  operation: (
+    repository:
+      | MemoryCatalogDiscoveryRepository
+      | SqliteCatalogDiscoveryRepository,
+  ) => Promise<void>,
+) {
+  await operation(new MemoryCatalogDiscoveryRepository(decks, bundles));
+  const database = createDatabase(decks, bundles);
   try {
     await operation(
       new SqliteCatalogDiscoveryRepository({
@@ -133,11 +186,14 @@ async function withRepositories(
   }
 }
 
-function createDatabase() {
+function createDatabase(
+  decks: CatalogDeckSummary[] = fixtureDecks,
+  bundles: CatalogBundleSummary[] = fixtureBundles,
+) {
   const database = new DatabaseSync(':memory:');
   database.exec('PRAGMA foreign_keys = ON');
   database.exec(catalogSchemaSqlForTests);
-  for (const item of fixtureDecks) {
+  for (const item of decks) {
     database
       .prepare(
         `INSERT INTO decks (
@@ -172,7 +228,7 @@ function createDatabase() {
         item.installationStatus,
       );
   }
-  for (const bundle of fixtureBundles) {
+  for (const bundle of bundles) {
     database
       .prepare(
         `INSERT INTO bundles (
@@ -187,7 +243,7 @@ function createDatabase() {
         bundle.description,
         bundle.access,
         bundle.price ? Math.round(bundle.price * 100) : null,
-        fixtureBundles.indexOf(bundle),
+        bundles.indexOf(bundle),
       );
     for (const [position, deckId] of bundle.deckIds.entries()) {
       database

@@ -9,10 +9,12 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { applyBundledCatalogBaseline } from './catalog-database';
 import { type CatalogSeedSource } from './catalog-seed';
 import { catalogSchemaSqlForTests } from './catalog-schema';
+import { SqliteCatalogDiscoveryRepository } from './catalog-discovery';
 import {
   applyPreparedCatalog,
   CatalogSyncError,
   downloadVerified,
+  synchronizeCatalog,
 } from './catalog-sync';
 import type { CatalogManifest, DeckContentArtifact } from './catalog-wire';
 
@@ -160,6 +162,137 @@ describe('catalog synchronization activation', () => {
   });
 });
 
+describe('Phase 3 catalog acceptance', () => {
+  it('persists a verified revision for offline restart and rejects a corrupt successor', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(synchronizedRevision);
+      const requested: string[] = [];
+      const runtime = {
+        request: async (url: string) => {
+          requested.push(url);
+          if (url === fixture.manifestUrl) {
+            return Response.json(fixture.manifest, {
+              headers: { ETag: `"revision-${synchronizedRevision}"` },
+            });
+          }
+          const bytes = fixture.artifacts.get(url);
+          return bytes
+            ? new Response(bytes.slice().buffer as ArrayBuffer)
+            : new Response('missing', { status: 404 });
+        },
+        digestSha256: async (bytes: Uint8Array) => sha256(bytes),
+        inspectLocalFile: async (uri: string) => ({
+          exists: storedFiles.has(uri),
+          size: storedFiles.get(uri)?.byteLength ?? 0,
+        }),
+        storeDownloadedMedia: async (
+          references: CatalogManifest['decks'][number]['cover'][],
+          downloads: Map<string, Uint8Array>,
+        ) =>
+          references.flatMap((reference) => {
+            const bytes = downloads.get(reference.hash);
+            if (!bytes) return [];
+            const localUri = `file:///catalog-media/${reference.hash}.webp`;
+            storedFiles.set(localUri, bytes);
+            return [{ ...reference, localUri }];
+          }),
+      };
+
+      assert.deepEqual(
+        await synchronizeCatalog(harness.adapter, {
+          manifestUrl: fixture.manifestUrl,
+          now: () => new Date('2026-08-13T22:00:00Z'),
+          downloadRuntime: runtime,
+        }),
+        {
+          status: 'updated',
+          revision: synchronizedRevision,
+          downloadedDecks: 1,
+          downloadedMedia: 4,
+        },
+      );
+      assert.equal(requested.includes(fixture.paidContentUrl), false);
+      assert.equal(storedFiles.size, 4);
+      assert.equal(
+        harness.database
+          .prepare("SELECT COUNT(*) AS count FROM media_files WHERE status = 'ready'")
+          .get()?.count,
+        4,
+      );
+
+      // A fresh repository instance represents a process restart. It must read
+      // the activated SQLite snapshot without consulting the network.
+      const restartedRepository = new SqliteCatalogDiscoveryRepository(
+        harness.adapter,
+      );
+      const restarted = await restartedRepository.queryDecks({
+        search: 'acceptance',
+        access: 'free',
+      });
+      assert.deepEqual(restarted.decks.map(({ id }) => id), ['celebrity-shuffle']);
+      assert.equal(restarted.decks[0].coverUri?.startsWith('file:///'), true);
+      assert.equal(restarted.decks[0].thumbnailUri?.startsWith('file:///'), true);
+      assert.equal(
+        harness.database
+          .prepare(
+            "SELECT text FROM cards WHERE deck_id = 'celebrity-shuffle' AND position = 0",
+          )
+          .get()?.text,
+        'Acceptance card',
+      );
+
+      let conditionalEtag: string | null = null;
+      await assert.rejects(
+        () =>
+          synchronizeCatalog(harness.adapter, {
+            manifestUrl: fixture.manifestUrl,
+            downloadRuntime: {
+              ...runtime,
+              request: async (_url, init) => {
+                conditionalEtag = new Headers(init.headers).get('if-none-match');
+                throw new Error('offline');
+              },
+            },
+          }),
+        (error) => error instanceof CatalogSyncError && error.code === 'network_error',
+      );
+      assert.equal(conditionalEtag, `"revision-${synchronizedRevision}"`);
+      assert.equal(stateRevision(harness.database), synchronizedRevision);
+
+      const corrupt = corruptSuccessor(fixture);
+      await assert.rejects(
+        () =>
+          synchronizeCatalog(harness.adapter, {
+            manifestUrl: fixture.manifestUrl,
+            downloadRuntime: {
+              ...runtime,
+              request: async (url) =>
+                url === fixture.manifestUrl
+                  ? Response.json(corrupt.manifest)
+                  : new Response(corrupt.bytes.slice().buffer as ArrayBuffer),
+            },
+          }),
+        (error) => error instanceof CatalogSyncError && error.code === 'invalid_artifact',
+      );
+      assert.equal(stateRevision(harness.database), synchronizedRevision);
+      assert.equal(
+        harness.database
+          .prepare(
+            "SELECT text FROM cards WHERE deck_id = 'celebrity-shuffle' AND position = 0",
+          )
+          .get()?.text,
+        'Acceptance card',
+      );
+      assert.equal(storedFiles.size, 4);
+    } finally {
+      harness.database.close();
+    }
+  });
+});
+
 function updateFixture() {
   const coverHash = 'a'.repeat(64);
   const thumbnailHash = 'b'.repeat(64);
@@ -220,6 +353,117 @@ function updateFixture() {
   };
 }
 
+function acceptanceFixture(revision: number) {
+  const manifestUrl = 'https://example.test/api/v1/catalog/manifest';
+  const freeContentUrl = 'https://example.test/content/free.json';
+  const paidContentUrl = 'https://example.test/content/paid.json';
+  const artifact: DeckContentArtifact = {
+    schemaVersion: 1,
+    deckId: 'celebrity-shuffle',
+    cardContentVersion: 2,
+    cards: [{ id: 'acceptance-card', text: 'Acceptance card' }],
+  };
+  const freeContent = new TextEncoder().encode(JSON.stringify(artifact));
+  const media = {
+    freeCover: new Uint8Array([1, 2, 3, 4]),
+    freeThumbnail: new Uint8Array([5, 6]),
+    paidCover: new Uint8Array([7, 8, 9]),
+    paidThumbnail: new Uint8Array([10]),
+  };
+  const reference = (bytes: Uint8Array, name: string) => ({
+    hash: sha256(bytes),
+    bytes: bytes.byteLength,
+    url: `https://example.test/content/${name}.webp`,
+  });
+  const manifest: CatalogManifest = {
+    schemaVersion: 1,
+    catalogSchemaVersion: 5,
+    catalogRevision: revision,
+    updatedAt: '2026-08-13T22:00:00Z',
+    supportedContentSchemaVersions: [1],
+    decks: [
+      {
+        id: 'celebrity-shuffle',
+        order: 1,
+        title: 'Acceptance Update',
+        description: 'Acceptance metadata persists offline.',
+        tags: ['acceptance'],
+        access: 'free',
+        price: null,
+        status: 'active',
+        deckVersion: 8,
+        cardContentVersion: 2,
+        cardCount: 1,
+        content: {
+          hash: sha256(freeContent),
+          bytes: freeContent.byteLength,
+          url: freeContentUrl,
+          protected: false,
+        },
+        cover: reference(media.freeCover, 'free-cover'),
+        thumbnail: reference(media.freeThumbnail, 'free-thumbnail'),
+      },
+      {
+        id: 'accents-and-impressions',
+        order: 1,
+        title: 'Paid Acceptance Deck',
+        description: 'Protected cards are not requested.',
+        tags: ['acceptance', 'paid'],
+        access: 'paid',
+        price: 1.99,
+        status: 'active',
+        deckVersion: 2,
+        cardContentVersion: 1,
+        cardCount: 86,
+        content: {
+          hash: 'f'.repeat(64),
+          bytes: 100,
+          url: null,
+          protected: true,
+        },
+        cover: reference(media.paidCover, 'paid-cover'),
+        thumbnail: reference(media.paidThumbnail, 'paid-thumbnail'),
+      },
+    ],
+    bundles: [],
+    deckOrders: {
+      free: ['celebrity-shuffle'],
+      paid: ['accents-and-impressions'],
+    },
+  };
+  return {
+    manifestUrl,
+    paidContentUrl,
+    manifest,
+    artifacts: new Map<string, Uint8Array>([
+      [freeContentUrl, freeContent],
+      [manifest.decks[0].cover.url, media.freeCover],
+      [manifest.decks[0].thumbnail.url, media.freeThumbnail],
+      [manifest.decks[1].cover.url, media.paidCover],
+      [manifest.decks[1].thumbnail.url, media.paidThumbnail],
+    ]),
+  };
+}
+
+function corruptSuccessor(fixture: ReturnType<typeof acceptanceFixture>) {
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({
+      schemaVersion: 1,
+      deckId: 'celebrity-shuffle',
+      cardContentVersion: 3,
+      cards: [{ id: 'corrupt-card', text: 'Must never activate' }],
+    }),
+  );
+  const manifest = structuredClone(fixture.manifest);
+  manifest.catalogRevision += 1;
+  manifest.updatedAt = '2026-08-13T22:05:00Z';
+  manifest.decks[0].deckVersion += 1;
+  manifest.decks[0].cardContentVersion += 1;
+  manifest.decks[0].content.hash = '0'.repeat(64);
+  manifest.decks[0].content.bytes = bytes.byteLength;
+  return { manifest, bytes };
+}
+
 function createDatabaseHarness(failSqlPrefix?: string) {
   const database = new DatabaseSync(':memory:');
   database.exec('PRAGMA foreign_keys = ON');
@@ -240,7 +484,13 @@ function createDatabaseHarness(failSqlPrefix?: string) {
   };
   const adapter: Adapter = {
     getFirstAsync: async (sql, ...parameters) => database.prepare(sql).get(...parameters),
-    getAllAsync: async (sql, ...parameters) => database.prepare(sql).all(...parameters),
+    getAllAsync: async (sql, ...parameters) => {
+      const values =
+        parameters.length === 1 && Array.isArray(parameters[0])
+          ? (parameters[0] as unknown as SQLInputValue[])
+          : parameters;
+      return database.prepare(sql).all(...values);
+    },
     runAsync: async (sql, ...parameters) => {
       if (baselineInstalled && failSqlPrefix && sql.trimStart().startsWith(failSqlPrefix)) {
         throw new Error('Injected catalog activation failure.');
@@ -276,4 +526,8 @@ function stateRevision(database: DatabaseSync) {
 function plainRow(row: Record<string, unknown> | undefined) {
   if (!row) return null;
   return Object.fromEntries(Object.entries(row));
+}
+
+function sha256(bytes: Uint8Array) {
+  return createHash('sha256').update(bytes).digest('hex');
 }

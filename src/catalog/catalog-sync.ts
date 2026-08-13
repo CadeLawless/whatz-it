@@ -23,7 +23,14 @@ export type CatalogSyncOptions = {
 export type CatalogDownloadRuntime = {
   request?: (url: string, init: RequestInit) => Promise<Response>;
   digestSha256?: (bytes: Uint8Array) => Promise<string>;
+  inspectLocalFile?: (uri: string) => Promise<{ exists: boolean; size: number }>;
+  storeDownloadedMedia?: (
+    references: CatalogArtifactReference[],
+    downloadedMedia: Map<string, Uint8Array>,
+  ) => Promise<CatalogStoredMedia[]>;
 };
+
+export type CatalogStoredMedia = CatalogArtifactReference & { localUri: string };
 
 type CatalogState = { catalog_revision: number; etag: string | null };
 type Installation = { deck_id: string; installed_content_version: number | null };
@@ -34,7 +41,7 @@ type DeckVersionRow = {
 };
 type BundleVersionRow = { bundle_id: string; bundle_version: number };
 type MediaRow = { content_hash: string; local_uri: string | null; byte_size: number; status: string };
-type PreparedMedia = CatalogArtifactReference & { localUri: string };
+type PreparedMedia = CatalogStoredMedia;
 
 export class CatalogSyncError extends Error {
   public constructor(
@@ -146,7 +153,9 @@ export async function synchronizeCatalog(
   for (const reference of mediaReferences) {
     const existing = existingMedia.get(reference.hash);
     if (existing?.status === 'ready' && existing.local_uri) {
-      const file = await inspectLocalFile(existing.local_uri);
+      const file = await (
+        options.downloadRuntime?.inspectLocalFile ?? inspectLocalFile
+      )(existing.local_uri);
       if (file.exists && file.size === reference.bytes && existing.byte_size === reference.bytes) {
         preparedMedia.set(reference.hash, { ...reference, localUri: existing.local_uri });
         continue;
@@ -166,7 +175,9 @@ export async function synchronizeCatalog(
 
   if (downloadedMedia.size > 0) {
     try {
-      const storedMedia = await storeDownloadedMedia(mediaReferences, downloadedMedia);
+      const storedMedia = await (
+        options.downloadRuntime?.storeDownloadedMedia ?? storeDownloadedMedia
+      )(mediaReferences, downloadedMedia);
       for (const item of storedMedia) {
         preparedMedia.set(item.hash, item);
       }
