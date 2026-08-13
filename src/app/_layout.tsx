@@ -183,6 +183,17 @@ function RootLayoutContent() {
           }}
         />
         <Stack.Screen
+          name="store/bundles-for-deck/[deckId]"
+          options={{
+            contentStyle: { backgroundColor: colors.surface },
+            headerShown: false,
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.55, 0.9],
+            sheetGrabberVisible: true,
+            title: 'Bundles',
+          }}
+        />
+        <Stack.Screen
           name="ready"
           options={{
             headerShown: false,

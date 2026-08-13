@@ -72,12 +72,27 @@ export default function StoreDeckDetailsScreen() {
           <View style={styles.copy}>
             <View style={styles.metadata}>
               <Text style={styles.metadataText}>{deck.cardCount} CARDS</Text>
-              {bundles.length > 0 && (
-                <Text style={styles.metadataText}>
-                  IN {bundles.length} {bundles.length === 1 ? 'BUNDLE' : 'BUNDLES'}
-                </Text>
-              )}
             </View>
+
+            {bundles.length > 0 && (
+              <Pressable
+                accessibilityHint="Shows every bundle that includes this deck"
+                accessibilityRole="button"
+                onPress={() =>
+                  router.push({
+                    pathname: '/store/bundles-for-deck/[deckId]',
+                    params: { deckId: deck.id },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.seeBundlesButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.seeBundlesText}>SEE BUNDLES</Text>
+                <Text style={styles.seeBundlesChevron}>›</Text>
+              </Pressable>
+            )}
 
             {uniqueTags.length > 0 && (
               <View style={styles.tags}>
@@ -120,6 +135,28 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.7,
+  },
+  seeBundlesButton: {
+    minHeight: 44,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 15,
+    borderRadius: radius.pill,
+    backgroundColor: '#EAF4FF',
+  },
+  seeBundlesText: {
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  seeBundlesChevron: {
+    color: '#2563EB',
+    fontSize: 24,
+    lineHeight: 26,
+    fontWeight: '500',
   },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
