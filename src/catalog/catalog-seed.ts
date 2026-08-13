@@ -9,8 +9,9 @@ export type CatalogSeedSource = {
     order: number;
     title: string;
     description: string;
-    coverImage: string;
+    coverImage?: string;
     version: number;
+    cardCount?: number;
     cardContentVersion?: number;
     tags: string[];
     access: DeckAccess;
@@ -48,7 +49,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
       access: deck.access,
       priceMinorUnits: toMinorUnits(deck.price),
       tagsJson: JSON.stringify(deck.tags),
-      cardCount: deck.cards.length,
+      cardCount: deck.cardCount ?? deck.cards.length,
       coverPath: deck.coverImage || null,
     };
   });

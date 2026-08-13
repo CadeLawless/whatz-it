@@ -60,9 +60,11 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "catalog:baseline:check": "tsx scripts/prepare-catalog-baseline.ts --check",
+    "catalog:baseline:update": "tsx scripts/prepare-catalog-baseline.ts --write",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/game/*.test.ts src/catalog/*.test.ts"
+    "test": "tsx --test src/game/*.test.ts src/catalog/*.test.ts scripts/*.test.ts"
   },
   "expo": {
     "doctor": {

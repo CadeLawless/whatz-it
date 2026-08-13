@@ -2,7 +2,6 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import {
   bundledCatalog,
-  bundles as bundledBundles,
   decks as bundledDecks,
 } from '@/data/bundles';
 import type { Card, DeckAccess } from '@/types/deck';
@@ -31,7 +30,7 @@ export class BundledCatalogRepository implements CatalogRepository {
       return {
         ...deck,
         tags: [...(metadata?.tags ?? [])],
-        cardCount: deck.cards.length,
+        cardCount: metadata?.cardCount ?? deck.cards.length,
         cardContentVersion: metadata?.cardContentVersion ?? 1,
         ...(metadata?.coverImage ? { coverPath: metadata.coverImage } : {}),
         installationStatus: deck.access === 'free' ? 'installed' : 'not_owned',
@@ -42,7 +41,7 @@ export class BundledCatalogRepository implements CatalogRepository {
       revision: bundledCatalog.revision,
       source: 'bundled',
       decks,
-      bundleRecords: bundledBundles.map((bundle) => ({
+      bundleRecords: bundledCatalog.bundles.map((bundle) => ({
         id: bundle.id,
         order: bundle.order,
         title: bundle.title,

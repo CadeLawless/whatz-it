@@ -1,8 +1,9 @@
 import type { Bundle, Deck } from '@/types/deck';
 
 type PortableDeck = Omit<Deck, 'coverImage'> & {
-  coverImage: string;
+  coverImage?: string;
   tags: string[];
+  cardCount?: number;
   cardContentVersion?: number;
 };
 

@@ -87,6 +87,34 @@ the bundled path. A successful sync persists verified free cards, covers, and
 thumbnails for later offline use; an interrupted or invalid sync leaves the
 last activated local revision unchanged.
 
+## App-release catalog baseline
+
+Before preparing an app-store build, compare the bundled starter catalog with
+the active public catalog:
+
+```bash
+npm run catalog:baseline:check -- https://api.example.com/api/v1/catalog/manifest
+```
+
+If the check reports `STALE`, regenerate the baseline and review the generated
+catalog and cover changes:
+
+```bash
+npm run catalog:baseline:update -- https://api.example.com/api/v1/catalog/manifest
+npm test
+npm run typecheck
+npm run lint
+git diff -- src/data/bundles.ts assets/images/decks/baseline
+```
+
+The check is read-only. The update verifies each public artifact's HTTPS URL,
+byte count, and SHA-256 hash before writing anything. It embeds the active
+catalog metadata plus free starter cards and content-addressed free covers;
+paid card payloads and paid covers are never added to the app baseline. Commit
+the reviewed generated changes with the release. Normal Deck Manager publishes
+still reach existing installations through catalog sync and do not require an
+app-store release.
+
 ## Checks
 
 ```bash
