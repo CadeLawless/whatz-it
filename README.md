@@ -71,6 +71,22 @@ npm start
 
 The application identifiers are `com.cadelawless.whatzit` on both platforms.
 
+## Catalog rollout testing
+
+The shipped default continues to use the catalog bundled with the app. To test
+the opt-in SQLite catalog and staging synchronization locally, create an ignored
+`.env.local` file containing:
+
+```dotenv
+EXPO_PUBLIC_CATALOG_SOURCE=sqlite
+EXPO_PUBLIC_CATALOG_MANIFEST_URL=https://api-staging.playwhatzit.com/api/v1/catalog/manifest
+```
+
+Restart Metro after changing these values. Remove either setting to return to
+the bundled path. A successful sync persists verified free cards, covers, and
+thumbnails for later offline use; an interrupted or invalid sync leaves the
+last activated local revision unchanged.
+
 ## Checks
 
 ```bash

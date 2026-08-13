@@ -4,7 +4,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
-import { configuredCatalogSource } from './catalog-feature';
+import {
+  configuredCatalogManifestUrl,
+  configuredCatalogSource,
+} from './catalog-feature';
 import { createCatalogSeed, type CatalogSeedSource } from './catalog-seed';
 import {
   catalogSchemaSqlForTests,
@@ -186,5 +189,11 @@ describe('bundled SQLite catalog seed', () => {
     assert.equal(configuredCatalogSource(undefined), 'bundled');
     assert.equal(configuredCatalogSource('unexpected'), 'bundled');
     assert.equal(configuredCatalogSource('sqlite'), 'sqlite');
+    assert.equal(configuredCatalogManifestUrl(undefined), null);
+    assert.equal(configuredCatalogManifestUrl('http://example.test/manifest'), null);
+    assert.equal(
+      configuredCatalogManifestUrl('https://api.example.test/manifest'),
+      'https://api.example.test/manifest',
+    );
   });
 });
