@@ -3,9 +3,12 @@ import type { Bundle, Deck } from '@/types/deck';
 type PortableDeck = Omit<Deck, 'coverImage'> & {
   coverImage: string;
   tags: string[];
+  cardContentVersion?: number;
 };
 
-type PortableBundle = Omit<Bundle, 'decks'>;
+type PortableBundle = Omit<Bundle, 'decks'> & {
+  version?: number;
+};
 
 type PortableCatalog = {
   schemaVersion: 5;

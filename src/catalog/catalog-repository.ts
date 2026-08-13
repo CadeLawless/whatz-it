@@ -32,7 +32,7 @@ export class BundledCatalogRepository implements CatalogRepository {
         ...deck,
         tags: [...(metadata?.tags ?? [])],
         cardCount: deck.cards.length,
-        cardContentVersion: 1,
+        cardContentVersion: metadata?.cardContentVersion ?? 1,
         ...(metadata?.coverImage ? { coverPath: metadata.coverImage } : {}),
         installationStatus: deck.access === 'free' ? 'installed' : 'not_owned',
       };
@@ -49,7 +49,7 @@ export class BundledCatalogRepository implements CatalogRepository {
         description: bundle.description,
         access: bundle.access,
         price: bundle.price,
-        version: 1,
+        version: bundle.version ?? 1,
         deckIds: [...bundle.deckIds],
       })),
       deckOrders: bundledCatalog.deckOrders,

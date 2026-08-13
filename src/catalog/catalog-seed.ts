@@ -11,6 +11,7 @@ export type CatalogSeedSource = {
     description: string;
     coverImage: string;
     version: number;
+    cardContentVersion?: number;
     tags: string[];
     access: DeckAccess;
     price?: number;
@@ -23,6 +24,7 @@ export type CatalogSeedSource = {
     description: string;
     access: DeckAccess;
     price?: number;
+    version?: number;
     deckIds: string[];
   }[];
   deckOrders: { free: string[]; paid: string[] };
@@ -40,7 +42,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
     return {
       deckId: deck.id,
       deckVersion: deck.version,
-      cardContentVersion: 1,
+      cardContentVersion: deck.cardContentVersion ?? 1,
       title: deck.title,
       description: deck.description,
       access: deck.access,
@@ -56,7 +58,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
     bundleIds.add(bundle.id);
     return {
       bundleId: bundle.id,
-      bundleVersion: 1,
+      bundleVersion: bundle.version ?? 1,
       title: bundle.title,
       description: bundle.description,
       access: bundle.access,
@@ -88,7 +90,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
     .flatMap((deck) =>
       deck.cards.map((card, position) => ({
         deckId: deck.id,
-        cardContentVersion: 1,
+        cardContentVersion: deck.cardContentVersion ?? 1,
         cardId: card.id,
         position,
         text: card.text,
@@ -99,8 +101,8 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
   const installations = catalog.decks.map((deck) => ({
     deckId: deck.id,
     ownershipSource: deck.access === 'free' ? ('free' as const) : ('none' as const),
-    desiredContentVersion: 1,
-    installedContentVersion: deck.access === 'free' ? 1 : null,
+    desiredContentVersion: deck.cardContentVersion ?? 1,
+    installedContentVersion: deck.access === 'free' ? (deck.cardContentVersion ?? 1) : null,
     status: deck.access === 'free' ? ('installed' as const) : ('not_owned' as const),
   }));
 

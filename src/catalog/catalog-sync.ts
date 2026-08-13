@@ -1,6 +1,3 @@
-import * as Crypto from 'expo-crypto';
-import { Directory, File, Paths } from 'expo-file-system';
-import { fetch } from 'expo/fetch';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import {
@@ -20,6 +17,12 @@ export type CatalogSyncOptions = {
   manifestUrl: string;
   signal?: AbortSignal;
   now?: () => Date;
+  downloadRuntime?: CatalogDownloadRuntime;
+};
+
+export type CatalogDownloadRuntime = {
+  request?: (url: string, init: RequestInit) => Promise<Response>;
+  digestSha256?: (bytes: Uint8Array) => Promise<string>;
 };
 
 type CatalogState = { catalog_revision: number; etag: string | null };
@@ -61,7 +64,7 @@ export async function synchronizeCatalog(
   const response = await request(options.manifestUrl, {
     headers: state.etag ? { 'If-None-Match': state.etag } : undefined,
     signal: options.signal,
-  });
+  }, options.downloadRuntime);
   if (response.status === 304) return { status: 'unchanged', revision: state.catalog_revision };
   if (!response.ok) {
     throw new CatalogSyncError('network_error', `Catalog request failed with HTTP ${response.status}.`);
@@ -114,7 +117,13 @@ export async function synchronizeCatalog(
     if (!deck.content.url) {
       throw new CatalogSyncError('invalid_manifest', `Free deck ${deck.id} has no content URL.`);
     }
-    const bytes = await downloadVerified(deck.content.url, deck.content.bytes, deck.content.hash, options.signal);
+    const bytes = await downloadVerified(
+      deck.content.url,
+      deck.content.bytes,
+      deck.content.hash,
+      options.signal,
+      options.downloadRuntime,
+    );
     try {
       deckArtifacts.set(
         deck.id,
@@ -137,29 +146,29 @@ export async function synchronizeCatalog(
   for (const reference of mediaReferences) {
     const existing = existingMedia.get(reference.hash);
     if (existing?.status === 'ready' && existing.local_uri) {
-      const file = new File(existing.local_uri);
+      const file = await inspectLocalFile(existing.local_uri);
       if (file.exists && file.size === reference.bytes && existing.byte_size === reference.bytes) {
-        preparedMedia.set(reference.hash, { ...reference, localUri: file.uri });
+        preparedMedia.set(reference.hash, { ...reference, localUri: existing.local_uri });
         continue;
       }
     }
     downloadedMedia.set(
       reference.hash,
-      await downloadVerified(reference.url, reference.bytes, reference.hash, options.signal),
+      await downloadVerified(
+        reference.url,
+        reference.bytes,
+        reference.hash,
+        options.signal,
+        options.downloadRuntime,
+      ),
     );
   }
 
   if (downloadedMedia.size > 0) {
-    const directory = new Directory(Paths.document, 'catalog-media');
-    directory.create({ idempotent: true, intermediates: true });
     try {
-      for (const reference of mediaReferences) {
-        const bytes = downloadedMedia.get(reference.hash);
-        if (!bytes) continue;
-        const file = new File(directory, `${reference.hash}${extensionFor(reference.url)}`);
-        file.create({ overwrite: true, intermediates: true });
-        file.write(bytes);
-        preparedMedia.set(reference.hash, { ...reference, localUri: file.uri });
+      const storedMedia = await storeDownloadedMedia(mediaReferences, downloadedMedia);
+      for (const item of storedMedia) {
+        preparedMedia.set(item.hash, item);
       }
     } catch (error) {
       throw new CatalogSyncError('storage_error', 'Verified catalog media could not be stored.', {
@@ -188,7 +197,7 @@ export async function synchronizeCatalog(
   };
 }
 
-async function applyPreparedCatalog(
+export async function applyPreparedCatalog(
   database: SQLiteDatabase,
   manifest: CatalogManifest,
   deckArtifacts: Map<string, DeckContentArtifact>,
@@ -393,13 +402,14 @@ function uniqueMediaReferences(manifest: CatalogManifest) {
   return [...references.values()];
 }
 
-async function downloadVerified(
+export async function downloadVerified(
   url: string,
   expectedBytes: number,
   expectedHash: string,
   signal?: AbortSignal,
+  runtime?: CatalogDownloadRuntime,
 ) {
-  const response = await request(url, { signal });
+  const response = await request(url, { signal }, runtime);
   if (!response.ok) {
     throw new CatalogSyncError('network_error', `Artifact request failed with HTTP ${response.status}.`);
   }
@@ -407,24 +417,62 @@ async function downloadVerified(
   if (bytes.byteLength !== expectedBytes) {
     throw new CatalogSyncError('invalid_artifact', `Artifact ${expectedHash} has the wrong byte length.`);
   }
-  const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
-  const actualHash = [...new Uint8Array(digest)]
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('');
+  const actualHash = await (runtime?.digestSha256 ?? digestSha256)(bytes);
   if (actualHash !== expectedHash) {
     throw new CatalogSyncError('invalid_artifact', `Artifact ${expectedHash} failed SHA-256 verification.`);
   }
   return bytes;
 }
 
-async function request(url: string, init: RequestInit) {
+async function request(
+  url: string,
+  init: RequestInit,
+  runtime?: CatalogDownloadRuntime,
+) {
   try {
+    if (runtime?.request) return await runtime.request(url, init);
+    const { fetch } = await import('expo/fetch');
     return await fetch(url, init);
   } catch (error) {
     throw new CatalogSyncError('network_error', 'The catalog server could not be reached.', {
       cause: error,
     });
   }
+}
+
+async function digestSha256(bytes: Uint8Array) {
+  const Crypto = await import('expo-crypto');
+  const input = new Uint8Array(bytes.byteLength);
+  input.set(bytes);
+  const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, input);
+  return [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function inspectLocalFile(uri: string) {
+  const { File } = await import('expo-file-system');
+  const file = new File(uri);
+  return { exists: file.exists, size: file.size };
+}
+
+async function storeDownloadedMedia(
+  references: CatalogArtifactReference[],
+  downloadedMedia: Map<string, Uint8Array>,
+) {
+  const { Directory, File, Paths } = await import('expo-file-system');
+  const directory = new Directory(Paths.document, 'catalog-media');
+  directory.create({ idempotent: true, intermediates: true });
+  const stored: PreparedMedia[] = [];
+  for (const reference of references) {
+    const bytes = downloadedMedia.get(reference.hash);
+    if (!bytes) continue;
+    const file = new File(directory, `${reference.hash}${extensionFor(reference.url)}`);
+    file.create({ overwrite: true, intermediates: true });
+    file.write(bytes);
+    stored.push({ ...reference, localUri: file.uri });
+  }
+  return stored;
 }
 
 function toMinorUnits(price: number | null) {
