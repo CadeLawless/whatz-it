@@ -59,6 +59,7 @@ export default function DeckLibraryScreen() {
   const { width } = useWindowDimensions();
   const scrollViewRef = useRef<ScrollView>(null);
   const libraryTop = useRef(0);
+  const exploreTop = useRef(0);
   const sectionOffsets = useRef({ decks: 0, videos: 0 });
   const sectionHeadingOffsets = useRef({ decks: 0, videos: 0 });
   const isPortrait = usePortraitScreen();
@@ -261,6 +262,14 @@ export default function DeckLibraryScreen() {
       });
     });
   }, []);
+  const scrollToExploreOffset = useCallback((offset: number) => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({
+        animated: true,
+        y: Math.max(0, libraryTop.current + exploreTop.current + offset - 8),
+      });
+    }, 60);
+  }, []);
 
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
 
@@ -268,11 +277,14 @@ export default function DeckLibraryScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
         accessibilityElementsHidden={videoPendingDelete !== null}
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={styles.scrollContent}
         importantForAccessibility={
           videoPendingDelete === null ? 'auto' : 'no-hide-descendants'
         }
         ref={scrollViewRef}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
       >
@@ -476,7 +488,16 @@ export default function DeckLibraryScreen() {
           </View>
             </View>
           ) : (
-            <StorefrontExplore catalog={catalog} />
+            <View
+              onLayout={(event) => {
+                exploreTop.current = event.nativeEvent.layout.y;
+              }}
+            >
+              <StorefrontExplore
+                catalog={catalog}
+                onBrowseFocus={scrollToExploreOffset}
+              />
+            </View>
           )}
 
           {catalog.source === 'sqlite' && (

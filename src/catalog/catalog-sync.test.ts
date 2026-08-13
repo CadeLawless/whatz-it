@@ -163,6 +163,35 @@ describe('catalog synchronization activation', () => {
 });
 
 describe('Phase 3 catalog acceptance', () => {
+  it('hydrates discovery media when the bundled revision already matches the server', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(bundledCatalog.revision);
+      const runtime = acceptanceRuntime(fixture, storedFiles);
+      const result = await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        downloadRuntime: runtime,
+      });
+      assert.deepEqual(result, {
+        status: 'updated',
+        revision: bundledCatalog.revision,
+        downloadedDecks: 1,
+        downloadedMedia: 4,
+      });
+      assert.equal(storedFiles.size, 4);
+      assert.equal(
+        harness.database
+          .prepare("SELECT COUNT(*) AS count FROM media_files WHERE status = 'ready'")
+          .get()?.count,
+        4,
+      );
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('persists a verified revision for offline restart and rejects a corrupt successor', async () => {
     const harness = createDatabaseHarness();
     const storedFiles = new Map<string, Uint8Array>();
@@ -170,36 +199,7 @@ describe('Phase 3 catalog acceptance', () => {
       await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
       const fixture = acceptanceFixture(synchronizedRevision);
       const requested: string[] = [];
-      const runtime = {
-        request: async (url: string) => {
-          requested.push(url);
-          if (url === fixture.manifestUrl) {
-            return Response.json(fixture.manifest, {
-              headers: { ETag: `"revision-${synchronizedRevision}"` },
-            });
-          }
-          const bytes = fixture.artifacts.get(url);
-          return bytes
-            ? new Response(bytes.slice().buffer as ArrayBuffer)
-            : new Response('missing', { status: 404 });
-        },
-        digestSha256: async (bytes: Uint8Array) => sha256(bytes),
-        inspectLocalFile: async (uri: string) => ({
-          exists: storedFiles.has(uri),
-          size: storedFiles.get(uri)?.byteLength ?? 0,
-        }),
-        storeDownloadedMedia: async (
-          references: CatalogManifest['decks'][number]['cover'][],
-          downloads: Map<string, Uint8Array>,
-        ) =>
-          references.flatMap((reference) => {
-            const bytes = downloads.get(reference.hash);
-            if (!bytes) return [];
-            const localUri = `file:///catalog-media/${reference.hash}.webp`;
-            storedFiles.set(localUri, bytes);
-            return [{ ...reference, localUri }];
-          }),
-      };
+      const runtime = acceptanceRuntime(fixture, storedFiles, requested);
 
       assert.deepEqual(
         await synchronizeCatalog(harness.adapter, {
@@ -442,6 +442,43 @@ function acceptanceFixture(revision: number) {
       [manifest.decks[1].cover.url, media.paidCover],
       [manifest.decks[1].thumbnail.url, media.paidThumbnail],
     ]),
+  };
+}
+
+function acceptanceRuntime(
+  fixture: ReturnType<typeof acceptanceFixture>,
+  storedFiles: Map<string, Uint8Array>,
+  requested: string[] = [],
+) {
+  return {
+    request: async (url: string) => {
+      requested.push(url);
+      if (url === fixture.manifestUrl) {
+        return Response.json(fixture.manifest, {
+          headers: { ETag: `"revision-${fixture.manifest.catalogRevision}"` },
+        });
+      }
+      const bytes = fixture.artifacts.get(url);
+      return bytes
+        ? new Response(bytes.slice().buffer as ArrayBuffer)
+        : new Response('missing', { status: 404 });
+    },
+    digestSha256: async (bytes: Uint8Array) => sha256(bytes),
+    inspectLocalFile: async (uri: string) => ({
+      exists: storedFiles.has(uri),
+      size: storedFiles.get(uri)?.byteLength ?? 0,
+    }),
+    storeDownloadedMedia: async (
+      references: CatalogManifest['decks'][number]['cover'][],
+      downloads: Map<string, Uint8Array>,
+    ) =>
+      references.flatMap((reference) => {
+        const bytes = downloads.get(reference.hash);
+        if (!bytes) return [];
+        const localUri = `file:///catalog-media/${reference.hash}.webp`;
+        storedFiles.set(localUri, bytes);
+        return [{ ...reference, localUri }];
+      }),
   };
 }
 

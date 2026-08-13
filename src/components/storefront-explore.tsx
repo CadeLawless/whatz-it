@@ -1,8 +1,12 @@
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -23,7 +27,14 @@ const PAGE_SIZE = 24;
 
 type ExploreSection = 'bundles' | 'decks';
 
-export function StorefrontExplore({ catalog }: { catalog: CatalogSnapshot }) {
+export function StorefrontExplore({
+  catalog,
+  onBrowseFocus,
+}: {
+  catalog: CatalogSnapshot;
+  onBrowseFocus?: (offset: number) => void;
+}) {
+  const router = useRouter();
   const [section, setSection] = useState<ExploreSection>('bundles');
   const [search, setSearch] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -35,6 +46,22 @@ export function StorefrontExplore({ catalog }: { catalog: CatalogSnapshot }) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [tagSheetVisible, setTagSheetVisible] = useState(false);
+  const [tagSearch, setTagSearch] = useState('');
+
+  const visibleTags = useMemo(() => {
+    const defaults = tags.slice(0, 4);
+    const selected = tags.filter(({ tag }) => selectedTags.includes(tag));
+    return [...new Map([...selected, ...defaults].map((facet) => [facet.tag, facet])).values()];
+  }, [selectedTags, tags]);
+  const filteredSheetTags = useMemo(() => {
+    const query = tagSearch.trim().toLocaleLowerCase();
+    return query
+      ? tags.filter(({ tag }) => tag.toLocaleLowerCase().includes(query))
+      : tags;
+  }, [tagSearch, tags]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,36 +170,58 @@ export function StorefrontExplore({ catalog }: { catalog: CatalogSnapshot }) {
           onPress={() => {
             setSection('bundles');
             setSelectedTags([]);
+            onBrowseFocus?.(searchOffset);
           }}
         />
         <ExploreTab
           active={section === 'decks'}
           label="ALL DECKS"
-          onPress={() => setSection('decks')}
+          onPress={() => {
+            setSection('decks');
+            onBrowseFocus?.(searchOffset);
+          }}
         />
       </View>
 
-      <View style={styles.searchField}>
+      <View
+        onLayout={(event) => setSearchOffset(event.nativeEvent.layout.y)}
+        style={styles.searchField}
+      >
         <Text accessibilityElementsHidden style={styles.searchIcon}>⌕</Text>
         <TextInput
           accessibilityLabel={`Search ${section === 'bundles' ? 'bundles' : 'decks'}`}
           autoCapitalize="none"
           autoCorrect={false}
-          clearButtonMode="while-editing"
+          onBlur={() => setSearchFocused(false)}
           onChangeText={setSearch}
+          onFocus={() => {
+            setSearchFocused(true);
+            onBrowseFocus?.(searchOffset);
+          }}
           placeholder={section === 'bundles' ? 'Search bundles or included decks' : 'Search names, descriptions, or tags'}
           placeholderTextColor="#94A3B8"
           returnKeyType="search"
           style={styles.searchInput}
           value={search}
         />
+        {search.length > 0 && (
+          <Pressable
+            accessibilityLabel="Clear search"
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={() => setSearch('')}
+            style={({ pressed }) => [styles.clearSearch, pressed && styles.pressed]}
+          >
+            <Text style={styles.clearSearchText}>×</Text>
+          </Pressable>
+        )}
       </View>
 
-      {section === 'decks' && tags.length > 0 && (
+      {section === 'decks' && tags.length > 0 && !searchFocused && (
         <View style={styles.filters}>
           <Text style={styles.filterLabel}>FILTER BY TAG</Text>
           <View style={styles.tagList}>
-            {tags.map((facet) => (
+            {visibleTags.map((facet) => (
               <Pressable
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: selectedTags.includes(facet.tag) }}
@@ -194,6 +243,15 @@ export function StorefrontExplore({ catalog }: { catalog: CatalogSnapshot }) {
                 </Text>
               </Pressable>
             ))}
+            {tags.length > visibleTags.length && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setTagSheetVisible(true)}
+                style={({ pressed }) => [styles.moreTags, pressed && styles.pressed]}
+              >
+                <Text style={styles.moreTagsText}>MORE FILTERS…</Text>
+              </Pressable>
+            )}
           </View>
         </View>
       )}
@@ -226,7 +284,18 @@ export function StorefrontExplore({ catalog }: { catalog: CatalogSnapshot }) {
       ) : decks.length > 0 ? (
         <>
           <View style={styles.deckList}>
-            {decks.map((deck) => <DeckBrowseCard deck={deck} key={deck.id} />)}
+            {decks.map((deck) => (
+              <DeckBrowseCard
+                deck={deck}
+                key={deck.id}
+                onPress={() =>
+                  router.push({
+                    pathname: '/store/deck/[deckId]',
+                    params: { deckId: deck.id },
+                  })
+                }
+              />
+            ))}
           </View>
           {nextCursor && (
             <Pressable
@@ -246,6 +315,75 @@ export function StorefrontExplore({ catalog }: { catalog: CatalogSnapshot }) {
       ) : (
         <EmptyResults search={search} type="decks" />
       )}
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setTagSheetVisible(false)}
+        presentationStyle="pageSheet"
+        visible={tagSheetVisible}
+      >
+        <KeyboardAvoidingView behavior="padding" style={styles.tagSheet}>
+          <View style={styles.tagSheetHeader}>
+            <View>
+              <Text style={styles.tagSheetTitle}>Filter by tags</Text>
+              <Text style={styles.tagSheetCount}>{selectedTags.length} selected</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setTagSheetVisible(false)}
+              style={({ pressed }) => [styles.doneButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.doneButtonText}>DONE</Text>
+            </Pressable>
+          </View>
+          <View style={styles.tagSheetSearch}>
+            <TextInput
+              accessibilityLabel="Search tags"
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={setTagSearch}
+              placeholder="Search tags"
+              placeholderTextColor="#94A3B8"
+              returnKeyType="search"
+              style={styles.tagSheetSearchInput}
+              value={tagSearch}
+            />
+            {tagSearch.length > 0 && (
+              <Pressable
+                accessibilityLabel="Clear tag search"
+                accessibilityRole="button"
+                onPress={() => setTagSearch('')}
+                style={styles.clearSearch}
+              >
+                <Text style={styles.clearSearchText}>×</Text>
+              </Pressable>
+            )}
+          </View>
+          <ScrollView
+            contentContainerStyle={styles.tagSheetList}
+            keyboardShouldPersistTaps="handled"
+          >
+            {filteredSheetTags.map((facet) => {
+              const selected = selectedTags.includes(facet.tag);
+              return (
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                  key={facet.tag}
+                  onPress={() => toggleTag(facet.tag)}
+                  style={({ pressed }) => [styles.tagSheetRow, pressed && styles.pressed]}
+                >
+                  <View style={[styles.tagCheck, selected && styles.tagCheckSelected]}>
+                    {selected && <Text style={styles.tagCheckmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.tagSheetRowText}>{facet.tag}</Text>
+                  <Text style={styles.tagSheetRowCount}>{facet.deckCount}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -325,12 +463,13 @@ function BundleBrowseCard({
   );
 }
 
-function DeckBrowseCard({ deck }: { deck: CatalogDeckSummary }) {
+function DeckBrowseCard({ deck, onPress }: { deck: CatalogDeckSummary; onPress: () => void }) {
   return (
     <Pressable
-      accessibilityHint="Deck preview and purchasing are coming soon"
+      accessibilityHint="Opens deck details"
       accessibilityLabel={`${deck.title}, ${deck.cardCount} cards`}
       accessibilityRole="button"
+      onPress={onPress}
       style={({ pressed }) => [styles.deckCard, pressed && styles.cardPressed]}
     >
       <View style={styles.deckCover}>
@@ -345,11 +484,6 @@ function DeckBrowseCard({ deck }: { deck: CatalogDeckSummary }) {
         ) : (
           <View style={styles.deckFallback}><Text style={styles.deckFallbackText}>{deck.title}</Text></View>
         )}
-      </View>
-      <View style={styles.deckCopy}>
-        <Text numberOfLines={2} style={styles.deckTitle}>{deck.title}</Text>
-        <Text numberOfLines={2} style={styles.deckDescription}>{deck.description}</Text>
-        <Text style={styles.deckMeta}>{deck.cardCount} CARDS</Text>
       </View>
     </Pressable>
   );
@@ -377,6 +511,8 @@ const styles = StyleSheet.create({
   searchField: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 15, borderWidth: 1, borderColor: '#DCE5EF', borderRadius: 18, backgroundColor: '#FFFFFF' },
   searchIcon: { color: '#64748B', fontSize: 25, marginTop: -4 },
   searchInput: { flex: 1, color: '#111827', fontSize: 15, paddingVertical: 14 },
+  clearSearch: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#E2E8F0' },
+  clearSearchText: { color: '#475569', fontSize: 23, lineHeight: 25, fontWeight: '700', marginTop: -2 },
   filters: { gap: 10 },
   filterLabel: { color: '#64748B', fontSize: 11, fontWeight: '900', letterSpacing: 0.7 },
   tagList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -384,6 +520,8 @@ const styles = StyleSheet.create({
   tagSelected: { borderColor: '#459EFE', backgroundColor: '#EAF4FF' },
   tagText: { color: '#64748B', fontSize: 12, fontWeight: '800', textTransform: 'capitalize' },
   tagTextSelected: { color: '#2563EB' },
+  moreTags: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 17, backgroundColor: '#EAF4FF' },
+  moreTagsText: { color: '#2563EB', fontSize: 11, fontWeight: '900', letterSpacing: 0.4 },
   loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
   bundleList: { gap: 16 },
@@ -396,15 +534,11 @@ const styles = StyleSheet.create({
   fan: { width: 128, height: 134, position: 'relative' },
   fanCard: { width: 74, height: 111, position: 'absolute', top: 10, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 9, backgroundColor: '#DCE5EF', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.18)' },
   fanFallback: { flex: 1, backgroundColor: '#BFDBFE' },
-  deckList: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  deckCard: { width: '47.5%', overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, backgroundColor: '#FFFFFF', boxShadow: '0 3px 10px rgba(71, 85, 105, 0.10)' },
+  deckList: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
+  deckCard: { width: '29.8%', aspectRatio: 2 / 3, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 7, backgroundColor: '#FFFFFF', boxShadow: '0 3px 10px rgba(71, 85, 105, 0.13)' },
   deckCover: { width: '100%', aspectRatio: 2 / 3, overflow: 'hidden', backgroundColor: '#DBEAFE' },
   deckFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 12 },
   deckFallbackText: { color: '#1E3A8A', textAlign: 'center', fontSize: 15, fontWeight: '900' },
-  deckCopy: { gap: 5, padding: 12 },
-  deckTitle: { color: '#111827', fontSize: 15, lineHeight: 18, fontWeight: '900' },
-  deckDescription: { color: '#64748B', fontSize: 11, lineHeight: 15 },
-  deckMeta: { color: '#459EFE', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
   messageCard: { gap: 8, padding: 22, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 20, backgroundColor: '#FFFFFF' },
   messageTitle: { color: '#111827', fontSize: 17, fontWeight: '900' },
   messageBody: { color: '#64748B', fontSize: 14, lineHeight: 20 },
@@ -412,4 +546,19 @@ const styles = StyleSheet.create({
   loadMoreText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900', letterSpacing: 0.7 },
   pressed: { opacity: 0.72 },
   cardPressed: { opacity: 0.86, transform: [{ scale: 0.985 }] },
+  tagSheet: { flex: 1, backgroundColor: '#F8FAFC' },
+  tagSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingTop: 24, paddingBottom: 16, backgroundColor: '#FFFFFF' },
+  tagSheetTitle: { color: '#111827', fontSize: 24, fontWeight: '900' },
+  tagSheetCount: { color: '#64748B', fontSize: 13, marginTop: 3 },
+  doneButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 20, backgroundColor: '#459EFE' },
+  doneButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900', letterSpacing: 0.6 },
+  tagSheetSearch: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 8, margin: 18, paddingHorizontal: 14, borderWidth: 1, borderColor: '#DCE5EF', borderRadius: 17, backgroundColor: '#FFFFFF' },
+  tagSheetSearchInput: { flex: 1, color: '#111827', fontSize: 16, paddingVertical: 13 },
+  tagSheetList: { paddingHorizontal: 18, paddingBottom: 42 },
+  tagSheetRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#CBD5E1', backgroundColor: '#FFFFFF' },
+  tagCheck: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#94A3B8', borderRadius: 7 },
+  tagCheckSelected: { borderColor: '#459EFE', backgroundColor: '#459EFE' },
+  tagCheckmark: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  tagSheetRowText: { flex: 1, color: '#111827', fontSize: 15, fontWeight: '700', textTransform: 'capitalize' },
+  tagSheetRowCount: { color: '#64748B', fontSize: 13, fontVariant: ['tabular-nums'] },
 });

@@ -175,6 +175,14 @@ function RootLayoutContent() {
           })}
         />
         <Stack.Screen
+          name="store/deck/[deckId]"
+          options={{
+            headerShown: false,
+            orientation: 'portrait',
+            title: 'Deck details',
+          }}
+        />
+        <Stack.Screen
           name="ready"
           options={{
             headerShown: false,

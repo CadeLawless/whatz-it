@@ -91,9 +91,10 @@ export async function synchronizeCatalog(
       `Server revision ${manifest.catalogRevision} is older than local revision ${state.catalog_revision}.`,
     );
   }
-  if (manifest.catalogRevision === state.catalog_revision) {
-    return { status: 'unchanged', revision: state.catalog_revision };
-  }
+  // A release baseline can already match the active server revision while its
+  // paid discovery media is intentionally absent from the app bundle. Continue
+  // through verified media preparation on the first 200 response so those
+  // covers are hydrated; the activated ETag makes later checks return 304.
 
   const [localDecks, localBundles] = await Promise.all([
     database.getAllAsync<DeckVersionRow>(
