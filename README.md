@@ -71,21 +71,39 @@ npm start
 
 The application identifiers are `com.cadelawless.whatzit` on both platforms.
 
-## Catalog rollout testing
+## Catalog rollout and rollback
 
-The shipped default continues to use the catalog bundled with the app. To test
-the opt-in SQLite catalog and staging synchronization locally, create an ignored
-`.env.local` file containing:
+The app uses the local SQLite catalog by default. On first launch it imports the
+bundled release baseline, so the starter decks remain available without a
+network connection. To test synchronization against staging locally, create an
+ignored `.env.local` file containing:
 
 ```dotenv
 EXPO_PUBLIC_CATALOG_SOURCE=sqlite
 EXPO_PUBLIC_CATALOG_MANIFEST_URL=https://api-staging.playwhatzit.com/api/v1/catalog/manifest
 ```
 
-Restart Metro after changing these values. Remove either setting to return to
-the bundled path. A successful sync persists verified free cards, covers, and
-thumbnails for later offline use; an interrupted or invalid sync leaves the
-last activated local revision unchanged.
+Restart Metro after changing these values. A successful sync persists verified
+free cards, covers, and thumbnails for later offline use; an interrupted or
+invalid sync leaves the last activated local revision unchanged.
+
+The preview EAS profile uses that staging endpoint. Production intentionally
+has no catalog URL checked into the repository: configure
+`EXPO_PUBLIC_CATALOG_MANIFEST_URL` with the production HTTPS manifest URL in the
+production build environment before enabling live production updates. Without
+a manifest URL, SQLite continues using its bundled or last-synchronized data
+and makes no catalog request.
+
+For an emergency build-time rollback, set:
+
+```dotenv
+EXPO_PUBLIC_CATALOG_SOURCE=bundled
+```
+
+That restores the original synchronous TypeScript catalog and disables network
+synchronization. An invalid source value also fails closed to the bundled path.
+If SQLite initialization itself fails, app startup retains the bundled snapshot
+so the existing game remains usable.
 
 ## App-release catalog baseline
 

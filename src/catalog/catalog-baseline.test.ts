@@ -18,6 +18,7 @@ const managedCatalog = source.match(
 )?.[1];
 if (!managedCatalog) throw new Error('Managed bundled catalog was not found.');
 const bundledCatalog = JSON.parse(managedCatalog) as CatalogSeedSource;
+const baselineRevision = bundledCatalog.revision;
 
 describe('bundled catalog baseline activation', () => {
   it('inserts the baseline into an empty migrated database', async () => {
@@ -27,7 +28,7 @@ describe('bundled catalog baseline activation', () => {
         await applyBundledCatalogBaseline(harness.adapter, bundledCatalog),
         'inserted',
       );
-      assert.equal(catalogState(harness.database).catalog_revision, 32);
+      assert.equal(catalogState(harness.database).catalog_revision, baselineRevision);
       assert.equal(catalogState(harness.database).source, 'bundled');
     } finally {
       harness.database.close();
@@ -38,25 +39,26 @@ describe('bundled catalog baseline activation', () => {
     const harness = createDatabaseHarness();
     try {
       await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const remoteRevision = baselineRevision + 2;
       harness.database
         .prepare(
           `UPDATE catalog_state
-              SET catalog_revision = 40, source = 'remote', etag = 'remote-etag'`,
+              SET catalog_revision = ?, source = 'remote', etag = 'remote-etag'`,
         )
-        .run();
+        .run(remoteRevision);
       harness.database
         .prepare("UPDATE decks SET title = 'Remote title' WHERE deck_id = 'celebrity-shuffle'")
         .run();
 
       const olderBuild = structuredClone(bundledCatalog);
-      olderBuild.revision = 39;
+      olderBuild.revision = baselineRevision + 1;
       olderBuild.decks[0].title = 'Older bundled title';
       assert.equal(
         await applyBundledCatalogBaseline(harness.adapter, olderBuild),
         'unchanged',
       );
       assert.deepEqual(catalogState(harness.database), {
-        catalog_revision: 40,
+        catalog_revision: remoteRevision,
         source: 'remote',
         etag: 'remote-etag',
       });
@@ -73,25 +75,26 @@ describe('bundled catalog baseline activation', () => {
       harness.database
         .prepare(
           `UPDATE catalog_state
-              SET catalog_revision = 38, source = 'remote', etag = 'revision-38'`,
+              SET source = 'remote', etag = 'previous-build'`,
         )
         .run();
 
       const newerBuild = structuredClone(bundledCatalog);
-      newerBuild.revision = 39;
+      newerBuild.revision = baselineRevision + 1;
       newerBuild.updatedAt = '2026-08-13T12:00:00Z';
-      newerBuild.decks[0].title = 'Bundled revision 39';
-      newerBuild.decks[0].version = 8;
-      newerBuild.decks[0].cardContentVersion = 2;
+      newerBuild.decks[0].title = 'Newer bundled revision';
+      newerBuild.decks[0].version += 1;
+      newerBuild.decks[0].cardContentVersion =
+        (newerBuild.decks[0].cardContentVersion ?? 1) + 1;
       newerBuild.decks[0].cards[0].text = 'Bundled update installed';
-      newerBuild.bundles[0].version = 2;
+      newerBuild.bundles[0].version = (newerBuild.bundles[0].version ?? 1) + 1;
 
       assert.equal(
         await applyBundledCatalogBaseline(harness.adapter, newerBuild),
         'updated',
       );
       assert.deepEqual(catalogState(harness.database), {
-        catalog_revision: 39,
+        catalog_revision: baselineRevision + 1,
         source: 'bundled',
         etag: null,
       });
@@ -109,9 +112,9 @@ describe('bundled catalog baseline activation', () => {
           }
         : null;
       assert.deepEqual(deck, {
-        title: 'Bundled revision 39',
-        deck_version: 8,
-        card_content_version: 2,
+        title: 'Newer bundled revision',
+        deck_version: newerBuild.decks[0].version,
+        card_content_version: newerBuild.decks[0].cardContentVersion,
       });
       assert.equal(
         harness.database
@@ -132,14 +135,14 @@ describe('bundled catalog baseline activation', () => {
     try {
       await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
       const invalidBuild = structuredClone(bundledCatalog);
-      invalidBuild.revision = 39;
+      invalidBuild.revision = baselineRevision + 1;
       invalidBuild.decks[0].title = 'Must not become active';
       invalidBuild.decks[0].cards.push({ ...invalidBuild.decks[0].cards[0] });
 
       await assert.rejects(() =>
         applyBundledCatalogBaseline(harness.adapter, invalidBuild),
       );
-      assert.equal(catalogState(harness.database).catalog_revision, 32);
+      assert.equal(catalogState(harness.database).catalog_revision, baselineRevision);
       assert.equal(deckTitle(harness.database), bundledCatalog.decks[0].title);
     } finally {
       harness.database.close();

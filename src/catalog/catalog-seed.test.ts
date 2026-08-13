@@ -30,7 +30,7 @@ describe('bundled SQLite catalog seed', () => {
 
     assert.equal(seed.state.localSchemaVersion, 2);
     assert.equal(seed.state.catalogSchemaVersion, 5);
-    assert.equal(seed.state.catalogRevision, 32);
+    assert.equal(seed.state.catalogRevision, catalog.revision);
     assert.equal(seed.decks.length, 20);
     assert.equal(seed.bundles.length, 2);
     assert.equal(
@@ -185,10 +185,12 @@ describe('bundled SQLite catalog seed', () => {
     }
   });
 
-  it('keeps the bundled runtime as the default feature-flag fallback', () => {
-    assert.equal(configuredCatalogSource(undefined), 'bundled');
+  it('uses SQLite by default and keeps an explicit fail-closed rollback switch', () => {
+    assert.equal(configuredCatalogSource(undefined), 'sqlite');
+    assert.equal(configuredCatalogSource(''), 'sqlite');
     assert.equal(configuredCatalogSource('unexpected'), 'bundled');
     assert.equal(configuredCatalogSource('sqlite'), 'sqlite');
+    assert.equal(configuredCatalogSource('bundled'), 'bundled');
     assert.equal(configuredCatalogManifestUrl(undefined), null);
     assert.equal(configuredCatalogManifestUrl('http://example.test/manifest'), null);
     assert.equal(

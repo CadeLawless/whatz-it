@@ -25,6 +25,7 @@ const managedCatalog = source.match(
 )?.[1];
 if (!managedCatalog) throw new Error('Managed bundled catalog was not found.');
 const bundledCatalog = JSON.parse(managedCatalog) as CatalogSeedSource;
+const synchronizedRevision = bundledCatalog.revision + 1;
 
 describe('catalog artifact verification', () => {
   const bytes = new TextEncoder().encode('verified catalog artifact');
@@ -93,11 +94,11 @@ describe('catalog synchronization activation', () => {
         manifest,
         artifacts,
         media,
-        'revision-39',
+        `revision-${synchronizedRevision}`,
         '2026-08-13T13:00:00Z',
       );
 
-      assert.equal(stateRevision(harness.database), 39);
+      assert.equal(stateRevision(harness.database), synchronizedRevision);
       assert.deepEqual(
         plainRow(
           harness.database
@@ -142,11 +143,11 @@ describe('catalog synchronization activation', () => {
           manifest,
           artifacts,
           media,
-          'revision-39',
+          `revision-${synchronizedRevision}`,
           '2026-08-13T13:00:00Z',
         ),
       );
-      assert.equal(stateRevision(harness.database), 32);
+      assert.equal(stateRevision(harness.database), bundledCatalog.revision);
       assert.equal(
         harness.database
           .prepare("SELECT title FROM decks WHERE deck_id = 'celebrity-shuffle'")
@@ -166,7 +167,7 @@ function updateFixture() {
   const manifest: CatalogManifest = {
     schemaVersion: 1,
     catalogSchemaVersion: 5,
-    catalogRevision: 39,
+    catalogRevision: synchronizedRevision,
     updatedAt: '2026-08-13T13:00:00Z',
     supportedContentSchemaVersions: [1],
     decks: [
