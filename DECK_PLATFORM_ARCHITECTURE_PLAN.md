@@ -695,12 +695,18 @@ transactions, and purchases made on another device can be reconciled.
 ### 11.2.1 Bundle browse cards
 
 - Each bundle result gives the title and a short description visual priority
-  on the left and shows its member deck covers as a compact fan on the right.
+  alongside its member deck covers as a compact fan.
+- Use an alternating editorial layout down the bundle list: the first result
+  places copy on the left and the cover fan on the right, the second places the
+  fan on the left and copy on the right, and subsequent results repeat that
+  left/right rhythm.
 - The fan is generated from locally cached thumbnails, has a defined maximum
   visible count, and includes an accessible text equivalent such as the bundle
   deck count. Large bundles must not render every cover in the browse card.
 - The layout adapts rather than shrinking text or covers excessively on narrow
-  phones, large text sizes, and landscape/orientation changes.
+  phones, large text sizes, and landscape/orientation changes. When there is
+  not enough horizontal space, every result uses one predictable stacked order
+  instead of preserving alternation at the expense of readability.
 
 ### 11.3 Deck details
 
@@ -989,8 +995,9 @@ catalog revision, and remains fully usable with the server unavailable.
   Decks** Explore control.
 - Implement paged local search and composable filters against synchronized
   public metadata, with a controlled category/tag taxonomy.
-- Build bundle browse cards with accessible cover fans, bundle details with the
-  motion-aware interactive carousel, and the deck-preview sheet.
+- Build alternating bundle browse cards with accessible cover fans, bundle
+  details with the motion-aware interactive carousel, and the deck-preview
+  sheet.
 - Build purchase-focused individual deck details and every offline/loading/
   unavailable/owned/preparing visual state using non-transactional fixtures.
 - Define the UI-facing purchase/entitlement state interface that Phase 4 will
