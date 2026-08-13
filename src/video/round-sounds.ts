@@ -1,4 +1,3 @@
-import { Asset } from 'expo-asset';
 import { preload, type AudioPlayer } from 'expo-audio';
 
 import {
@@ -7,24 +6,19 @@ import {
   warnRoundDiagnostic,
   warnVideoDiagnostic,
 } from '@/video/video-diagnostics';
+import {
+  CRITICAL_ROUND_SOUNDS,
+  GAMEPLAY_ROUND_SOUNDS,
+  type RoundSoundId,
+} from '@/video/round-sound-plan';
 
-export type RoundSoundId =
-  | 'get-ready'
-  | 'count-3'
-  | 'count-2'
-  | 'count-1'
-  | 'round-start'
-  | 'final-tick'
-  | 'correct'
-  | 'pass'
-  | 'flip'
-  | 'round-end';
+export type { RoundSoundId } from '@/video/round-sound-plan';
 
 const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
   'get-ready': require('../../assets/sounds/get-ready.wav'),
   'count-3': require('../../assets/sounds/count-3.wav'),
-  'count-2': require('../../assets/sounds/count-2.wav'),
-  'count-1': require('../../assets/sounds/count-1.wav'),
+  'count-2': require('../../assets/sounds/count-3.wav'),
+  'count-1': require('../../assets/sounds/count-3.wav'),
   'round-start': require('../../assets/sounds/round-start.wav'),
   'final-tick': require('../../assets/sounds/final-tick.wav'),
   correct: require('../../assets/sounds/correct.wav'),
@@ -33,16 +27,12 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
   'round-end': require('../../assets/sounds/round-end.wav'),
 };
 
-// Begin native decoder/buffer preparation as soon as the app bundle loads.
-// Playback remains optional feedback: a failed preload is retried later and
-// never prevents the visual/haptic round flow from beginning.
-for (const [sound, source] of Object.entries(ROUND_SOUND_SOURCES)) {
-  void preload(source)
-    .then(() => logRoundDiagnostic('native audio preload completed', { sound }))
-    .catch((error) => warnRoundDiagnostic('native audio preload failed', error, { sound }));
-}
+// Prioritize only the three intro resources at module load. The gameplay bank
+// begins after these are warm, spreading native decoder setup across app idle
+// time instead of initializing every player at once.
+const criticalPreloadPromise = preloadUniqueRoundSounds(CRITICAL_ROUND_SOUNDS);
+let gameplayPreloadPromise: Promise<void> | null = null;
 
-const soundUriPromises = new Map<RoundSoundId, Promise<string>>();
 const DEFAULT_ROUND_SOUND_VOLUME = 1;
 const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
   correct: 0.4,
@@ -55,8 +45,15 @@ export function getRoundSoundSource(sound: RoundSoundId) {
   return ROUND_SOUND_SOURCES[sound];
 }
 
-export function preloadRoundSounds(sounds: RoundSoundId[]) {
-  return Promise.all(sounds.map(resolveRoundSoundUri));
+export function preloadCriticalRoundSounds() {
+  return criticalPreloadPromise;
+}
+
+export function preloadGameplayRoundSounds() {
+  if (!gameplayPreloadPromise) {
+    gameplayPreloadPromise = preloadUniqueRoundSounds(GAMEPLAY_ROUND_SOUNDS);
+  }
+  return gameplayPreloadPromise;
 }
 
 export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
@@ -117,20 +114,16 @@ export async function rewindRoundSoundPlayer(player: AudioPlayer) {
   }
 }
 
-async function resolveRoundSoundUri(sound: RoundSoundId) {
-  const cached = soundUriPromises.get(sound);
-  if (cached) return cached;
-
-  const loading = (async () => {
-    const [asset] = await Asset.loadAsync(ROUND_SOUND_SOURCES[sound]);
-    if (!asset.localUri) throw new Error(`The ${sound} sound is unavailable on this device.`);
-    return asset.localUri;
-  })();
-  soundUriPromises.set(sound, loading);
-  try {
-    return await loading;
-  } catch (error) {
-    soundUriPromises.delete(sound);
-    throw error;
-  }
+async function preloadUniqueRoundSounds(sounds: readonly RoundSoundId[]) {
+  const entries = [...new Map(sounds.map((sound) => [ROUND_SOUND_SOURCES[sound], sound])).entries()];
+  await Promise.all(
+    entries.map(async ([source, sound]) => {
+      try {
+        await preload(source);
+        logRoundDiagnostic('native audio preload completed', { sound });
+      } catch (error) {
+        warnRoundDiagnostic('native audio preload failed', error, { sound });
+      }
+    }),
+  );
 }

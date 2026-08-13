@@ -42,7 +42,7 @@ export default function GameScreen() {
   const [foregroundResumeGeneration, setForegroundResumeGeneration] = useState(0);
   const screenRef = useRef<View>(null);
   const resultsTransitionStarted = useRef(false);
-  const { isReady: soundsReady, play: playSound } = useRoundSounds();
+  const { play: playSound } = useRoundSounds();
   const router = useRouter();
   const { beginTransition } = useScreenshotTransition();
   const {
@@ -130,12 +130,12 @@ export default function GameScreen() {
   }, [currentCard, deck, round.status, router]);
 
   useEffect(() => {
-    if (round.status !== 'ready' || !soundsReady) return;
+    if (round.status !== 'ready') return;
     if (!roundStarted.current && (tiltStatus === 'ready' || tiltStatus === 'unavailable' || tiltStatus === 'denied')) {
       roundStarted.current = true;
       startRound();
     }
-  }, [round.status, soundsReady, startRound, tiltStatus]);
+  }, [round.status, startRound, tiltStatus]);
 
   useEffect(() => {
     if (round.status !== 'feedback') return;
