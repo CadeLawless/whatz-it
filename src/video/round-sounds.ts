@@ -8,7 +8,6 @@ import {
 } from '@/video/video-diagnostics';
 import {
   CRITICAL_ROUND_SOUNDS,
-  GAMEPLAY_ROUND_SOUNDS,
   type RoundSoundId,
 } from '@/video/round-sound-plan';
 
@@ -27,11 +26,10 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
   'round-end': require('../../assets/sounds/round-end.wav'),
 };
 
-// Prioritize only the three intro resources at module load. The gameplay bank
-// begins after these are warm, spreading native decoder setup across app idle
-// time instead of initializing every player at once.
+// Prioritize the three intro resources with Expo's module-scope preload cache.
+// Gameplay players use source-at-construction, avoiding the fragile native
+// null-player replacement path while the intro receives the earliest warmup.
 const criticalPreloadPromise = preloadUniqueRoundSounds(CRITICAL_ROUND_SOUNDS);
-let gameplayPreloadPromise: Promise<void> | null = null;
 
 const DEFAULT_ROUND_SOUND_VOLUME = 1;
 const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
@@ -47,13 +45,6 @@ export function getRoundSoundSource(sound: RoundSoundId) {
 
 export function preloadCriticalRoundSounds() {
   return criticalPreloadPromise;
-}
-
-export function preloadGameplayRoundSounds() {
-  if (!gameplayPreloadPromise) {
-    gameplayPreloadPromise = preloadUniqueRoundSounds(GAMEPLAY_ROUND_SOUNDS);
-  }
-  return gameplayPreloadPromise;
 }
 
 export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {

@@ -15,7 +15,7 @@ describe('round sound loading plan', () => {
     assert.equal(playerKeyForRoundSound('count-1'), 'countdown');
   });
 
-  it('prepares intro cues before the optional gameplay bank', () => {
+  it('identifies the intro cues that receive eager module-scope preloading', () => {
     assert.deepEqual(CRITICAL_ROUND_SOUNDS, [
       'get-ready',
       'count-3',
