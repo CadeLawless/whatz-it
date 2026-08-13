@@ -7,7 +7,7 @@ import { AppState, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
-import { getDeckById } from '@/data/bundles';
+import { CatalogProvider, useCatalog } from '@/catalog/catalog-provider';
 import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';
@@ -30,6 +30,15 @@ import {
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  return (
+    <CatalogProvider>
+      <RootLayoutContent />
+    </CatalogProvider>
+  );
+}
+
+function RootLayoutContent() {
+  const { catalog, status: catalogStatus } = useCatalog();
   const [isReady, setIsReady] = useState(false);
   const [rootHasLaidOut, setRootHasLaidOut] = useState(false);
   const [settingsReturnDeckId, setSettingsReturnDeckId] =
@@ -61,14 +70,17 @@ export default function RootLayout() {
   }, [pathname]);
 
   useEffect(() => {
+    if (catalogStatus === 'loading') return;
     void Promise.all([
       loadHomeBranding().catch(() => undefined),
       getSettingsReturnDeckId().catch(() => null),
     ]).then(([, deckId]) => {
-      setSettingsReturnDeckId(deckId && getDeckById(deckId) ? deckId : null);
+      setSettingsReturnDeckId(
+        deckId && catalog.getDeckById(deckId) ? deckId : null,
+      );
       setIsReady(true);
     });
-  }, []);
+  }, [catalog, catalogStatus]);
 
   useEffect(() => {
     if (

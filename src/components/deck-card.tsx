@@ -2,10 +2,10 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import type { CatalogDeck } from '@/catalog/catalog-snapshot';
 import { colors, spacing } from '@/theme';
-import type { Deck } from '@/types/deck';
 
-type DeckCardProps = { deck: Deck };
+type DeckCardProps = { deck: CatalogDeck };
 
 export function DeckCard({ deck }: DeckCardProps) {
   const router = useRouter();
@@ -27,13 +27,13 @@ export function DeckCard({ deck }: DeckCardProps) {
           pressed && styles.cardPressed,
         ]}
       >
-        {deck.coverImage ? (
+        {deck.coverUri || deck.coverImage ? (
           <Image
             accessibilityLabel={deck.title}
             cachePolicy="memory-disk"
             contentFit="cover"
             priority="high"
-            source={deck.coverImage}
+            source={deck.coverUri || deck.coverImage}
             style={styles.coverImage}
           />
         ) : (

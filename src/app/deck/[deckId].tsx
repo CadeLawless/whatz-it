@@ -24,7 +24,7 @@ import type { PermissionStatus } from 'react-native-vision-camera';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { TimerPicker } from '@/components/timer-picker';
-import { getDeckById } from '@/data/bundles';
+import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import {
   clampRoundDuration,
@@ -54,9 +54,10 @@ type RoundSetupNotice = {
 };
 
 export default function DeckDetailsScreen() {
+  const { catalog } = useCatalog();
   const { width } = useWindowDimensions();
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
-  const deck = getDeckById(deckId);
+  const deck = catalog.getDeckById(deckId);
   const router = useRouter();
   const { configureRound } = useRound();
 
@@ -304,10 +305,10 @@ export default function DeckDetailsScreen() {
                     },
                   ]}
                 >
-                  {deck.coverImage ? (
+                  {deck.coverUri || deck.coverImage ? (
                     <Image
                       contentFit="cover"
-                      source={deck.coverImage}
+                      source={deck.coverUri || deck.coverImage}
                       style={styles.posterImage}
                     />
                   ) : (

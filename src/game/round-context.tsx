@@ -11,7 +11,8 @@ import {
 } from 'react';
 import { Platform } from 'react-native';
 
-import { getDeckById } from '@/data/bundles';
+import { useCatalog } from '@/catalog/catalog-provider';
+import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { getDailyCardPool } from '@/game/daily-card-memory';
 import { initialRoundState, roundReducer } from '@/game/game-reducer';
 import type { CardOutcome, RoundState } from '@/game/game-types';
@@ -75,6 +76,8 @@ type CapturedRoundSegment = {
 const RoundContext = createContext<RoundContextValue | null>(null);
 
 export function RoundProvider({ children }: PropsWithChildren) {
+  const { catalog } = useCatalog();
+  const getDeckById = catalog.getDeckById;
   const [round, dispatch] = useReducer(roundReducer, initialRoundState);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
@@ -324,6 +327,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     }
     return true;
   }, [
+    getDeckById,
     getRecordingTimerEndsAtMs,
     prepareRecording,
     recordOverlayEvent,
@@ -696,7 +700,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
           let nextCardId = round.cardOrder[round.currentCardIndex + 1];
           const replenishedCardOrder = nextCardId
             ? undefined
-            : replenishDeck(round.deckId);
+            : replenishDeck(round.deckId, getDeckById);
           if (replenishedCardOrder?.length) {
             void resetDailySeenCardIds(round.deckId!);
             nextCardId = replenishedCardOrder[0];
@@ -730,7 +734,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
           let nextCardId = round.cardOrder[round.currentCardIndex + 1];
           replenishedCardOrder = nextCardId
             ? undefined
-            : replenishDeck(round.deckId);
+            : replenishDeck(round.deckId, getDeckById);
           if (replenishedCardOrder?.length) {
             void resetDailySeenCardIds(round.deckId!);
             nextCardId = replenishedCardOrder[0];
@@ -749,6 +753,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       currentVideo,
       deleteCurrentVideo,
       getRecordingTimerEndsAtMs,
+      getDeckById,
       isRecording,
       isVideoFinalizing,
       prepareRecording,
@@ -815,7 +820,10 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
-function replenishDeck(deckId: string | null) {
+function replenishDeck(
+  deckId: string | null,
+  getDeckById: CatalogSnapshot['getDeckById'],
+) {
   const deck = getDeckById(deckId ?? undefined);
   return deck ? shuffle(deck.cards.map((card) => card.id)) : undefined;
 }

@@ -28,7 +28,7 @@ import { DeckCard } from '@/components/deck-card';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
-import { freeBundleDecks, getDeckById } from '@/data/bundles';
+import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import {
@@ -51,6 +51,7 @@ const SUPPORT_EMAIL = 'support@playwhatzit.com';
 const SUPPORT_EMAIL_URL = `mailto:${SUPPORT_EMAIL}?subject=WHATZ%20IT%20Support`;
 
 export default function DeckLibraryScreen() {
+  const { catalog } = useCatalog();
   const { width } = useWindowDimensions();
   const scrollViewRef = useRef<ScrollView>(null);
   const libraryTop = useRef(0);
@@ -318,7 +319,7 @@ export default function DeckLibraryScreen() {
               onExpansionComplete={handleDecksExpanded}
             >
               <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
-                {freeBundleDecks.map((deck) => (
+                {catalog.freeDecks.map((deck) => (
                   <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
                     <DeckCard deck={deck} />
                   </View>
@@ -366,7 +367,7 @@ export default function DeckLibraryScreen() {
                 ) : (
                   <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
                   {videos.map((video) => {
-                    const deck = getDeckById(video.deckId);
+                    const deck = catalog.getDeckById(video.deckId);
                     const videoReady = isRoundVideoReadyToSave(video);
                     const exportFailed = video.exportStatus === 'failed';
                     const exportPreparing = !videoReady && !exportFailed;

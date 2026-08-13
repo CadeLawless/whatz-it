@@ -8,7 +8,7 @@ import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
-import { getDeckById } from '@/data/bundles';
+import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -16,6 +16,7 @@ import { isRoundVideoReadyToSave, saveRoundVideoToDevice } from '@/video/round-v
 import { logVideoDiagnostic } from '@/video/video-diagnostics';
 
 export default function ResultsScreen() {
+  const { catalog } = useCatalog();
   const router = useRouter();
   const {
     currentVideo,
@@ -36,7 +37,7 @@ export default function ResultsScreen() {
   const screenRef = useRef<View>(null);
   const isPortrait = usePortraitScreen();
   const { beginTransition, revealTransition } = useScreenshotTransition();
-  const deck = getDeckById(round.deckId ?? undefined);
+  const deck = catalog.getDeckById(round.deckId ?? undefined);
   const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
   const passedCount = round.results.filter((result) => result.outcome === 'passed').length;
   const videoReady = currentVideo ? isRoundVideoReadyToSave(currentVideo) : false;

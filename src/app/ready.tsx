@@ -9,7 +9,7 @@ import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { RecordingIndicator } from '@/components/recording-indicator';
-import { getDeckById } from '@/data/bundles';
+import { useCatalog } from '@/catalog/catalog-provider';
 import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useForeheadPosition } from '@/hooks/use-forehead-position';
 import { useRoundTimer } from '@/hooks/use-round-timer';
@@ -23,6 +23,7 @@ const GET_READY_SOUND_MS = 2410;
 const READY_TRANSITION_MS = 450;
 
 export default function ReadyScreen() {
+  const { catalog } = useCatalog();
   const { height } = useLandscapeDimensions();
   const router = useRouter();
   const {
@@ -36,7 +37,7 @@ export default function ReadyScreen() {
     resumeRecording,
     startRecording,
   } = useRound();
-  const deck = getDeckById(round.deckId ?? undefined);
+  const deck = catalog.getDeckById(round.deckId ?? undefined);
   const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
   const [introEndsAt, setIntroEndsAt] = useState<number | null>(null);
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
