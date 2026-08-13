@@ -28,6 +28,7 @@ import { DeckCard } from '@/components/deck-card';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
+import { StorefrontExplore } from '@/components/storefront-explore';
 import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
@@ -65,6 +66,7 @@ export default function DeckLibraryScreen() {
   const { revealTransition } = useScreenshotTransition();
   const branding = getLoadedHomeBranding() ?? HOME_BRANDING_SOURCES;
   const [decksExpanded, setDecksExpanded] = useState(true);
+  const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
   const [videosExpanded, setVideosExpanded] = useState(true);
   const [videos, setVideos] = useState<RoundVideo[]>([]);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
@@ -303,6 +305,10 @@ export default function DeckLibraryScreen() {
           }}
           style={[styles.library, { width: pageWidth, paddingHorizontal: horizontalPadding }]}
         >
+          <HomeModeControl mode={homeMode} onChange={setHomeMode} />
+
+          {homeMode === 'my-decks' ? (
+            <View style={styles.myDecksContent}>
           <View
             onLayout={(event) => {
               sectionOffsets.current.decks = event.nativeEvent.layout.y;
@@ -468,6 +474,10 @@ export default function DeckLibraryScreen() {
               </View>
             </CollapsibleContent>
           </View>
+            </View>
+          ) : (
+            <StorefrontExplore catalog={catalog} />
+          )}
 
           {catalog.source === 'sqlite' && (
             <View
@@ -659,6 +669,56 @@ function SectionHeading({
   );
 }
 
+function HomeModeControl({
+  mode,
+  onChange,
+}: {
+  mode: 'my-decks' | 'explore';
+  onChange: (mode: 'my-decks' | 'explore') => void;
+}) {
+  return (
+    <View accessibilityRole="tablist" style={styles.homeModeControl}>
+      <HomeModeTab
+        active={mode === 'my-decks'}
+        label="MY DECKS"
+        onPress={() => onChange('my-decks')}
+      />
+      <HomeModeTab
+        active={mode === 'explore'}
+        label="EXPLORE"
+        onPress={() => onChange('explore')}
+      />
+    </View>
+  );
+}
+
+function HomeModeTab({
+  active,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.homeModeTab,
+        active && styles.homeModeTabActive,
+        pressed && styles.headingPressed,
+      ]}
+    >
+      <Text style={[styles.homeModeTabText, active && styles.homeModeTabTextActive]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   orientationGate: { flex: 1, backgroundColor: '#F6F6F6' },
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
@@ -683,6 +743,33 @@ const styles = StyleSheet.create({
   },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   library: { alignSelf: 'center', paddingTop: 34 },
+  homeModeControl: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 30,
+    padding: 5,
+    borderRadius: 22,
+    backgroundColor: '#DCE5EF',
+  },
+  homeModeTab: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 17,
+  },
+  homeModeTabActive: {
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.13)',
+  },
+  homeModeTabText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  homeModeTabTextActive: { color: '#2563EB' },
+  myDecksContent: { gap: 0 },
   sectionHeading: {
     minHeight: 46,
     flexDirection: 'row',
