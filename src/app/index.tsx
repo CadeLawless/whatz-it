@@ -51,7 +51,10 @@ const SUPPORT_EMAIL = 'support@playwhatzit.com';
 const SUPPORT_EMAIL_URL = `mailto:${SUPPORT_EMAIL}?subject=WHATZ%20IT%20Support`;
 
 export default function DeckLibraryScreen() {
-  const { catalog } = useCatalog();
+  const catalogState = useCatalog();
+  const { catalog } = catalogState;
+  const catalogSyncStatus =
+    catalogState.status === 'ready' ? catalogState.syncStatus : null;
   const { width } = useWindowDimensions();
   const scrollViewRef = useRef<ScrollView>(null);
   const libraryTop = useRef(0);
@@ -466,6 +469,32 @@ export default function DeckLibraryScreen() {
             </CollapsibleContent>
           </View>
 
+          {catalog.source === 'sqlite' && (
+            <View
+              accessibilityLiveRegion="polite"
+              style={styles.catalogStatus}
+            >
+              <View
+                style={[
+                  styles.catalogStatusDot,
+                  catalogSyncStatus === 'synced' && styles.catalogStatusDotReady,
+                  catalogSyncStatus === 'failed' && styles.catalogStatusDotFailed,
+                ]}
+              />
+              <Text style={styles.catalogStatusText}>
+                Catalog revision {catalog.revision}
+                {'  ·  '}
+                {catalogSyncStatus === 'synced'
+                  ? 'Offline ready'
+                  : catalogSyncStatus === 'failed'
+                    ? 'Saved catalog active; update failed'
+                    : catalogSyncStatus === 'disabled'
+                      ? 'Sync disabled'
+                      : 'Updating for offline use…'}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.privacySupportCard}>
             <Text style={styles.privacySupportTitle}>PRIVACY &amp; SUPPORT</Text>
             <Text style={styles.privacySupportBody}>
@@ -750,6 +779,28 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 22,
     backgroundColor: '#FFFFFF',
+  },
+  catalogStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 36,
+    paddingHorizontal: 4,
+  },
+  catalogStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F59E0B',
+  },
+  catalogStatusDotReady: { backgroundColor: '#16A34A' },
+  catalogStatusDotFailed: { backgroundColor: '#DC2626' },
+  catalogStatusText: {
+    flex: 1,
+    color: '#64748B',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
   },
   privacySupportTitle: {
     color: '#459EFE',

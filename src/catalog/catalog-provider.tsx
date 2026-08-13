@@ -25,7 +25,12 @@ const SYNC_FRESHNESS_MS = 5 * 60 * 1000;
 
 export type CatalogProviderState =
   | { status: 'loading'; catalog: CatalogSnapshot }
-  | { status: 'ready'; catalog: CatalogSnapshot; syncError?: Error }
+  | {
+      status: 'ready';
+      catalog: CatalogSnapshot;
+      syncStatus: 'disabled' | 'syncing' | 'synced' | 'failed';
+      syncError?: Error;
+    }
   | { status: 'error'; catalog: CatalogSnapshot; error: Error };
 
 const bundledRepository = new BundledCatalogRepository();
@@ -44,7 +49,12 @@ export function CatalogProvider({ children }: PropsWithChildren) {
   const reportSyncError = useCallback((error: Error) => {
     setState((current) =>
       current && current.status !== 'loading'
-        ? { status: 'ready', catalog: current.catalog, syncError: error }
+        ? {
+            status: 'ready',
+            catalog: current.catalog,
+            syncStatus: 'failed',
+            syncError: error,
+          }
         : current,
     );
   }, []);
@@ -59,16 +69,27 @@ export function CatalogProvider({ children }: PropsWithChildren) {
       .then(async (fallback) => {
         if (!cancelled) setState({ status: 'loading', catalog: fallback });
         if (configuredCatalogSource() === 'bundled') {
-          if (!cancelled) setState({ status: 'ready', catalog: fallback });
+          if (!cancelled) {
+            setState({
+              status: 'ready',
+              catalog: fallback,
+              syncStatus: 'disabled',
+            });
+          }
           return;
         }
 
         const database = await openCatalogDatabase();
         const repository = new SqliteCatalogRepository(database);
         const catalog = await repository.load();
-        if (!cancelled) setState({ status: 'ready', catalog });
-
         const manifestUrl = configuredCatalogManifestUrl();
+        if (!cancelled) {
+          setState({
+            status: 'ready',
+            catalog,
+            syncStatus: manifestUrl ? 'syncing' : 'disabled',
+          });
+        }
         if (!manifestUrl) return;
         const sync = async (force = false) => {
           const now = Date.now();
@@ -81,6 +102,11 @@ export function CatalogProvider({ children }: PropsWithChildren) {
           }
           lastSyncAttempt = now;
           syncRunning = true;
+          setState((current) =>
+            current && current.status === 'ready'
+              ? { ...current, syncStatus: 'syncing', syncError: undefined }
+              : current,
+          );
           try {
             const result = await synchronizeCatalog(database, {
               manifestUrl,
@@ -90,11 +116,21 @@ export function CatalogProvider({ children }: PropsWithChildren) {
             if (result.status === 'updated') {
               const refreshedCatalog = await repository.load();
               if (!cancelled) {
-                setState({ status: 'ready', catalog: refreshedCatalog });
+                setState({
+                  status: 'ready',
+                  catalog: refreshedCatalog,
+                  syncStatus: 'synced',
+                });
               }
             } else {
               setState((current) =>
-                current ? { status: 'ready', catalog: current.catalog } : current,
+                current
+                  ? {
+                      status: 'ready',
+                      catalog: current.catalog,
+                      syncStatus: 'synced',
+                    }
+                  : current,
               );
             }
           } catch (cause: unknown) {
