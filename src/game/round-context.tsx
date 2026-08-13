@@ -4,6 +4,7 @@ import {
   type PropsWithChildren,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useReducer,
   useRef,
@@ -77,7 +78,18 @@ const RoundContext = createContext<RoundContextValue | null>(null);
 
 export function RoundProvider({ children }: PropsWithChildren) {
   const { catalog } = useCatalog();
-  const getDeckById = catalog.getDeckById;
+  const catalogRef = useRef(catalog);
+  useEffect(() => {
+    catalogRef.current = catalog;
+  }, [catalog]);
+  // Keep round actions stable while a verified remote catalog snapshot replaces
+  // the local one. Ready-screen camera/audio startup is asynchronous; changing
+  // these callbacks during that sequence can cancel its effect and strand the
+  // screen on GET READY even though recording already began.
+  const getDeckById = useCallback(
+    (deckId: string | undefined) => catalogRef.current.getDeckById(deckId),
+    [],
+  );
   const [round, dispatch] = useReducer(roundReducer, initialRoundState);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [microphoneEnabled, setMicrophoneEnabled] = useState(false);

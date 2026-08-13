@@ -49,6 +49,7 @@ export default function ReadyScreen() {
     useState<RecordingPreparation | 'preparing'>('preparing');
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
+  const mounted = useRef(true);
   const introStarted = useRef(false);
   const soundPreparationStarted = useRef(false);
   const previousGateSignature = useRef('');
@@ -63,6 +64,13 @@ export default function ReadyScreen() {
     prepareForRound,
     retryLoading,
   } = useRoundSounds();
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const foreheadStatus = useForeheadPosition(round.status === 'ready');
   const positionReady =
     foreheadStatus === 'ready' ||
@@ -255,15 +263,14 @@ export default function ReadyScreen() {
     logRoundDiagnostic('ready intro gates passed; starting recording before audio', {
       recordingPreparation,
     });
-    let active = true;
     const startIntro = async () => {
       const started = await startRecording();
       logRoundDiagnostic('ready intro recording start resolved', {
-        active,
+        mounted: mounted.current,
         recordingPreparation,
         started,
       });
-      if (!active) return;
+      if (!mounted.current) return;
       if (recordingPreparation === 'ready' && !started) {
         introStarted.current = false;
         setRecordingPreparation('error');
@@ -277,8 +284,11 @@ export default function ReadyScreen() {
       }
       void triggerRoundHaptic('get-ready', { cameraActive: started });
       const played = await playSound('get-ready');
-      logRoundDiagnostic('get-ready playback request completed', { active, played });
-      if (!active) return;
+      logRoundDiagnostic('get-ready playback request completed', {
+        mounted: mounted.current,
+        played,
+      });
+      if (!mounted.current) return;
       if (!played) {
         // A live cue is feedback, not a prerequisite for gameplay. The cue is
         // still attached to the exported video, so continue the intro even if
@@ -291,9 +301,6 @@ export default function ReadyScreen() {
       setIntroEndsAt(Date.now() + GET_READY_SOUND_MS);
     };
     void startIntro();
-    return () => {
-      active = false;
-    };
   }, [
     isLeaving,
     appActive,
