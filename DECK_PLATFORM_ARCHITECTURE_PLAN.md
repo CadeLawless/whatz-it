@@ -638,6 +638,24 @@ transactions, and purchases made on another device can be reconciled.
 
 ## 11. Catalog and Store Screens
 
+### 11.0 Primary navigation and terminology
+
+- The home screen uses two top-level tabs: **My Decks** and **Explore**.
+- **My Decks** is the player's playable library: free starter decks and fully
+  installed purchases. **Explore** is the storefront and discovery surface;
+  the label remains appropriate when it contains free, owned, and purchasable
+  content instead of making every visit feel like checkout.
+- Explore has two clearly selectable views: **Bundles** and **All Decks**. Use
+  a compact segmented control or equivalent native-feeling control rather than
+  adding another navigation hierarchy.
+- Preserve the selected Explore view, search query, filters, and scroll
+  position while navigating into a product and back during the same session.
+- The storefront shell, navigation, search, filters, and product-detail states
+  are built and tested before store transactions are connected. Until Phase 4
+  supplies real platform products, purchase controls remain explicitly
+  unavailable or operate only in a clearly identified development fixture;
+  they must never simulate ownership in a production build.
+
 ### 11.1 Home/My Decks
 
 - Show free starter decks and fully installed owned decks.
@@ -653,9 +671,36 @@ transactions, and purchases made on another device can be reconciled.
   architecture.
 - Search titles, descriptions, and tags locally; add SQLite FTS when catalog
   size or search quality warrants it.
+- Initial search covers deck and bundle titles, descriptions, tags, and the
+  names/tags of decks contained in a bundle. Do not expose paid card text in
+  the public manifest or local catalog search index. Card-text search may be
+  considered later only for already-installed content, but is not part of
+  storefront discovery because it can reveal paid content and gameplay
+  answers.
+- Filters begin with ownership/access state, category, and tags. Genre may be
+  presented as a user-facing category where appropriate, but the data model
+  should use one controlled category/taxonomy system rather than accumulating
+  overlapping free-text genre/category fields.
+- Support multiple selected tags/categories, a clear-all action, useful empty
+  states, and result counts. Search and filters compose rather than replacing
+  one another.
+- Bundles and individual decks remain independently purchasable. Owning a
+  bundle marks its included decks accordingly, while a previously purchased
+  individual deck is not charged or installed twice when buying an overlapping
+  bundle.
 - Load/prefetch thumbnails near the viewport and persist them according to the
   offline catalog policy.
 - Clearly distinguish owned, included-in-owned-bundle, free, and unowned.
+
+### 11.2.1 Bundle browse cards
+
+- Each bundle result gives the title and a short description visual priority
+  on the left and shows its member deck covers as a compact fan on the right.
+- The fan is generated from locally cached thumbnails, has a defined maximum
+  visible count, and includes an accessible text equivalent such as the bundle
+  deck count. Large bundles must not render every cover in the browse card.
+- The layout adapts rather than shrinking text or covers excessively on narrow
+  phones, large text sizes, and landscape/orientation changes.
 
 ### 11.3 Deck details
 
@@ -665,14 +710,52 @@ transactions, and purchases made on another device can be reconciled.
 - Online unowned state uses the current platform-localized price.
 - Owned but incomplete state shows Preparing or Retry.
 - Installed state shows Play.
+- A deck opened from Explore uses a purchase-focused detail screen that closely
+  matches the existing deck visual language: cover, title, description, tags,
+  ownership state, and localized price. It omits timer and Play controls while
+  unowned and uses one clear Buy action instead.
+- After purchase and installation, the same stable deck route may transition
+  to an owned/installed state with Play, avoiding duplicate product identities
+  or conflicting detail screens.
+- A deck preview opened from inside a bundle appears in a dismissible sheet
+  with a close button in the upper-right. The sheet shows cover, title,
+  description, and relevant tags, but no timer or Play control. It may offer a
+  secondary route to the individual deck purchase detail when that deck is
+  sold separately.
 
 ### 11.4 Bundle details
 
 - Show membership and installed/owned status per deck.
+- Lead with bundle title, description, localized bundle price, and one clear
+  purchase button whose disabled/offline/owned/preparing states are explicit.
+- Present member covers in a slow, subtle, automatically moving carousel. The
+  player can swipe or drag it directly; manual interaction pauses automatic
+  motion long enough to prevent the carousel from fighting the gesture.
+- Respect Reduce Motion by disabling automatic movement while retaining manual
+  swiping and full bundle information.
+- Selecting a cover opens the read-only deck-preview sheet described above.
+  Carousel items expose deck names and position/count to assistive technology,
+  and focus returns to the selected cover after the sheet closes.
 - Buying a bundle starts one purchase followed by automatic installation of
   all included content.
 - Aggregate progress may be shown as Preparing Bundle without exposing file or
   offline-download concepts.
+
+### 11.5 Storefront states and price integrity
+
+- Product prices displayed for purchase come from StoreKit or Google Play and
+  use the store's localized formatting. Database prices are merchandising
+  metadata/fallbacks and are never the amount charged or a guarantee of a
+  current price.
+- Offline storefront browsing uses synchronized metadata and thumbnails. An
+  unowned product remains inspectable, but Buy is replaced or disabled with a
+  concise connection-required explanation.
+- Distinguish loading price, unavailable product, already owned, included in an
+  owned bundle, purchasing, pending approval, verifying, preparing content,
+  retry, and ready states without allowing repeated purchase taps.
+- Include Restore Purchases in a discoverable account/settings or storefront
+  location; it is not presented as a substitute for ordinary automatic
+  reconciliation.
 
 ## 12. Deck Manager Changes
 
@@ -900,6 +983,26 @@ the database path with no Git repository write required.
 Exit criterion: the app launches and plays from SQLite, can apply a server
 catalog revision, and remains fully usable with the server unavailable.
 
+### Phase 3.5: Storefront experience foundation
+
+- Add the **My Decks** and **Explore** home tabs and the **Bundles** / **All
+  Decks** Explore control.
+- Implement paged local search and composable filters against synchronized
+  public metadata, with a controlled category/tag taxonomy.
+- Build bundle browse cards with accessible cover fans, bundle details with the
+  motion-aware interactive carousel, and the deck-preview sheet.
+- Build purchase-focused individual deck details and every offline/loading/
+  unavailable/owned/preparing visual state using non-transactional fixtures.
+- Define the UI-facing purchase/entitlement state interface that Phase 4 will
+  implement, without granting ownership or embedding fake production prices.
+- Test navigation restoration, accessibility, large text, Reduce Motion,
+  empty/error states, and catalogs large enough to require paging.
+
+Exit criterion: the complete storefront can browse real synchronized catalog
+metadata and accurately render every commerce state through fixtures, while no
+production control can initiate or imitate a purchase. Phase 4 then connects
+the state interface to verified Apple/Google products and backend entitlements.
+
 ### Phase 4: Store and entitlement backend
 
 - Configure non-consumable deck/bundle products in Apple and Google test
@@ -994,6 +1097,12 @@ the target scale.
 11. Deck Manager conflict prevents one editor from overwriting another.
 12. A bad publication is rolled back as a new revision while apps retain a
     playable last-known-good catalog.
+13. Explore search and combined filters return the same paged results online
+    and offline from the last synchronized public metadata.
+14. Bundle cover fans, the manually swipeable carousel, and deck-preview sheet
+    remain usable with large text, assistive technology, and Reduce Motion.
+15. An offline unowned deck or bundle remains inspectable but cannot begin a
+    purchase, while an owned installed deck remains playable.
 
 ### 17.4 Performance targets to establish and measure
 
@@ -1062,5 +1171,6 @@ resolved:
 - refund/revocation and offline grace policy;
 - catalog thumbnail prefetch/persistence limits;
 - supported old-app/schema compatibility window;
-- draft collaboration model and admin roles; and
+- draft collaboration model and admin roles;
+- controlled storefront category/tag taxonomy and editorial ownership; and
 - privacy, account deletion, transaction retention, and support procedures.
