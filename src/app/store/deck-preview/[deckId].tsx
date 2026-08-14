@@ -244,17 +244,31 @@ export default function DeckPreviewSheet() {
             {deck.access === 'paid' && (
               <View style={styles.purchaseArea}>
                 <View
-                  accessibilityLabel={`Purchase ${deck.title}, coming soon`}
+                  accessibilityLabel={`Purchase ${deck.title} only, not the full ${bundle?.title ?? 'bundle'}, coming soon`}
                   accessibilityRole="button"
                   accessibilityState={{ disabled: true }}
                   style={styles.purchaseButton}
                 >
                   <Text style={styles.purchaseButtonText}>
-                    PURCHASE THIS DECK
+                    PURCHASE THIS DECK ONLY
                   </Text>
                 </View>
+                {bundle && (
+                  <View
+                    accessibilityLabel={`Purchase the full ${bundle.title}, coming soon`}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: true }}
+                    style={styles.bundlePurchaseButton}
+                  >
+                    <Text style={styles.bundlePurchaseButtonText}>
+                      PURCHASE FULL BUNDLE
+                    </Text>
+                  </View>
+                )}
                 <Text style={styles.purchaseNote}>
-                  Secure in-app purchasing is coming soon.
+                  Choose {deck.title} by itself, or purchase every deck in{' '}
+                  {bundle?.title ?? 'the full bundle'}. Secure in-app purchasing
+                  is coming soon.
                 </Text>
               </View>
             )}
@@ -348,9 +362,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.pill,
-    backgroundColor: '#CBD5E1',
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    backgroundColor: colors.surface,
   },
   purchaseButtonText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  bundlePurchaseButton: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: '#CBD5E1',
+  },
+  bundlePurchaseButtonText: {
     color: colors.white,
     fontSize: 12,
     fontWeight: '900',
