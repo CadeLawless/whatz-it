@@ -78,6 +78,8 @@ export function CatalogProvider({ children }: PropsWithChildren) {
     let cancelled = false;
     let syncRunning = false;
     let lastSyncAttempt = 0;
+    let retryAttempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const abortController = new AbortController();
     let appStateSubscription: ReturnType<typeof AppState.addEventListener> | undefined;
     void bundledSnapshotPromise
@@ -117,6 +119,10 @@ export function CatalogProvider({ children }: PropsWithChildren) {
           }
           lastSyncAttempt = now;
           syncRunning = true;
+          if (retryTimer) {
+            clearTimeout(retryTimer);
+            retryTimer = undefined;
+          }
           setState((current) =>
             current && current.status === 'ready'
               ? { ...current, syncStatus: 'syncing', syncError: undefined }
@@ -148,11 +154,16 @@ export function CatalogProvider({ children }: PropsWithChildren) {
                   : current,
               );
             }
+            retryAttempt = 0;
           } catch (cause: unknown) {
             if (!cancelled) {
-              reportSyncError(
-                cause instanceof Error ? cause : new Error(String(cause)),
-              );
+              const error = cause instanceof Error ? cause : new Error(String(cause));
+              console.warn('[CatalogSync] Catalog preparation will retry.', error.message);
+              reportSyncError(error);
+              lastSyncAttempt = 0;
+              const retryDelay = Math.min(1_000 * 2 ** retryAttempt, 30_000);
+              retryAttempt += 1;
+              retryTimer = setTimeout(() => void sync(true), retryDelay);
             }
           } finally {
             syncRunning = false;
@@ -173,6 +184,7 @@ export function CatalogProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true;
       abortController.abort();
+      if (retryTimer) clearTimeout(retryTimer);
       appStateSubscription?.remove();
     };
   }, [reportSyncError]);

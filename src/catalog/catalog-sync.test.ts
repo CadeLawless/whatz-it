@@ -214,7 +214,9 @@ describe('Phase 3 catalog acceptance', () => {
       harness.database.exec('DELETE FROM media_files');
       storedFiles.clear();
       let conditionalEtag: string | null = 'not-requested';
+      let transientAttempts = 0;
       const runtime = acceptanceRuntime(fixture, storedFiles);
+      const transientUrl = fixture.manifest.decks[1].cover.url;
       const result = await synchronizeCatalog(harness.adapter, {
         manifestUrl: fixture.manifestUrl,
         downloadRuntime: {
@@ -223,6 +225,9 @@ describe('Phase 3 catalog acceptance', () => {
             if (url === fixture.manifestUrl) {
               conditionalEtag = new Headers(init.headers).get('if-none-match');
             }
+            if (url === transientUrl && transientAttempts++ === 0) {
+              return new Response('temporarily unavailable', { status: 503 });
+            }
             return runtime.request(url);
           },
         },
@@ -230,6 +235,7 @@ describe('Phase 3 catalog acceptance', () => {
 
       assert.equal(conditionalEtag, null);
       assert.equal(result.status, 'updated');
+      assert.equal(transientAttempts, 2);
       assert.equal(storedFiles.size, 4);
       assert.equal(
         harness.database

@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -99,14 +98,8 @@ export function StorefrontExplore({
           (deck) => catalogLocalCoverSources(deck, 'cover')[0],
         );
         if (localCoverSources.some((source) => source === undefined)) {
-          if (syncStatus === 'syncing') return;
-          throw new Error(
-            syncStatus === 'failed'
-              ? 'Cover downloads could not be completed. Reconnect and reopen Explore to try again.'
-              : 'Explore covers are still being prepared on this device.',
-          );
+          return;
         }
-        await Promise.all(localCoverSources.map((source) => Image.loadAsync(source!)));
 
         const nextRepository = await createCatalogDiscoveryRepository(catalog.source);
         const [deckPage, bundlePage] = await Promise.all([
@@ -275,7 +268,6 @@ export function StorefrontExplore({
       {loading ? (
         <View accessibilityRole="progressbar" style={styles.loading}>
           <ActivityIndicator color="#459EFE" />
-          <Text style={styles.loadingText}>Loading your saved catalog…</Text>
         </View>
       ) : (
         <Animated.View
@@ -516,7 +508,6 @@ const styles = StyleSheet.create({
   clearSearch: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#E2E8F0' },
   clearSearchText: { color: '#475569', fontSize: 23, lineHeight: 25, fontWeight: '700', marginTop: -2 },
   loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
   resultSurface: { gap: 14 },
   bundleList: { gap: 16 },
   bundleCard: { minHeight: 190, position: 'relative', justifyContent: 'center', overflow: 'hidden', padding: 22, borderWidth: 1, borderColor: '#DCE8F5', borderRadius: 26, backgroundColor: '#FFFFFF', boxShadow: '0 5px 16px rgba(71, 85, 105, 0.10)' },

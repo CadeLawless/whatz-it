@@ -25,12 +25,20 @@ export function CatalogCoverImage({
     ? catalogLocalCoverSources(deck, preference)
     : catalogCoverSources(deck, preference);
   const sourceKey = sources.join('|');
+  const localPlaceholder =
+    preference === 'cover'
+      ? catalogLocalCoverSources(deck, 'thumbnail')[0]
+      : undefined;
 
   return (
     <CatalogCoverAttempt
       {...imageProps}
       fallback={fallback}
       key={sourceKey}
+      placeholder={imageProps.placeholder ?? localPlaceholder}
+      placeholderContentFit={
+        imageProps.placeholderContentFit ?? imageProps.contentFit
+      }
       sources={sources}
     />
   );

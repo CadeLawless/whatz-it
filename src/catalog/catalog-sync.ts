@@ -49,6 +49,8 @@ type ActiveMediaRow = {
   status: string | null;
 };
 type PreparedMedia = CatalogStoredMedia;
+const MEDIA_DOWNLOAD_CONCURRENCY = 6;
+const DOWNLOAD_ATTEMPTS = 3;
 
 export class CatalogSyncError extends Error {
   public constructor(
@@ -163,6 +165,7 @@ export async function synchronizeCatalog(
   const mediaReferences = uniqueMediaReferences(manifest);
   const preparedMedia = new Map<string, PreparedMedia>();
   const downloadedMedia = new Map<string, Uint8Array>();
+  const missingMedia: CatalogArtifactReference[] = [];
   for (const reference of mediaReferences) {
     const existing = existingMedia.get(reference.hash);
     if (existing?.status === 'ready' && existing.local_uri) {
@@ -174,17 +177,24 @@ export async function synchronizeCatalog(
         continue;
       }
     }
-    downloadedMedia.set(
-      reference.hash,
-      await downloadVerified(
-        reference.url,
-        reference.bytes,
-        reference.hash,
-        options.signal,
-        options.downloadRuntime,
-      ),
-    );
+    missingMedia.push(reference);
   }
+  await mapWithConcurrency(
+    missingMedia,
+    MEDIA_DOWNLOAD_CONCURRENCY,
+    async (reference) => {
+      downloadedMedia.set(
+        reference.hash,
+        await downloadVerifiedWithRetry(
+          reference.url,
+          reference.bytes,
+          reference.hash,
+          options.signal,
+          options.downloadRuntime,
+        ),
+      );
+    },
+  );
 
   if (downloadedMedia.size > 0) {
     try {
@@ -492,6 +502,62 @@ export async function downloadVerified(
     throw new CatalogSyncError('invalid_artifact', `Artifact ${expectedHash} failed SHA-256 verification.`);
   }
   return bytes;
+}
+
+async function downloadVerifiedWithRetry(
+  url: string,
+  expectedBytes: number,
+  expectedHash: string,
+  signal?: AbortSignal,
+  runtime?: CatalogDownloadRuntime,
+) {
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      return await downloadVerified(
+        url,
+        expectedBytes,
+        expectedHash,
+        signal,
+        runtime,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof CatalogSyncError) ||
+        error.code !== 'network_error' ||
+        attempt === DOWNLOAD_ATTEMPTS ||
+        signal?.aborted
+      ) {
+        throw error;
+      }
+      await delay(150 * 2 ** (attempt - 1));
+    }
+  }
+  throw new CatalogSyncError('network_error', 'The catalog media download failed.');
+}
+
+async function mapWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  operation: (item: T) => Promise<void>,
+) {
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex];
+      nextIndex += 1;
+      await operation(item);
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, items.length) },
+      () => worker(),
+    ),
+  );
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function request(
