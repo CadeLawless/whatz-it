@@ -389,7 +389,6 @@ function BundleBrowseCard({
           fanSide === 'left' ? styles.fanLeft : styles.fanRight,
         ]}
       >
-        <View style={styles.fanSpotlight} />
         {decks.map((deck, index) => (
           <View
             key={deck!.id}
@@ -507,7 +506,6 @@ const styles = StyleSheet.create({
   fan: { width: 150, height: 150, position: 'absolute', top: '50%', marginTop: -57, zIndex: 2 },
   fanLeft: { left: -30, transform: [{ rotate: '12deg' }] },
   fanRight: { right: -30, transform: [{ rotate: '-12deg' }] },
-  fanSpotlight: { width: 190, height: 190, position: 'absolute', top: -20, left: -20, borderRadius: 95, backgroundColor: '#EAF4FF' },
   fanCard: { width: 82, aspectRatio: 2 / 3, position: 'absolute', top: 10, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 9, backgroundColor: '#DCE5EF', boxShadow: '0 5px 12px rgba(15, 23, 42, 0.24)' },
   fanFallback: { flex: 1, backgroundColor: '#BFDBFE' },
   deckList: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
