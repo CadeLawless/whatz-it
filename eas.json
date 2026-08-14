@@ -8,6 +8,15 @@
       "developmentClient": true,
       "distribution": "internal"
     },
+    "iap-development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_CATALOG_SOURCE": "sqlite",
+        "EXPO_PUBLIC_CATALOG_MANIFEST_URL": "https://api-staging.playwhatzit.com/api/v1/catalog/manifest",
+        "EXPO_PUBLIC_COMMERCE_API_BASE_URL": "https://api-staging.playwhatzit.com"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "env": {
