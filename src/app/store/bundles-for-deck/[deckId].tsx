@@ -41,6 +41,7 @@ export default function BundlesForDeckSheet() {
           </View>
           <CircularCloseButton
             accessibilityLabel="Close bundle list"
+            appearance="sheet"
             onPress={() => sheetRef.current?.close()}
           />
         </View>

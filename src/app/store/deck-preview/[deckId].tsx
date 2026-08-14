@@ -159,6 +159,7 @@ export default function DeckPreviewSheet() {
             </Text>
             <CircularCloseButton
               accessibilityLabel="Close preview"
+              appearance="sheet"
               onPress={() => sheetRef.current?.close()}
             />
           </View>
