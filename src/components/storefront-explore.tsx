@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -35,6 +35,7 @@ export function StorefrontExplore({
   onBrowseFocus?: (offset: number) => void;
 }) {
   const router = useRouter();
+  const searchInputRef = useRef<TextInput>(null);
   const [section, setSection] = useState<ExploreSection>('bundles');
   const [search, setSearch] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -135,6 +136,14 @@ export function StorefrontExplore({
     );
   };
 
+  const selectSection = (nextSection: ExploreSection) => {
+    searchInputRef.current?.blur();
+    setSearchFocused(false);
+    setSection(nextSection);
+    if (nextSection === 'bundles') setSelectedTags([]);
+    onBrowseFocus?.(Math.max(0, tabsOffset - 18));
+  };
+
   const loadMore = async () => {
     if (!repository || !nextCursor || loadingMore) return;
     setLoadingMore(true);
@@ -172,19 +181,12 @@ export function StorefrontExplore({
         <ExploreTab
           active={section === 'bundles'}
           label="BUNDLES"
-          onPress={() => {
-            setSection('bundles');
-            setSelectedTags([]);
-            onBrowseFocus?.(Math.max(0, tabsOffset - 18));
-          }}
+          onPress={() => selectSection('bundles')}
         />
         <ExploreTab
           active={section === 'decks'}
           label="ALL DECKS"
-          onPress={() => {
-            setSection('decks');
-            onBrowseFocus?.(Math.max(0, tabsOffset - 18));
-          }}
+          onPress={() => selectSection('decks')}
         />
       </View>
 
@@ -205,6 +207,7 @@ export function StorefrontExplore({
           }}
           placeholder={section === 'bundles' ? 'Search bundles or included decks' : 'Search names, descriptions, or tags'}
           placeholderTextColor="#94A3B8"
+          ref={searchInputRef}
           returnKeyType="search"
           style={styles.searchInput}
           value={search}
