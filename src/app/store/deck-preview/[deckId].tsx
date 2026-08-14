@@ -1,5 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -40,10 +41,25 @@ export default function DeckPreviewSheet() {
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
         >
+          <Pressable
+            accessibilityLabel="Close preview"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => router.back()}
+            style={({ pressed }) => [
+              styles.closeButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text accessibilityElementsHidden style={styles.closeButtonText}>
+              ×
+            </Text>
+          </Pressable>
           <DeckDetailsHeader
             backLabel="Close Preview"
             deck={deck}
             onBack={() => router.back()}
+            showBackButton={false}
           />
           <View style={styles.copy}>
             {bundle && <Text style={styles.bundleName}>From {bundle.title}</Text>}
@@ -91,6 +107,22 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
     padding: spacing.lg,
     paddingBottom: spacing.xl,
+  },
+  closeButton: {
+    alignSelf: 'flex-end',
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    boxShadow: '0 4px 12px rgba(100, 116, 139, 0.18)',
+  },
+  closeButtonText: {
+    color: colors.ink,
+    fontSize: 32,
+    lineHeight: 34,
+    fontWeight: '300',
   },
   copy: { gap: 10 },
   bundleName: { color: colors.muted, fontSize: 13, fontWeight: '700' },

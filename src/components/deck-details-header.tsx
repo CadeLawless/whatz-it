@@ -15,10 +15,12 @@ export function DeckDetailsHeader({
   backLabel,
   deck,
   onBack,
+  showBackButton = true,
 }: {
   backLabel: string;
   deck: CatalogDeck;
   onBack: () => void;
+  showBackButton?: boolean;
 }) {
   const { width } = useWindowDimensions();
   const posterWidth = Math.min(156, Math.max(126, width * 0.36));
@@ -29,18 +31,20 @@ export function DeckDetailsHeader({
 
   return (
     <>
-      <Pressable
-        accessibilityLabel={backLabel}
-        accessibilityRole="button"
-        onPress={onBack}
-        style={({ pressed }) => [
-          styles.backButton,
-          pressed && styles.backButtonPressed,
-        ]}
-      >
-        <Text style={styles.backChevron}>‹</Text>
-        <Text style={styles.backText}>{backLabel}</Text>
-      </Pressable>
+      {showBackButton && (
+        <Pressable
+          accessibilityLabel={backLabel}
+          accessibilityRole="button"
+          onPress={onBack}
+          style={({ pressed }) => [
+            styles.backButton,
+            pressed && styles.backButtonPressed,
+          ]}
+        >
+          <Text style={styles.backChevron}>‹</Text>
+          <Text style={styles.backText}>{backLabel}</Text>
+        </Pressable>
+      )}
 
       <View style={styles.heroShadow}>
         <View style={styles.heroCard}>
