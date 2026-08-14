@@ -13301,6 +13301,7 @@ export const decks: StandaloneDeck[] = bundleCatalog.decks.map((deck) => ({
     version: deck.version,
     access: deck.access,
     ...("price" in deck ? { price: deck.price } : {}),
+    ...("storeProducts" in deck ? { storeProducts: deck.storeProducts } : {}),
     cards: deck.cards,
     ...(deck.coverImage ? { coverImage: deckCoverImages[deck.coverImage] } : {}),
 }));

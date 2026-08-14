@@ -1181,3 +1181,29 @@ resolved:
 - draft collaboration model and admin roles;
 - controlled storefront category/tag taxonomy and editorial ownership; and
 - privacy, account deletion, transaction retention, and support procedures.
+
+### Apple-first Phase 4 decisions recorded 2026-08-14
+
+- Use `expo-iap` from the current OpenIAP project for the Expo SDK 57 native
+  client. Install and rebuild the development client only when the backend and
+  App Store sandbox product are ready for an end-to-end purchase drill.
+- Apple products are non-consumables named
+  `com.cadelawless.whatzit.deck.<deck-id>` and
+  `com.cadelawless.whatzit.bundle.<bundle-id>`. These IDs are generated from
+  stable catalog identities and treated as permanent.
+- Launch Apple ownership without a separate WHATZ IT? player account. Use a
+  random installation/app-account UUID and verified App Store restore history;
+  do not promise automatic Android ownership without a future shared account.
+- Bundle ownership follows current membership by default. Additions become
+  available after reconciliation; removals require an explicit reviewed
+  product migration and do not silently remove previously purchased value.
+- Refunds and revocations lock access after successful reconciliation while
+  retaining local bytes initially. Offline clients retain the last verified
+  state until reconnecting; no time-based lease is introduced yet.
+- Store only transaction data needed for verification/audit: Apple transaction
+  IDs, hashes of opaque Google tokens and signed payloads, timestamps, state,
+  and append-only entitlement events. Do not persist raw signed receipts by
+  default.
+- Google remains schema-compatible but disabled until its current billing
+  integration and product-ID convention are separately verified. No Google
+  store product may be created from an assumed convention.

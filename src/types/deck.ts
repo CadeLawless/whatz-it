@@ -6,6 +6,18 @@ export type Card = {
 
 export type DeckAccess = 'free' | 'paid';
 
+export type StoreProductStatus = 'draft' | 'available' | 'retired';
+
+export type StoreProductMapping = {
+  productId: string;
+  status: StoreProductStatus;
+};
+
+export type StoreProductMappings = {
+  apple?: StoreProductMapping;
+  google?: StoreProductMapping;
+};
+
 export type Deck = {
   id: string;
   order: number;
@@ -15,6 +27,7 @@ export type Deck = {
   version: number;
   access: DeckAccess;
   price?: number;
+  storeProducts?: StoreProductMappings;
   cards: Card[];
 };
 
@@ -25,6 +38,7 @@ export type Bundle = {
   description: string;
   access: DeckAccess;
   price?: number;
+  storeProducts?: StoreProductMappings;
   deckIds: string[];
   decks: Deck[];
 };
