@@ -41,6 +41,13 @@ type DeckVersionRow = {
 };
 type BundleVersionRow = { bundle_id: string; bundle_version: number };
 type MediaRow = { content_hash: string; local_uri: string | null; byte_size: number; status: string };
+type ActiveMediaRow = {
+  content_hash: string;
+  expected_bytes: number;
+  local_uri: string | null;
+  stored_bytes: number | null;
+  status: string | null;
+};
 type PreparedMedia = CatalogStoredMedia;
 
 export class CatalogSyncError extends Error {
@@ -68,8 +75,13 @@ export async function synchronizeCatalog(
   );
   if (!state) throw new CatalogSyncError('storage_error', 'The local catalog is not initialized.');
 
+  const localMediaReady = state.etag
+    ? await activeCatalogMediaIsReady(database, options.downloadRuntime)
+    : true;
   const response = await request(options.manifestUrl, {
-    headers: state.etag ? { 'If-None-Match': state.etag } : undefined,
+    headers: state.etag && localMediaReady
+      ? { 'If-None-Match': state.etag }
+      : undefined,
     signal: options.signal,
   }, options.downloadRuntime);
   if (response.status === 304) return { status: 'unchanged', revision: state.catalog_revision };
@@ -207,6 +219,46 @@ export async function synchronizeCatalog(
     downloadedDecks: deckArtifacts.size,
     downloadedMedia: downloadedMedia.size,
   };
+}
+
+async function activeCatalogMediaIsReady(
+  database: SQLiteDatabase,
+  runtime?: CatalogDownloadRuntime,
+) {
+  const rows = await database.getAllAsync<ActiveMediaRow>(
+    `SELECT d.cover_hash AS content_hash,
+            d.cover_bytes AS expected_bytes,
+            m.local_uri,
+            m.byte_size AS stored_bytes,
+            m.status
+       FROM decks d
+       LEFT JOIN media_files m ON m.content_hash = d.cover_hash
+      WHERE d.lifecycle_status = 'active' AND d.cover_hash IS NOT NULL
+     UNION ALL
+     SELECT d.thumbnail_hash AS content_hash,
+            d.thumbnail_bytes AS expected_bytes,
+            m.local_uri,
+            m.byte_size AS stored_bytes,
+            m.status
+       FROM decks d
+       LEFT JOIN media_files m ON m.content_hash = d.thumbnail_hash
+      WHERE d.lifecycle_status = 'active' AND d.thumbnail_hash IS NOT NULL`,
+  );
+  if (rows.length === 0) return false;
+
+  const inspect = runtime?.inspectLocalFile ?? inspectLocalFile;
+  for (const row of rows) {
+    if (
+      row.status !== 'ready' ||
+      !row.local_uri ||
+      row.stored_bytes !== row.expected_bytes
+    ) {
+      return false;
+    }
+    const file = await inspect(row.local_uri);
+    if (!file.exists || file.size !== row.expected_bytes) return false;
+  }
+  return true;
 }
 
 export async function applyPreparedCatalog(

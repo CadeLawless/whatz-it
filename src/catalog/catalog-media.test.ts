@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { catalogCoverSources } from './catalog-media';
+import { catalogCoverSources, catalogLocalCoverSources } from './catalog-media';
 
 describe('catalog cover sources', () => {
   it('prefers durable local cover media before its verified remote fallback', () => {
@@ -28,6 +28,19 @@ describe('catalog cover sources', () => {
         coverUrl: 'https://api.example.test/content/covers/cover.webp',
       }),
       [42, 'https://api.example.test/content/covers/cover.webp'],
+    );
+  });
+});
+
+describe('local catalog cover sources', () => {
+  it('never falls back to a network URL', () => {
+    assert.deepEqual(
+      catalogLocalCoverSources({
+        coverUri: 'file:///cover.webp',
+        coverUrl: 'https://example.test/cover.webp',
+        thumbnailUrl: 'https://example.test/thumbnail.webp',
+      }),
+      ['file:///cover.webp'],
     );
   });
 });

@@ -200,6 +200,48 @@ describe('Phase 3 catalog acceptance', () => {
     }
   });
 
+  it('bypasses a matching ETag to repair missing same-revision media', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(bundledCatalog.revision);
+      await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        downloadRuntime: acceptanceRuntime(fixture, storedFiles),
+      });
+
+      harness.database.exec('DELETE FROM media_files');
+      storedFiles.clear();
+      let conditionalEtag: string | null = 'not-requested';
+      const runtime = acceptanceRuntime(fixture, storedFiles);
+      const result = await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        downloadRuntime: {
+          ...runtime,
+          request: async (url, init) => {
+            if (url === fixture.manifestUrl) {
+              conditionalEtag = new Headers(init.headers).get('if-none-match');
+            }
+            return runtime.request(url);
+          },
+        },
+      });
+
+      assert.equal(conditionalEtag, null);
+      assert.equal(result.status, 'updated');
+      assert.equal(storedFiles.size, 4);
+      assert.equal(
+        harness.database
+          .prepare("SELECT COUNT(*) AS count FROM media_files WHERE status = 'ready'")
+          .get()?.count,
+        4,
+      );
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('persists a verified revision for offline restart and rejects a corrupt successor', async () => {
     const harness = createDatabaseHarness();
     const storedFiles = new Map<string, Uint8Array>();

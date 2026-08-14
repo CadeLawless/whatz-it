@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -24,6 +25,7 @@ import {
   type CatalogDeckSummary,
   type CatalogDiscoveryRepository,
 } from '@/catalog/catalog-discovery';
+import { catalogLocalCoverSources } from '@/catalog/catalog-media';
 import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { CatalogCoverImage } from '@/components/catalog-cover-image';
 
@@ -37,9 +39,11 @@ function createQueryKey(search: string) {
 
 export function StorefrontExplore({
   catalog,
+  syncStatus,
   onBrowseFocus,
 }: {
   catalog: CatalogSnapshot;
+  syncStatus: 'disabled' | 'syncing' | 'synced' | 'failed' | null;
   onBrowseFocus?: (offset: number) => void;
 }) {
   const router = useRouter();
@@ -91,6 +95,19 @@ export function StorefrontExplore({
       setRepository(null);
 
       try {
+        const localCoverSources = catalog.paidDecks.map(
+          (deck) => catalogLocalCoverSources(deck, 'cover')[0],
+        );
+        if (localCoverSources.some((source) => source === undefined)) {
+          if (syncStatus === 'syncing') return;
+          throw new Error(
+            syncStatus === 'failed'
+              ? 'Cover downloads could not be completed. Reconnect and reopen Explore to try again.'
+              : 'Explore covers are still being prepared on this device.',
+          );
+        }
+        await Promise.all(localCoverSources.map((source) => Image.loadAsync(source!)));
+
         const nextRepository = await createCatalogDiscoveryRepository(catalog.source);
         const [deckPage, bundlePage] = await Promise.all([
           nextRepository.queryDecks({ access: 'paid', limit: PAGE_SIZE }),
@@ -120,7 +137,7 @@ export function StorefrontExplore({
     return () => {
       cancelled = true;
     };
-  }, [catalog]);
+  }, [catalog, syncStatus]);
 
   useEffect(() => {
     if (!repository) return;
@@ -297,7 +314,7 @@ export function StorefrontExplore({
               <View style={styles.deckList}>
                 {decks.map((deck) => (
                   <DeckBrowseCard
-                    deck={deck}
+                    deck={catalog.getDeckById(deck.id) ?? deck}
                     key={deck.id}
                     onPress={() =>
                       router.push({
@@ -413,6 +430,7 @@ function BundleBrowseCard({
               contentFit="cover"
               deck={deck!}
               fallback={<View style={styles.fanFallback} />}
+              localOnly
               style={StyleSheet.absoluteFill}
             />
           </View>
@@ -422,7 +440,13 @@ function BundleBrowseCard({
   );
 }
 
-function DeckBrowseCard({ deck, onPress }: { deck: CatalogDeckSummary; onPress: () => void }) {
+function DeckBrowseCard({
+  deck,
+  onPress,
+}: {
+  deck: CatalogDeckSummary | CatalogSnapshot['decks'][number];
+  onPress: () => void;
+}) {
   return (
     <Pressable
       accessibilityHint="Opens deck details"
@@ -442,6 +466,7 @@ function DeckBrowseCard({ deck, onPress }: { deck: CatalogDeckSummary; onPress: 
               <Text style={styles.deckFallbackText}>{deck.title}</Text>
             </View>
           )}
+          localOnly
           style={StyleSheet.absoluteFill}
         />
       </View>

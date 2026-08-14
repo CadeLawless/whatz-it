@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { sortLibraryDecks } from './deck-library-sort';
+import { buildDeckLibrarySections, sortLibraryDecks } from './deck-library-sort';
 
 const decks = [
   { id: 'zoo', title: 'Zoo' },
@@ -29,6 +29,27 @@ describe('My Decks sorting', () => {
     assert.deepEqual(
       sortLibraryDecks(decks, playedAt, 'alphabetical').map(({ id }) => id),
       ['animals', 'movies', 'zoo'],
+    );
+  });
+
+  it('keeps unplayed decks in Deck Manager order after recently played decks', () => {
+    assert.deepEqual(
+      buildDeckLibrarySections(decks, playedAt, 'recently-played'),
+      [{ id: 'all', decks: [decks[2], decks[1], decks[0]] }],
+    );
+  });
+
+  it('creates Deck Manager ordered unplayed and recency ordered played sections', () => {
+    assert.deepEqual(
+      buildDeckLibrarySections(decks, playedAt, 'unplayed-first'),
+      [
+        { id: 'unplayed', title: 'UNPLAYED', decks: [decks[0]] },
+        {
+          id: 'recently-played',
+          title: 'RECENTLY PLAYED',
+          decks: [decks[2], decks[1]],
+        },
+      ],
     );
   });
 });

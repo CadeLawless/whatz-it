@@ -2,6 +2,7 @@ import { Image, type ImageProps } from 'expo-image';
 import { type ReactNode, useState } from 'react';
 
 import {
+  catalogLocalCoverSources,
   catalogCoverSources,
   type CatalogCoverRecord,
 } from '@/catalog/catalog-media';
@@ -9,16 +10,20 @@ import {
 type CatalogCoverImageProps = Omit<ImageProps, 'onError' | 'source'> & {
   deck: CatalogCoverRecord;
   fallback?: ReactNode;
+  localOnly?: boolean;
   preference?: 'cover' | 'thumbnail';
 };
 
 export function CatalogCoverImage({
   deck,
   fallback = null,
+  localOnly = false,
   preference = 'cover',
   ...imageProps
 }: CatalogCoverImageProps) {
-  const sources = catalogCoverSources(deck, preference);
+  const sources = localOnly
+    ? catalogLocalCoverSources(deck, preference)
+    : catalogCoverSources(deck, preference);
   const sourceKey = sources.join('|');
 
   return (
