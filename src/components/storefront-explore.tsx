@@ -373,15 +373,6 @@ function BundleBrowseCard({
       ]}
     >
       <View
-        accessibilityElementsHidden
-        style={[
-          styles.bundleCornerAccent,
-          fanSide === 'left'
-            ? styles.bundleCornerAccentLeft
-            : styles.bundleCornerAccentRight,
-        ]}
-      />
-      <View
         style={[
           styles.bundleCopy,
           fanSide === 'left' ? styles.bundleCopyRight : styles.bundleCopyLeft,
@@ -398,6 +389,7 @@ function BundleBrowseCard({
           fanSide === 'left' ? styles.fanLeft : styles.fanRight,
         ]}
       >
+        <View style={styles.fanSpotlight} />
         {decks.map((deck, index) => (
           <View
             key={deck!.id}
@@ -405,8 +397,8 @@ function BundleBrowseCard({
               styles.fanCard,
               {
                 ...(fanSide === 'left'
-                  ? { right: 10 + index * 14 }
-                  : { left: 10 + index * 14 }),
+                  ? { right: 13 + index * 14 }
+                  : { left: 13 + index * 14 }),
                 transform: [
                   {
                     rotate: `${(index - (decks.length - 1) / 2) * 8 * (fanSide === 'left' ? -1 : 1)}deg`,
@@ -506,9 +498,6 @@ const styles = StyleSheet.create({
   resultSurface: { gap: 14 },
   bundleList: { gap: 16 },
   bundleCard: { minHeight: 190, position: 'relative', justifyContent: 'center', overflow: 'hidden', padding: 22, borderWidth: 1, borderColor: '#DCE8F5', borderRadius: 26, backgroundColor: '#FFFFFF', boxShadow: '0 5px 16px rgba(71, 85, 105, 0.10)' },
-  bundleCornerAccent: { width: 190, height: 190, position: 'absolute', top: '50%', marginTop: -95, borderRadius: 95, backgroundColor: '#EAF4FF' },
-  bundleCornerAccentLeft: { left: -64 },
-  bundleCornerAccentRight: { right: -64 },
   bundleCopy: { width: '57%', gap: 8, zIndex: 10 },
   bundleCopyLeft: { alignSelf: 'flex-start' },
   bundleCopyRight: { alignSelf: 'flex-end' },
@@ -518,7 +507,8 @@ const styles = StyleSheet.create({
   fan: { width: 150, height: 150, position: 'absolute', top: '50%', marginTop: -75, zIndex: 2 },
   fanLeft: { left: -30, transform: [{ rotate: '12deg' }] },
   fanRight: { right: -30, transform: [{ rotate: '-12deg' }] },
-  fanCard: { width: 82, aspectRatio: 2 / 3, position: 'absolute', bottom: 0, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 9, backgroundColor: '#DCE5EF', boxShadow: '0 5px 12px rgba(15, 23, 42, 0.24)' },
+  fanSpotlight: { width: 190, height: 190, position: 'absolute', top: -20, left: -20, borderRadius: 95, backgroundColor: '#EAF4FF' },
+  fanCard: { width: 82, aspectRatio: 2 / 3, position: 'absolute', top: 10, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 9, backgroundColor: '#DCE5EF', boxShadow: '0 5px 12px rgba(15, 23, 42, 0.24)' },
   fanFallback: { flex: 1, backgroundColor: '#BFDBFE' },
   deckList: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   deckCard: { width: '29.8%', aspectRatio: 2 / 3, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 7, backgroundColor: '#FFFFFF', boxShadow: '0 3px 10px rgba(71, 85, 105, 0.13)' },
