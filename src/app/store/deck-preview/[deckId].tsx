@@ -5,14 +5,18 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  FadeInLeft,
-  FadeInRight,
+  cancelAnimation,
   runOnJS,
+  useAnimatedStyle,
   useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -27,25 +31,62 @@ export default function DeckPreviewSheet() {
     deckId: string;
   }>();
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const bundle = catalog.getBundleById(bundleId);
   const [activeDeckId, setActiveDeckId] = useState(deckId);
-  const [slideDirection, setSlideDirection] = useState<'previous' | 'next' | null>(null);
   const reduceMotion = useReducedMotion();
+  const headerTranslation = useSharedValue(0);
   const deck = catalog.getDeckById(activeDeckId);
   const bundleDecks = useMemo(() => bundle?.decks ?? [], [bundle]);
   const activeIndex = bundleDecks.findIndex(({ id }) => id === activeDeckId);
   const canBrowseBundle = bundleDecks.length > 1 && activeIndex >= 0;
 
-  const showAdjacentDeck = useCallback(
+  const commitAdjacentDeck = useCallback(
     (offset: -1 | 1) => {
       const currentIndex = bundleDecks.findIndex(({ id }) => id === activeDeckId);
       const adjacentDeck = bundleDecks[currentIndex + offset];
       if (!adjacentDeck) return;
 
-      setSlideDirection(offset > 0 ? 'next' : 'previous');
+      if (!reduceMotion) {
+        headerTranslation.set(offset * width);
+      } else {
+        headerTranslation.set(0);
+      }
       setActiveDeckId(adjacentDeck.id);
+
+      if (!reduceMotion) {
+        requestAnimationFrame(() => {
+          headerTranslation.set(withTiming(0, { duration: 180 }));
+        });
+      }
     },
-    [activeDeckId, bundleDecks],
+    [activeDeckId, bundleDecks, headerTranslation, reduceMotion, width],
+  );
+
+  const showAdjacentDeck = useCallback(
+    (offset: -1 | 1) => {
+      const currentIndex = bundleDecks.findIndex(({ id }) => id === activeDeckId);
+      if (!bundleDecks[currentIndex + offset]) return;
+
+      if (reduceMotion) {
+        commitAdjacentDeck(offset);
+        return;
+      }
+
+      headerTranslation.set(
+        withTiming(-offset * width, { duration: 140 }, (finished) => {
+          if (finished) runOnJS(commitAdjacentDeck)(offset);
+        }),
+      );
+    },
+    [
+      activeDeckId,
+      bundleDecks,
+      commitAdjacentDeck,
+      headerTranslation,
+      reduceMotion,
+      width,
+    ],
   );
 
   const swipeGesture = useMemo(
@@ -54,22 +95,51 @@ export default function DeckPreviewSheet() {
         .enabled(canBrowseBundle)
         .activeOffsetX([-24, 24])
         .failOffsetY([-18, 18])
+        .onBegin(() => {
+          cancelAnimation(headerTranslation);
+        })
+        .onUpdate(({ translationX }) => {
+          const isPastFirstDeck = translationX > 0 && activeIndex <= 0;
+          const isPastLastDeck =
+            translationX < 0 && activeIndex >= bundleDecks.length - 1;
+          headerTranslation.set(
+            isPastFirstDeck || isPastLastDeck
+              ? translationX * 0.18
+              : translationX,
+          );
+        })
         .onEnd(({ translationX, velocityX }) => {
-          if (translationX <= -54 || velocityX <= -520) {
+          if (
+            activeIndex < bundleDecks.length - 1 &&
+            (translationX <= -54 || velocityX <= -520)
+          ) {
             runOnJS(showAdjacentDeck)(1);
-          } else if (translationX >= 54 || velocityX >= 520) {
+          } else if (
+            activeIndex > 0 &&
+            (translationX >= 54 || velocityX >= 520)
+          ) {
             runOnJS(showAdjacentDeck)(-1);
+          } else {
+            headerTranslation.set(
+              withSpring(0, {
+                damping: 20,
+                stiffness: 240,
+              }),
+            );
           }
         }),
-    [canBrowseBundle, showAdjacentDeck],
+    [
+      activeIndex,
+      bundleDecks.length,
+      canBrowseBundle,
+      headerTranslation,
+      showAdjacentDeck,
+    ],
   );
 
-  const enteringAnimation =
-    reduceMotion || !slideDirection
-      ? undefined
-      : slideDirection === 'next'
-        ? FadeInRight.duration(180)
-        : FadeInLeft.duration(180);
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: headerTranslation.get() }],
+  }));
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
@@ -94,83 +164,93 @@ export default function DeckPreviewSheet() {
               ×
             </Text>
           </Pressable>
-          <GestureDetector gesture={swipeGesture}>
-            <Animated.View
-              entering={enteringAnimation}
-              key={deck.id}
-              style={styles.previewBody}
-            >
-              <DeckDetailsHeader
-                backLabel="Close Preview"
-                deck={deck}
-                onBack={() => router.back()}
-                showBackButton={false}
-              />
-              {canBrowseBundle && (
-                <View style={styles.deckNavigation}>
-                  <Pressable
-                    accessibilityLabel="Previous deck"
-                    accessibilityRole="button"
-                    accessibilityState={{ disabled: activeIndex <= 0 }}
-                    disabled={activeIndex <= 0}
-                    hitSlop={8}
-                    onPress={() => showAdjacentDeck(-1)}
-                    style={({ pressed }) => [
-                      styles.deckNavigationButton,
-                      activeIndex <= 0 && styles.deckNavigationButtonDisabled,
-                      pressed && styles.pressed,
-                    ]}
+          <View style={styles.previewBody}>
+            <GestureDetector gesture={swipeGesture}>
+              <Animated.View style={headerAnimatedStyle}>
+                <DeckDetailsHeader
+                  backLabel="Close Preview"
+                  deck={deck}
+                  onBack={() => router.back()}
+                  showBackButton={false}
+                />
+              </Animated.View>
+            </GestureDetector>
+            {canBrowseBundle && (
+              <View style={styles.deckNavigation}>
+                <Pressable
+                  accessibilityLabel="Previous deck"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: activeIndex <= 0 }}
+                  disabled={activeIndex <= 0}
+                  hitSlop={8}
+                  onPress={() => showAdjacentDeck(-1)}
+                  style={({ pressed }) => [
+                    styles.deckNavigationButton,
+                    activeIndex <= 0 && styles.deckNavigationButtonDisabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    accessibilityElementsHidden
+                    style={styles.deckNavigationArrow}
                   >
-                    <Text accessibilityElementsHidden style={styles.deckNavigationArrow}>‹</Text>
-                  </Pressable>
-                  <View style={styles.deckNavigationCopy}>
-                    <Text style={styles.deckNavigationHint}>SWIPE TO BROWSE</Text>
-                    <Text style={styles.deckNavigationCount}>
-                      {activeIndex + 1} OF {bundleDecks.length}
-                    </Text>
-                  </View>
-                  <Pressable
-                    accessibilityLabel="Next deck"
-                    accessibilityRole="button"
-                    accessibilityState={{ disabled: activeIndex >= bundleDecks.length - 1 }}
-                    disabled={activeIndex >= bundleDecks.length - 1}
-                    hitSlop={8}
-                    onPress={() => showAdjacentDeck(1)}
-                    style={({ pressed }) => [
-                      styles.deckNavigationButton,
-                      activeIndex >= bundleDecks.length - 1 &&
-                        styles.deckNavigationButtonDisabled,
-                      pressed && styles.pressed,
-                    ]}
+                    ‹
+                  </Text>
+                </Pressable>
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={styles.deckNavigationCount}
+                >
+                  {activeIndex + 1} OF {bundleDecks.length}
+                </Text>
+                <Pressable
+                  accessibilityLabel="Next deck"
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    disabled: activeIndex >= bundleDecks.length - 1,
+                  }}
+                  disabled={activeIndex >= bundleDecks.length - 1}
+                  hitSlop={8}
+                  onPress={() => showAdjacentDeck(1)}
+                  style={({ pressed }) => [
+                    styles.deckNavigationButton,
+                    activeIndex >= bundleDecks.length - 1 &&
+                      styles.deckNavigationButtonDisabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    accessibilityElementsHidden
+                    style={styles.deckNavigationArrow}
                   >
-                    <Text accessibilityElementsHidden style={styles.deckNavigationArrow}>›</Text>
-                  </Pressable>
-                </View>
-              )}
-              {bundle && (
-                <View style={styles.copy}>
-                  <Text style={styles.bundleName}>From {bundle.title}</Text>
-                </View>
-              )}
-              {deck.access === 'paid' && (
-                <View style={styles.purchaseArea}>
-                  <View
-                    accessibilityLabel="Purchase Single Deck, coming soon"
-                    accessibilityRole="button"
-                    accessibilityState={{ disabled: true }}
-                    style={styles.purchaseButton}
-                  >
-                    <Text style={styles.purchaseButtonText}>
-                      PURCHASE SINGLE DECK
-                    </Text>
-                  </View>
-                  <Text style={styles.purchaseNote}>
-                    Secure in-app purchasing is coming soon.
+                    ›
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+            {bundle && (
+              <View style={styles.copy}>
+                <Text style={styles.bundleName}>From {bundle.title}</Text>
+              </View>
+            )}
+            {deck.access === 'paid' && (
+              <View style={styles.purchaseArea}>
+                <View
+                  accessibilityLabel={`Purchase ${deck.title}, coming soon`}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: true }}
+                  style={styles.purchaseButton}
+                >
+                  <Text style={styles.purchaseButtonText}>
+                    PURCHASE THIS DECK
                   </Text>
                 </View>
-              )}
-            </Animated.View>
-          </GestureDetector>
+                <Text style={styles.purchaseNote}>
+                  Secure in-app purchasing is coming soon.
+                </Text>
+              </View>
+            )}
+          </View>
         </ScrollView>
       ) : (
         <View style={styles.notFound}>
@@ -230,18 +310,13 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     fontWeight: '300',
   },
-  deckNavigationCopy: { flex: 1, alignItems: 'center', gap: 3 },
-  deckNavigationHint: {
-    color: colors.play,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-  },
   deckNavigationCount: {
+    flex: 1,
     color: colors.muted,
     fontSize: 12,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
+    textAlign: 'center',
   },
   copy: { gap: 10 },
   bundleName: { color: colors.muted, fontSize: 13, fontWeight: '700' },
