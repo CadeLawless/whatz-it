@@ -12,6 +12,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import {
   createCatalogDiscoveryRepository,
@@ -50,8 +57,27 @@ export function StorefrontExplore({
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
   const [tabsOffset, setTabsOffset] = useState(0);
+  const [sectionControlWidth, setSectionControlWidth] = useState(0);
   const [tagSheetVisible, setTagSheetVisible] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
+  const reduceMotion = useReducedMotion();
+  const activeSectionPosition = useSharedValue(section === 'decks' ? 1 : 0);
+
+  useEffect(() => {
+    activeSectionPosition.value = withTiming(section === 'decks' ? 1 : 0, {
+      duration: reduceMotion ? 0 : 220,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [activeSectionPosition, reduceMotion, section]);
+
+  const sectionIndicatorStyle = useAnimatedStyle(
+    () => ({
+      transform: [
+        { translateX: activeSectionPosition.value * (sectionControlWidth / 2) },
+      ],
+    }),
+    [sectionControlWidth],
+  );
 
   const visibleTags = useMemo(() => {
     const defaults = tags.slice(0, 4);
@@ -173,9 +199,23 @@ export function StorefrontExplore({
     <View style={styles.container}>
       <View
         accessibilityRole="tablist"
-        onLayout={(event) => setTabsOffset(event.nativeEvent.layout.y)}
+        onLayout={(event) => {
+          setTabsOffset(event.nativeEvent.layout.y);
+          setSectionControlWidth(event.nativeEvent.layout.width);
+        }}
         style={styles.sectionControl}
       >
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.sectionTabIndicator,
+            {
+              left: Math.max(0, sectionControlWidth / 4 - 32),
+              opacity: sectionControlWidth > 0 ? 1 : 0,
+            },
+            sectionIndicatorStyle,
+          ]}
+        />
         <ExploreTab
           active={section === 'bundles'}
           label="BUNDLES"
@@ -412,14 +452,6 @@ function ExploreTab({ active, label, onPress }: { active: boolean; label: string
       style={({ pressed }) => [styles.sectionTab, pressed && styles.pressed]}
     >
       <Text style={[styles.sectionTabText, active && styles.sectionTabTextActive]}>{label}</Text>
-      <View
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={[
-          styles.sectionTabIndicator,
-          active && styles.sectionTabIndicatorActive,
-        ]}
-      />
     </Pressable>
   );
 }
@@ -527,6 +559,7 @@ function EmptyResults({ search, type }: { search: string; type: string }) {
 const styles = StyleSheet.create({
   container: { gap: 14 },
   sectionControl: {
+    position: 'relative',
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#CBD5E1',
@@ -537,6 +570,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    zIndex: 1,
   },
   sectionTabText: { color: '#64748B', fontSize: 12, fontWeight: '900', letterSpacing: 0.6 },
   sectionTabTextActive: { color: '#2563EB' },
@@ -547,9 +581,8 @@ const styles = StyleSheet.create({
     bottom: -StyleSheet.hairlineWidth,
     borderTopLeftRadius: 3,
     borderTopRightRadius: 3,
-    backgroundColor: 'transparent',
+    backgroundColor: '#459EFE',
   },
-  sectionTabIndicatorActive: { backgroundColor: '#459EFE' },
   searchField: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 15, borderWidth: 1, borderColor: '#DCE5EF', borderRadius: 18, backgroundColor: '#FFFFFF' },
   searchIcon: { color: '#64748B', fontSize: 25, marginTop: -4 },
   searchInput: { flex: 1, color: '#111827', fontSize: 15, paddingVertical: 14 },

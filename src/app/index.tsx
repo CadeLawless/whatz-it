@@ -18,6 +18,7 @@ import Animated, {
   interpolate,
   runOnJS,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
@@ -274,7 +275,7 @@ export default function DeckLibraryScreen() {
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <ScrollView
         accessibilityElementsHidden={videoPendingDelete !== null}
         automaticallyAdjustKeyboardInsets
@@ -527,42 +528,41 @@ export default function DeckLibraryScreen() {
               </Text>
             </View>
           )}
-
-          <View style={styles.footerLinks}>
-            <Pressable
-              accessibilityHint="Opens the WHATZ IT? privacy policy in your browser"
-              accessibilityRole="link"
-              onPress={() =>
-                openExternalLink(
-                  PRIVACY_POLICY_URL,
-                  `Visit ${PRIVACY_POLICY_URL} in your browser.`,
-                )
-              }
-              style={({ pressed }) => [
-                styles.footerLink,
-                pressed && styles.footerLinkPressed,
-              ]}
-            >
-              <Text style={styles.footerLinkText}>PRIVACY POLICY</Text>
-            </Pressable>
-            <Pressable
-              accessibilityHint="Opens your email app to contact WHATZ IT? support"
-              accessibilityLabel={`Email WHATZ IT? support at ${SUPPORT_EMAIL}`}
-              accessibilityRole="link"
-              onPress={() =>
-                openExternalLink(
-                  SUPPORT_EMAIL_URL,
-                  `Email us directly at ${SUPPORT_EMAIL}.`,
-                )
-              }
-              style={({ pressed }) => [
-                styles.footerLink,
-                pressed && styles.footerLinkPressed,
-              ]}
-            >
-              <Text style={styles.footerLinkText}>CONTACT</Text>
-            </Pressable>
-          </View>
+        </View>
+        <View style={styles.footerLinks}>
+          <Pressable
+            accessibilityHint="Opens the WHATZ IT? privacy policy in your browser"
+            accessibilityRole="link"
+            onPress={() =>
+              openExternalLink(
+                PRIVACY_POLICY_URL,
+                `Visit ${PRIVACY_POLICY_URL} in your browser.`,
+              )
+            }
+            style={({ pressed }) => [
+              styles.footerLink,
+              pressed && styles.footerLinkPressed,
+            ]}
+          >
+            <Text style={styles.footerLinkText}>PRIVACY POLICY</Text>
+          </Pressable>
+          <Pressable
+            accessibilityHint="Opens your email app to contact WHATZ IT? support"
+            accessibilityLabel={`Email WHATZ IT? support at ${SUPPORT_EMAIL}`}
+            accessibilityRole="link"
+            onPress={() =>
+              openExternalLink(
+                SUPPORT_EMAIL_URL,
+                `Email us directly at ${SUPPORT_EMAIL}.`,
+              )
+            }
+            style={({ pressed }) => [
+              styles.footerLink,
+              pressed && styles.footerLinkPressed,
+            ]}
+          >
+            <Text style={styles.footerLinkText}>CONTACT</Text>
+          </Pressable>
         </View>
       </ScrollView>
       <ConfirmationPrompt
@@ -689,14 +689,45 @@ function HomeModeControl({
   mode: 'my-decks' | 'explore';
   onChange: (mode: 'my-decks' | 'explore') => void;
 }) {
+  const reduceMotion = useReducedMotion();
+  const [indicatorWidth, setIndicatorWidth] = useState(0);
+  const activePosition = useSharedValue(mode === 'explore' ? 1 : 0);
+
+  useEffect(() => {
+    activePosition.value = withTiming(mode === 'explore' ? 1 : 0, {
+      duration: reduceMotion ? 0 : 220,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [activePosition, mode, reduceMotion]);
+
+  const indicatorStyle = useAnimatedStyle(
+    () => ({
+      transform: [
+        { translateX: activePosition.value * (indicatorWidth + 6) },
+      ],
+    }),
+    [indicatorWidth],
+  );
+
   return (
     <View
       accessibilityRole="tablist"
+      onLayout={(event) => {
+        setIndicatorWidth((event.nativeEvent.layout.width - 16) / 2);
+      }}
       style={[
         styles.homeModeControl,
         mode === 'explore' && styles.homeModeControlExplore,
       ]}
     >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.homeModeIndicator,
+          { width: Math.max(0, indicatorWidth) },
+          indicatorStyle,
+        ]}
+      />
       <HomeModeTab
         active={mode === 'my-decks'}
         label="MY DECKS"
@@ -727,7 +758,6 @@ function HomeModeTab({
       onPress={onPress}
       style={({ pressed }) => [
         styles.homeModeTab,
-        active && styles.homeModeTabActive,
         pressed && styles.headingPressed,
       ]}
     >
@@ -742,7 +772,7 @@ const styles = StyleSheet.create({
   orientationGate: { flex: 1, backgroundColor: '#F6F6F6' },
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
   scrollView: { flex: 1, backgroundColor: '#F6F6F6' },
-  scrollContent: { paddingBottom: 72 },
+  scrollContent: { flexGrow: 1 },
   brandCard: {
     minHeight: 118,
     alignItems: 'flex-start',
@@ -763,6 +793,7 @@ const styles = StyleSheet.create({
   brand: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   library: { alignSelf: 'center', paddingTop: 34 },
   homeModeControl: {
+    position: 'relative',
     flexDirection: 'row',
     gap: 6,
     marginBottom: 30,
@@ -771,16 +802,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#DCE5EF',
   },
   homeModeControlExplore: { marginBottom: 14 },
+  homeModeIndicator: {
+    position: 'absolute',
+    top: 5,
+    bottom: 5,
+    left: 5,
+    borderRadius: 17,
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.13)',
+  },
   homeModeTab: {
     flex: 1,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 17,
-  },
-  homeModeTabActive: {
-    backgroundColor: '#FFFFFF',
-    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.13)',
+    zIndex: 1,
   },
   homeModeTabText: {
     color: '#64748B',
@@ -879,11 +916,15 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: { color: '#64748B', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
   footerLinks: {
+    minHeight: 76,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 28,
-    marginTop: 42,
+    marginTop: 'auto',
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 8,
   },
   footerLink: {
     minHeight: 44,
