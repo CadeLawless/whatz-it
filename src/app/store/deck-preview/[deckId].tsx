@@ -33,60 +33,35 @@ export default function DeckPreviewSheet() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const bundle = catalog.getBundleById(bundleId);
+  const bundleDecks = useMemo(() => bundle?.decks ?? [], [bundle]);
+  const initialIndex = Math.max(
+    0,
+    bundleDecks.findIndex(({ id }) => id === deckId),
+  );
   const [activeDeckId, setActiveDeckId] = useState(deckId);
   const reduceMotion = useReducedMotion();
-  const headerTranslation = useSharedValue(0);
+  const pageOffset = useSharedValue(-initialIndex);
+  const gestureStartOffset = useSharedValue(-initialIndex);
   const deck = catalog.getDeckById(activeDeckId);
-  const bundleDecks = useMemo(() => bundle?.decks ?? [], [bundle]);
+  const carouselDecks = bundleDecks.length > 0 ? bundleDecks : deck ? [deck] : [];
   const activeIndex = bundleDecks.findIndex(({ id }) => id === activeDeckId);
+  const visibleCarouselIndex = Math.max(0, activeIndex);
   const canBrowseBundle = bundleDecks.length > 1 && activeIndex >= 0;
+  const pageWidth = Math.max(1, width - spacing.lg * 2);
 
-  const commitAdjacentDeck = useCallback(
-    (offset: -1 | 1) => {
-      const currentIndex = bundleDecks.findIndex(({ id }) => id === activeDeckId);
-      const adjacentDeck = bundleDecks[currentIndex + offset];
-      if (!adjacentDeck) return;
+  const showDeckAtIndex = useCallback(
+    (targetIndex: number) => {
+      const targetDeck = bundleDecks[targetIndex];
+      if (!targetDeck) return;
 
-      if (!reduceMotion) {
-        headerTranslation.set(offset * width);
-      } else {
-        headerTranslation.set(0);
-      }
-      setActiveDeckId(adjacentDeck.id);
-
-      if (!reduceMotion) {
-        requestAnimationFrame(() => {
-          headerTranslation.set(withTiming(0, { duration: 180 }));
-        });
-      }
-    },
-    [activeDeckId, bundleDecks, headerTranslation, reduceMotion, width],
-  );
-
-  const showAdjacentDeck = useCallback(
-    (offset: -1 | 1) => {
-      const currentIndex = bundleDecks.findIndex(({ id }) => id === activeDeckId);
-      if (!bundleDecks[currentIndex + offset]) return;
-
-      if (reduceMotion) {
-        commitAdjacentDeck(offset);
-        return;
-      }
-
-      headerTranslation.set(
-        withTiming(-offset * width, { duration: 140 }, (finished) => {
-          if (finished) runOnJS(commitAdjacentDeck)(offset);
-        }),
+      setActiveDeckId(targetDeck.id);
+      pageOffset.set(
+        reduceMotion
+          ? -targetIndex
+          : withTiming(-targetIndex, { duration: 180 }),
       );
     },
-    [
-      activeDeckId,
-      bundleDecks,
-      commitAdjacentDeck,
-      headerTranslation,
-      reduceMotion,
-      width,
-    ],
+    [bundleDecks, pageOffset, reduceMotion],
   );
 
   const swipeGesture = useMemo(
@@ -96,49 +71,67 @@ export default function DeckPreviewSheet() {
         .activeOffsetX([-24, 24])
         .failOffsetY([-18, 18])
         .onBegin(() => {
-          cancelAnimation(headerTranslation);
+          cancelAnimation(pageOffset);
+          gestureStartOffset.set(pageOffset.get());
         })
         .onUpdate(({ translationX }) => {
-          const isPastFirstDeck = translationX > 0 && activeIndex <= 0;
-          const isPastLastDeck =
-            translationX < 0 && activeIndex >= bundleDecks.length - 1;
-          headerTranslation.set(
-            isPastFirstDeck || isPastLastDeck
-              ? translationX * 0.18
-              : translationX,
-          );
+          const proposedOffset =
+            gestureStartOffset.get() + translationX / pageWidth;
+          const lastOffset = -(bundleDecks.length - 1);
+
+          if (proposedOffset > 0) {
+            pageOffset.set(proposedOffset * 0.18);
+          } else if (proposedOffset < lastOffset) {
+            pageOffset.set(
+              lastOffset + (proposedOffset - lastOffset) * 0.18,
+            );
+          } else {
+            pageOffset.set(proposedOffset);
+          }
         })
         .onEnd(({ translationX, velocityX }) => {
+          let targetIndex = activeIndex;
+
           if (
             activeIndex < bundleDecks.length - 1 &&
             (translationX <= -54 || velocityX <= -520)
           ) {
-            runOnJS(showAdjacentDeck)(1);
+            targetIndex += 1;
           } else if (
             activeIndex > 0 &&
             (translationX >= 54 || velocityX >= 520)
           ) {
-            runOnJS(showAdjacentDeck)(-1);
-          } else {
-            headerTranslation.set(
-              withSpring(0, {
-                damping: 20,
-                stiffness: 240,
-              }),
-            );
+            targetIndex -= 1;
           }
+
+          if (targetIndex !== activeIndex) {
+            runOnJS(showDeckAtIndex)(targetIndex);
+            return;
+          }
+
+          pageOffset.set(
+            reduceMotion
+              ? -activeIndex
+              : withSpring(-activeIndex, {
+                  damping: 20,
+                  stiffness: 240,
+                }),
+          );
         }),
     [
       activeIndex,
       bundleDecks.length,
       canBrowseBundle,
-      headerTranslation,
-      showAdjacentDeck,
+      gestureStartOffset,
+      pageOffset,
+      pageWidth,
+      reduceMotion,
+      showDeckAtIndex,
     ],
   );
 
-  const headerAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: headerTranslation.get() }],
+  const carouselAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: pageOffset.get() * pageWidth }],
   }));
 
   return (
@@ -155,10 +148,7 @@ export default function DeckPreviewSheet() {
             accessibilityRole="button"
             hitSlop={8}
             onPress={() => router.back()}
-            style={({ pressed }) => [
-              styles.closeButton,
-              pressed && styles.pressed,
-            ]}
+            style={styles.closeButton}
           >
             <Text accessibilityElementsHidden style={styles.closeButtonText}>
               ×
@@ -166,14 +156,33 @@ export default function DeckPreviewSheet() {
           </Pressable>
           <View style={styles.previewBody}>
             <GestureDetector gesture={swipeGesture}>
-              <Animated.View style={headerAnimatedStyle}>
-                <DeckDetailsHeader
-                  backLabel="Close Preview"
-                  deck={deck}
-                  onBack={() => router.back()}
-                  showBackButton={false}
-                />
-              </Animated.View>
+              <View style={styles.carouselViewport}>
+                <Animated.View
+                  style={[styles.carouselTrack, carouselAnimatedStyle]}
+                >
+                  {carouselDecks.map((carouselDeck, index) => (
+                    <View
+                      accessibilityElementsHidden={
+                        index !== visibleCarouselIndex
+                      }
+                      importantForAccessibility={
+                        index === visibleCarouselIndex
+                          ? 'auto'
+                          : 'no-hide-descendants'
+                      }
+                      key={carouselDeck.id}
+                      style={[styles.carouselPage, { width: pageWidth }]}
+                    >
+                      <DeckDetailsHeader
+                        backLabel="Close Preview"
+                        deck={carouselDeck}
+                        onBack={() => router.back()}
+                        showBackButton={false}
+                      />
+                    </View>
+                  ))}
+                </Animated.View>
+              </View>
             </GestureDetector>
             {canBrowseBundle && (
               <View style={styles.deckNavigation}>
@@ -183,11 +192,10 @@ export default function DeckPreviewSheet() {
                   accessibilityState={{ disabled: activeIndex <= 0 }}
                   disabled={activeIndex <= 0}
                   hitSlop={8}
-                  onPress={() => showAdjacentDeck(-1)}
-                  style={({ pressed }) => [
+                  onPress={() => showDeckAtIndex(activeIndex - 1)}
+                  style={[
                     styles.deckNavigationButton,
                     activeIndex <= 0 && styles.deckNavigationButtonDisabled,
-                    pressed && styles.pressed,
                   ]}
                 >
                   <Text
@@ -211,12 +219,11 @@ export default function DeckPreviewSheet() {
                   }}
                   disabled={activeIndex >= bundleDecks.length - 1}
                   hitSlop={8}
-                  onPress={() => showAdjacentDeck(1)}
-                  style={({ pressed }) => [
+                  onPress={() => showDeckAtIndex(activeIndex + 1)}
+                  style={[
                     styles.deckNavigationButton,
                     activeIndex >= bundleDecks.length - 1 &&
                       styles.deckNavigationButtonDisabled,
-                    pressed && styles.pressed,
                   ]}
                 >
                   <Text
@@ -287,6 +294,9 @@ const styles = StyleSheet.create({
     fontWeight: '300',
   },
   previewBody: { gap: spacing.xl },
+  carouselViewport: { overflow: 'hidden' },
+  carouselTrack: { flexDirection: 'row' },
+  carouselPage: { flexShrink: 0 },
   deckNavigation: {
     minHeight: 52,
     flexDirection: 'row',
@@ -343,5 +353,4 @@ const styles = StyleSheet.create({
   },
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   notFoundTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
-  pressed: { opacity: 0.72 },
 });
