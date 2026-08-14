@@ -45,6 +45,7 @@ function manifestFixture() {
           bytes: 78,
           url: 'https://api.example.test/content/thumbnails/a.webp',
         },
+        productIds: { apple: null, google: null },
       },
       {
         id: 'paid-deck',
@@ -69,6 +70,10 @@ function manifestFixture() {
           bytes: 78,
           url: 'https://api.example.test/content/thumbnails/b.webp',
         },
+        productIds: {
+          apple: 'com.cadelawless.whatzit.deck.paid_deck',
+          google: null,
+        },
       },
     ],
     bundles: [],
@@ -82,6 +87,10 @@ describe('catalog wire validation', () => {
     assert.equal(manifest.catalogRevision, 39);
     assert.equal(manifest.decks[0].content.url?.startsWith('https://'), true);
     assert.equal(manifest.decks[1].content.url, null);
+    assert.equal(
+      manifest.decks[1].productIds.apple,
+      'com.cadelawless.whatzit.deck.paid_deck',
+    );
   });
 
   it('rejects a public paid card-content URL', () => {

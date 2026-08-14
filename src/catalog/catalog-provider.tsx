@@ -23,7 +23,7 @@ import { synchronizeCatalog } from './catalog-sync';
 
 const SYNC_FRESHNESS_MS = 5 * 60 * 1000;
 
-export type CatalogProviderState =
+type CatalogProviderCoreState =
   | { status: 'loading'; catalog: CatalogSnapshot }
   | {
       status: 'ready';
@@ -32,6 +32,10 @@ export type CatalogProviderState =
       syncError?: Error;
     }
   | { status: 'error'; catalog: CatalogSnapshot; error: Error };
+
+export type CatalogProviderState = CatalogProviderCoreState & {
+  refreshCatalog: () => Promise<void>;
+};
 
 const bundledRepository = new BundledCatalogRepository();
 const bundledSnapshotPromise = bundledRepository.load();
@@ -43,7 +47,7 @@ void bundledSnapshotPromise.then((snapshot) => {
 const CatalogContext = createContext<CatalogProviderState | null>(null);
 
 export function CatalogProvider({ children }: PropsWithChildren) {
-  const [state, setState] = useState<CatalogProviderState | null>(() =>
+  const [state, setState] = useState<CatalogProviderCoreState | null>(() =>
     bundledSnapshot ? { status: 'loading', catalog: bundledSnapshot } : null,
   );
   const reportSyncError = useCallback((error: Error) => {
@@ -57,6 +61,17 @@ export function CatalogProvider({ children }: PropsWithChildren) {
           }
         : current,
     );
+  }, []);
+  const refreshCatalog = useCallback(async () => {
+    if (configuredCatalogSource() !== 'sqlite') return;
+    const repository = new SqliteCatalogRepository(await openCatalogDatabase());
+    const catalog = await repository.load();
+    setState((current) => {
+      if (!current) return current;
+      return current.status === 'ready'
+        ? { ...current, catalog }
+        : { status: 'ready', catalog, syncStatus: 'synced' };
+    });
   }, []);
 
   useEffect(() => {
@@ -162,7 +177,10 @@ export function CatalogProvider({ children }: PropsWithChildren) {
     };
   }, [reportSyncError]);
 
-  const value = useMemo(() => state, [state]);
+  const value = useMemo(
+    () => (state ? { ...state, refreshCatalog } : null),
+    [refreshCatalog, state],
+  );
   if (!value) return null;
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;
 }

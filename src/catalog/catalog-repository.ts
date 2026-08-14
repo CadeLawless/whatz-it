@@ -33,6 +33,7 @@ export class BundledCatalogRepository implements CatalogRepository {
         cardCount: metadata?.cardCount ?? deck.cards.length,
         cardContentVersion: metadata?.cardContentVersion ?? 1,
         ...(metadata?.coverImage ? { coverPath: metadata.coverImage } : {}),
+        ...(metadata?.storeProducts ? { storeProducts: metadata.storeProducts } : {}),
         installationStatus: deck.access === 'free' ? 'installed' : 'not_owned',
       };
     });
@@ -49,6 +50,7 @@ export class BundledCatalogRepository implements CatalogRepository {
         access: bundle.access,
         price: bundle.price,
         version: bundle.version ?? 1,
+        ...(bundle.storeProducts ? { storeProducts: bundle.storeProducts } : {}),
         deckIds: [...bundle.deckIds],
       })),
       deckOrders: bundledCatalog.deckOrders,
@@ -125,6 +127,13 @@ export class SqliteCatalogRepository implements CatalogRepository {
       ...(row.cover_path ? { coverPath: row.cover_path } : {}),
       ...(row.cover_uri ? { coverUri: row.cover_uri } : {}),
       installationStatus: row.installation_status,
+      ...(row.apple_product_id
+        ? {
+            storeProducts: {
+              apple: { productId: row.apple_product_id, status: 'available' as const },
+            },
+          }
+        : {}),
     }));
     const memberships = new Map<string, string[]>();
     for (const row of membershipRows) {
@@ -150,6 +159,13 @@ export class SqliteCatalogRepository implements CatalogRepository {
           ? {}
           : { price: row.price_minor_units / 100 }),
         version: row.bundle_version,
+        ...(row.apple_product_id
+          ? {
+              storeProducts: {
+                apple: { productId: row.apple_product_id, status: 'available' as const },
+              },
+            }
+          : {}),
         deckIds: memberships.get(row.bundle_id) ?? [],
       })),
       deckOrders,
@@ -210,6 +226,7 @@ type DeckRow = {
   cover_path: string | null;
   cover_uri: string | null;
   installation_status: CatalogDeck['installationStatus'];
+  apple_product_id: string | null;
 };
 type CardRow = {
   deck_id: string;
@@ -227,6 +244,7 @@ type BundleRow = {
   access: DeckAccess;
   price_minor_units: number | null;
   sort_order: number;
+  apple_product_id: string | null;
 };
 type MembershipRow = { bundle_id: string; deck_id: string; position: number };
 type OrderRow = { scope: DeckAccess; deck_id: string; position: number };

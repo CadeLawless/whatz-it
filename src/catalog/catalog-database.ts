@@ -66,14 +66,15 @@ async function insertSeed(database: SQLiteDatabase, seed: CatalogSeed) {
     database.prepareAsync(
       `INSERT INTO decks (
         deck_id, deck_version, card_content_version, title, description,
-        access, price_minor_units, tags_json, card_count, cover_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        access, price_minor_units, tags_json, card_count, cover_path,
+        apple_product_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     database.prepareAsync(
       `INSERT INTO bundles (
         bundle_id, bundle_version, title, description, access,
-        price_minor_units, sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        price_minor_units, sort_order, apple_product_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     database.prepareAsync(
       'INSERT INTO bundle_decks (bundle_id, deck_id, position) VALUES (?, ?, ?)',
@@ -107,6 +108,7 @@ async function insertSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         deck.tagsJson,
         deck.cardCount,
         deck.coverPath,
+        deck.appleProductId,
       ]);
     }
     for (const bundle of seed.bundles) {
@@ -118,6 +120,7 @@ async function insertSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         bundle.access,
         bundle.priceMinorUnits,
         bundle.sortOrder,
+        bundle.appleProductId,
       ]);
     }
     await executeRows(statements[2], seed.bundleDecks, (row) => [
@@ -177,9 +180,9 @@ async function mergeSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         access, price_minor_units, tags_json, card_count, cover_path,
         content_hash, content_bytes, content_url, cover_hash, cover_bytes,
         cover_url, thumbnail_hash, thumbnail_bytes, thumbnail_url,
-        lifecycle_status
+        apple_product_id, lifecycle_status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL,
-                NULL, NULL, NULL, NULL, NULL, 'active')
+                NULL, NULL, NULL, NULL, NULL, ?, 'active')
       ON CONFLICT(deck_id) DO UPDATE SET
         deck_version = excluded.deck_version,
         card_content_version = excluded.card_content_version,
@@ -199,13 +202,14 @@ async function mergeSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         thumbnail_hash = NULL,
         thumbnail_bytes = NULL,
         thumbnail_url = NULL,
+        apple_product_id = excluded.apple_product_id,
         lifecycle_status = 'active'`,
     ),
     database.prepareAsync(
       `INSERT INTO bundles (
         bundle_id, bundle_version, title, description, access,
-        price_minor_units, sort_order, lifecycle_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+        price_minor_units, sort_order, apple_product_id, lifecycle_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
       ON CONFLICT(bundle_id) DO UPDATE SET
         bundle_version = excluded.bundle_version,
         title = excluded.title,
@@ -213,6 +217,7 @@ async function mergeSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         access = excluded.access,
         price_minor_units = excluded.price_minor_units,
         sort_order = excluded.sort_order,
+        apple_product_id = excluded.apple_product_id,
         lifecycle_status = 'active'`,
     ),
     database.prepareAsync(
@@ -241,6 +246,7 @@ async function mergeSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         deck.tagsJson,
         deck.cardCount,
         deck.coverPath,
+        deck.appleProductId,
       ]);
     }
     for (const bundle of seed.bundles) {
@@ -252,6 +258,7 @@ async function mergeSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         bundle.access,
         bundle.priceMinorUnits,
         bundle.sortOrder,
+        bundle.appleProductId,
       ]);
     }
     await executeRows(statements[2], seed.bundleDecks, (row) => [

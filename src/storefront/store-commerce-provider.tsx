@@ -1,0 +1,265 @@
+import type { Purchase } from 'expo-iap';
+import { useIAP } from 'expo-iap';
+import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
+
+import { openCatalogDatabase } from '@/catalog/catalog-database';
+import { useCatalog } from '@/catalog/catalog-provider';
+
+import {
+  configuredCommerceApiBaseUrl,
+  fetchEntitlements,
+  registerInstallation,
+  type CommerceEntitlements,
+  verifyApplePurchase,
+} from './commerce-api';
+import { CommerceProvider, type CommerceAdapter } from './commerce-provider';
+import type { CommerceProductState, CommerceTarget } from './commerce-state';
+import { installEntitledDeck } from './entitled-deck-installer';
+import {
+  loadOrCreateInstallationIdentity,
+  type InstallationIdentity,
+} from './installation-identity';
+
+type OwnedProduct = CommerceEntitlements['products'][number];
+
+export function StoreCommerceProvider({ children }: PropsWithChildren) {
+  const { catalog, refreshCatalog } = useCatalog();
+  const apiBaseUrl = configuredCommerceApiBaseUrl();
+  const [identity, setIdentity] = useState<InstallationIdentity | null>(null);
+  const [ownedProducts, setOwnedProducts] = useState<OwnedProduct[]>([]);
+  const [operationStates, setOperationStates] = useState<Map<string, CommerceProductState>>(new Map());
+  const [serverReachable, setServerReachable] = useState(true);
+  const processedTransactions = useRef(new Set<string>());
+  const restoreMode = useRef(false);
+
+  const appleProducts = useMemo(() => {
+    const result = new Map<string, { kind: 'deck' | 'bundle'; id: string }>();
+    for (const deck of catalog.decks) {
+      const id = deck.storeProducts?.apple?.productId;
+      if (id) result.set(id, { kind: 'deck', id: deck.id });
+    }
+    for (const bundle of catalog.bundles) {
+      const id = bundle.storeProducts?.apple?.productId;
+      if (id) result.set(id, { kind: 'bundle', id: bundle.id });
+    }
+    return result;
+  }, [catalog]);
+
+  const setTargetState = useCallback((target: { kind: string; id: string }, state?: CommerceProductState) => {
+    const key = `${target.kind}:${target.id}`;
+    setOperationStates((current) => {
+      const next = new Map(current);
+      if (state) next.set(key, state);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const persistEntitlements = useCallback(async (entitlements: CommerceEntitlements) => {
+    const database = await openCatalogDatabase();
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.runAsync('DELETE FROM commerce_entitlements');
+      for (const product of entitlements.products) {
+        await transaction.runAsync(
+          `INSERT INTO commerce_entitlements (product_id, target_type, target_id, verified_at)
+           VALUES (?, ?, ?, ?)`,
+          product.productId,
+          product.kind,
+          product.targetId,
+          entitlements.verifiedAt,
+        );
+      }
+      await transaction.runAsync(
+        `INSERT INTO commerce_state (singleton_id, last_synced_at, last_error_code)
+         VALUES (1, ?, NULL)
+         ON CONFLICT(singleton_id) DO UPDATE SET
+           last_synced_at = excluded.last_synced_at, last_error_code = NULL`,
+        entitlements.verifiedAt,
+      );
+    });
+    setOwnedProducts(entitlements.products);
+    return database;
+  }, []);
+
+  const prepareEntitledDecks = useCallback(async (
+    entitlements: CommerceEntitlements,
+    currentIdentity: InstallationIdentity,
+  ) => {
+    if (!apiBaseUrl) return;
+    const database = await openCatalogDatabase();
+    for (const deckId of entitlements.deckIds) {
+      await installEntitledDeck(database, apiBaseUrl, currentIdentity, deckId);
+    }
+    await refreshCatalog();
+  }, [apiBaseUrl, refreshCatalog]);
+
+  const processPurchaseRef = useRef<(purchase: Purchase, reason: 'purchase' | 'restore') => Promise<void>>(async () => {});
+  const iap = useIAP({
+    onPurchaseSuccess: (purchase) => {
+      void processPurchaseRef.current(purchase, restoreMode.current ? 'restore' : 'purchase');
+    },
+    onPurchaseError: (error) => {
+      if (error.productId) {
+        const target = appleProducts.get(error.productId);
+        if (target) setTargetState(target);
+      }
+    },
+  });
+
+  const { connected, fetchProducts, finishTransaction, getAvailablePurchases, products, requestPurchase } = iap;
+  const prices = useMemo(
+    () => new Map(products.map((product) => [product.id, product.displayPrice])),
+    [products],
+  );
+
+  const processPurchase = useCallback(async (purchase: Purchase, reason: 'purchase' | 'restore') => {
+    if (!apiBaseUrl || !identity || Platform.OS !== 'ios') return;
+    const transactionKey = purchase.transactionId ?? purchase.id;
+    if (processedTransactions.current.has(transactionKey)) return;
+    if (purchase.purchaseState === 'pending') {
+      const target = appleProducts.get(purchase.productId);
+      if (target) setTargetState(target, { status: 'pending' });
+      return;
+    }
+    if (purchase.purchaseState !== 'purchased' || !purchase.purchaseToken) return;
+    processedTransactions.current.add(transactionKey);
+    const target = appleProducts.get(purchase.productId);
+    if (target) setTargetState(target, { status: 'verifying' });
+    try {
+      const entitlements = await verifyApplePurchase(
+        apiBaseUrl,
+        identity,
+        purchase.purchaseToken,
+        reason,
+      );
+      await persistEntitlements(entitlements);
+      await finishTransaction({ purchase, isConsumable: false });
+      if (target) setTargetState(target, { status: 'preparing' });
+      await prepareEntitledDecks(entitlements, identity);
+      if (target) setTargetState(target);
+      setServerReachable(true);
+    } catch {
+      processedTransactions.current.delete(transactionKey);
+      if (target) {
+        setTargetState(target, {
+          status: 'retry',
+          message: 'Your transaction is safe. Reconnect and retry preparing this purchase.',
+        });
+      }
+    }
+  }, [apiBaseUrl, appleProducts, finishTransaction, identity, persistEntitlements, prepareEntitledDecks, setTargetState]);
+  useEffect(() => {
+    processPurchaseRef.current = processPurchase;
+  }, [processPurchase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const database = await openCatalogDatabase();
+      const local = await database.getAllAsync<OwnedProduct>(
+        'SELECT product_id AS productId, target_type AS kind, target_id AS targetId FROM commerce_entitlements',
+      );
+      if (!cancelled) setOwnedProducts(local);
+      if (!apiBaseUrl || Platform.OS !== 'ios') return;
+      const currentIdentity = await loadOrCreateInstallationIdentity();
+      if (cancelled) return;
+      setIdentity(currentIdentity);
+      try {
+        await registerInstallation(apiBaseUrl, currentIdentity);
+        const entitlements = await fetchEntitlements(apiBaseUrl, currentIdentity);
+        if (cancelled) return;
+        await persistEntitlements(entitlements);
+        await prepareEntitledDecks(entitlements, currentIdentity);
+        setServerReachable(true);
+      } catch {
+        if (!cancelled) setServerReachable(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [apiBaseUrl, persistEntitlements, prepareEntitledDecks]);
+
+  useEffect(() => {
+    if (!connected || Platform.OS !== 'ios' || appleProducts.size === 0) return;
+    void fetchProducts({ skus: [...appleProducts.keys()], type: 'in-app' });
+  }, [appleProducts, connected, fetchProducts]);
+
+  const targetProductId = useCallback((target: CommerceTarget) => {
+    const record = target.kind === 'deck'
+      ? catalog.getDeckById(target.id)
+      : catalog.getBundleById(target.id);
+    return record?.storeProducts?.apple?.productId;
+  }, [catalog]);
+
+  const getProductState = useCallback((target: CommerceTarget): CommerceProductState => {
+    if (target.access === 'free') return { status: 'owned', source: 'included' };
+    const activeOperation = operationStates.get(`${target.kind}:${target.id}`);
+    if (activeOperation) return activeOperation;
+    const direct = ownedProducts.some((product) => product.kind === target.kind && product.targetId === target.id);
+    if (direct) return { status: 'owned', source: 'purchase' };
+    if (target.kind === 'deck') {
+      const viaBundle = ownedProducts.some(
+        (product) => product.kind === 'bundle' && catalog.getBundleById(product.targetId)?.deckIds.includes(target.id),
+      );
+      if (viaBundle) return { status: 'owned', source: 'bundle' };
+    }
+    const productId = targetProductId(target);
+    if (!productId || Platform.OS !== 'ios' || !apiBaseUrl) {
+      return { status: 'unavailable', reason: 'not_configured' };
+    }
+    const price = prices.get(productId);
+    if (!serverReachable) return { status: 'offline', ...(price ? { lastKnownPrice: price } : {}) };
+    if (!connected || !price) return { status: 'loading' };
+    return { status: 'available', localizedPrice: price };
+  }, [apiBaseUrl, catalog, connected, operationStates, ownedProducts, prices, serverReachable, targetProductId]);
+
+  const purchase = useCallback(async (target: CommerceTarget) => {
+    const productId = targetProductId(target);
+    if (!productId || !identity || Platform.OS !== 'ios') return;
+    setTargetState(target, { status: 'purchasing', localizedPrice: prices.get(productId) ?? '' });
+    try {
+      restoreMode.current = false;
+      await requestPurchase({
+        request: { apple: { sku: productId, appAccountToken: identity.appAccountToken } },
+        type: 'in-app',
+      });
+    } catch {
+      setTargetState(target);
+    }
+  }, [identity, prices, requestPurchase, setTargetState, targetProductId]);
+
+  const restorePurchases = useCallback(async () => {
+    if (!identity || Platform.OS !== 'ios') return;
+    restoreMode.current = true;
+    try {
+      await getAvailablePurchases({ alsoPublishToEventListenerIOS: true });
+    } catch {
+      // The UI remains usable; the next restore attempt can retry the store.
+    } finally {
+      restoreMode.current = false;
+    }
+  }, [getAvailablePurchases, identity]);
+
+  const retryPreparation = useCallback(async (target: CommerceTarget) => {
+    if (!identity || !apiBaseUrl) return;
+    setTargetState(target, { status: 'preparing' });
+    try {
+      const entitlements = await fetchEntitlements(apiBaseUrl, identity);
+      await persistEntitlements(entitlements);
+      await prepareEntitledDecks(entitlements, identity);
+      setTargetState(target);
+      setServerReachable(true);
+    } catch {
+      setTargetState(target, { status: 'retry' });
+    }
+  }, [apiBaseUrl, identity, persistEntitlements, prepareEntitledDecks, setTargetState]);
+
+  const adapter = useMemo<CommerceAdapter>(() => ({
+    getProductState,
+    purchase,
+    restorePurchases,
+    retryPreparation,
+  }), [getProductState, purchase, restorePurchases, retryPreparation]);
+
+  return <CommerceProvider adapter={adapter}>{children}</CommerceProvider>;
+}

@@ -209,6 +209,7 @@ function manifestFixture() {
           bytes: 78,
           url: 'https://api.example.test/content/starter-deck-thumbnail.webp',
         },
+        productIds: { apple: null, google: null },
       },
       {
         id: 'paid-deck',
@@ -238,6 +239,10 @@ function manifestFixture() {
           bytes: 78,
           url: 'https://api.example.test/content/paid-deck-thumbnail.webp',
         },
+        productIds: {
+          apple: 'com.cadelawless.whatzit.deck.paid_deck',
+          google: null,
+        },
       },
     ],
     bundles: [
@@ -251,6 +256,10 @@ function manifestFixture() {
         status: 'active' as const,
         bundleVersion: 4,
         deckIds: ['starter-deck', 'paid-deck'],
+        productIds: {
+          apple: 'com.cadelawless.whatzit.bundle.all_decks',
+          google: null,
+        },
       },
     ],
     deckOrders: { free: ['starter-deck'], paid: ['paid-deck'] },

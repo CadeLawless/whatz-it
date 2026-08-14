@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const CATALOG_DATABASE_NAME = 'whatz-it-catalog.db';
-export const CATALOG_DATABASE_VERSION = 2;
+export const CATALOG_DATABASE_VERSION = 3;
 
 const CREATE_SCHEMA_SQL = `
 CREATE TABLE catalog_state (
@@ -36,6 +36,7 @@ CREATE TABLE decks (
   thumbnail_hash TEXT,
   thumbnail_bytes INTEGER,
   thumbnail_url TEXT,
+  apple_product_id TEXT,
   lifecycle_status TEXT NOT NULL DEFAULT 'active'
     CHECK (lifecycle_status IN ('active', 'retired'))
 );
@@ -48,6 +49,7 @@ CREATE TABLE bundles (
   access TEXT NOT NULL CHECK (access IN ('free', 'paid')),
   price_minor_units INTEGER,
   sort_order INTEGER NOT NULL,
+  apple_product_id TEXT,
   lifecycle_status TEXT NOT NULL DEFAULT 'active'
     CHECK (lifecycle_status IN ('active', 'retired'))
 );
@@ -99,6 +101,19 @@ CREATE TABLE media_files (
   last_verified_at TEXT
 );
 
+CREATE TABLE commerce_entitlements (
+  product_id TEXT PRIMARY KEY NOT NULL,
+  target_type TEXT NOT NULL CHECK (target_type IN ('deck', 'bundle')),
+  target_id TEXT NOT NULL,
+  verified_at TEXT NOT NULL
+);
+
+CREATE TABLE commerce_state (
+  singleton_id INTEGER PRIMARY KEY NOT NULL CHECK (singleton_id = 1),
+  last_synced_at TEXT,
+  last_error_code TEXT
+);
+
 CREATE INDEX idx_decks_access_title ON decks(access, title, deck_id);
 CREATE INDEX idx_cards_deck_position ON cards(deck_id, card_content_version, position);
 CREATE INDEX idx_bundle_decks_deck ON bundle_decks(deck_id, bundle_id);
@@ -137,6 +152,26 @@ export async function migrateCatalogDatabase(database: SQLiteDatabase) {
         ALTER TABLE decks ADD COLUMN thumbnail_bytes INTEGER;
         ALTER TABLE decks ADD COLUMN thumbnail_url TEXT;
         PRAGMA user_version = 2;
+      `);
+    });
+  }
+  if (currentVersion <= 2 && currentVersion !== 0) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(`
+        ALTER TABLE decks ADD COLUMN apple_product_id TEXT;
+        ALTER TABLE bundles ADD COLUMN apple_product_id TEXT;
+        CREATE TABLE commerce_entitlements (
+          product_id TEXT PRIMARY KEY NOT NULL,
+          target_type TEXT NOT NULL CHECK (target_type IN ('deck', 'bundle')),
+          target_id TEXT NOT NULL,
+          verified_at TEXT NOT NULL
+        );
+        CREATE TABLE commerce_state (
+          singleton_id INTEGER PRIMARY KEY NOT NULL CHECK (singleton_id = 1),
+          last_synced_at TEXT,
+          last_error_code TEXT
+        );
+        PRAGMA user_version = 3;
       `);
     });
   }

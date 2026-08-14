@@ -342,7 +342,9 @@ export default function DeckLibraryScreen() {
               onExpansionComplete={handleDecksExpanded}
             >
               <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
-                {catalog.freeDecks.map((deck) => (
+                {[...catalog.freeDecks, ...catalog.paidDecks]
+                  .filter((deck) => deck.installationStatus === 'installed')
+                  .map((deck) => (
                   <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
                     <DeckCard deck={deck} />
                   </View>

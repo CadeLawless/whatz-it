@@ -183,6 +183,14 @@ describe('Phase 3 catalog acceptance', () => {
       assert.equal(storedFiles.size, 4);
       assert.equal(
         harness.database
+          .prepare(
+            "SELECT apple_product_id FROM decks WHERE deck_id = 'accents-and-impressions'",
+          )
+          .get()?.apple_product_id,
+        'com.cadelawless.whatzit.deck.accents_and_impressions',
+      );
+      assert.equal(
+        harness.database
           .prepare("SELECT COUNT(*) AS count FROM media_files WHERE status = 'ready'")
           .get()?.count,
         4,
@@ -332,6 +340,7 @@ function updateFixture() {
           bytes: 5,
           url: `https://example.test/thumbnails/${thumbnailHash}.webp`,
         },
+        productIds: { apple: null, google: null },
       },
     ],
     bundles: [],
@@ -402,6 +411,7 @@ function acceptanceFixture(revision: number) {
         },
         cover: reference(media.freeCover, 'free-cover'),
         thumbnail: reference(media.freeThumbnail, 'free-thumbnail'),
+        productIds: { apple: null, google: null },
       },
       {
         id: 'accents-and-impressions',
@@ -423,6 +433,10 @@ function acceptanceFixture(revision: number) {
         },
         cover: reference(media.paidCover, 'paid-cover'),
         thumbnail: reference(media.paidThumbnail, 'paid-thumbnail'),
+        productIds: {
+          apple: 'com.cadelawless.whatzit.deck.accents_and_impressions',
+          google: null,
+        },
       },
     ],
     bundles: [],

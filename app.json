@@ -56,6 +56,8 @@
     },
     "plugins": [
       "expo-dev-client",
+      "expo-iap",
+      "expo-secure-store",
       [
         "expo-sensors",
         {

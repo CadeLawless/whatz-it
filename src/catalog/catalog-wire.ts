@@ -13,6 +13,11 @@ export type CatalogContentReference = {
   protected: boolean;
 };
 
+export type CatalogProductIds = {
+  apple: string | null;
+  google: string | null;
+};
+
 export type CatalogManifestDeck = {
   id: string;
   order: number;
@@ -28,6 +33,7 @@ export type CatalogManifestDeck = {
   content: CatalogContentReference;
   cover: CatalogArtifactReference;
   thumbnail: CatalogArtifactReference;
+  productIds: CatalogProductIds;
 };
 
 export type CatalogManifestBundle = {
@@ -40,6 +46,7 @@ export type CatalogManifestBundle = {
   status: 'active' | 'retired';
   bundleVersion: number;
   deckIds: string[];
+  productIds: CatalogProductIds;
 };
 
 export type CatalogManifest = {
@@ -131,6 +138,7 @@ export function parseCatalogManifest(value: unknown): CatalogManifest {
         objectValue(deck.thumbnail, `${path}.thumbnail`),
         `${path}.thumbnail`,
       ),
+      productIds: productIdsValue(deck.productIds, `${path}.productIds`),
     } satisfies CatalogManifestDeck;
   });
 
@@ -167,6 +175,7 @@ export function parseCatalogManifest(value: unknown): CatalogManifest {
       status,
       bundleVersion: positiveInteger(bundle.bundleVersion, `${path}.bundleVersion`),
       deckIds: deckReferences,
+      productIds: productIdsValue(bundle.productIds, `${path}.productIds`),
     } satisfies CatalogManifestBundle;
   });
   const orderObject = objectValue(root.deckOrders, 'deckOrders');
@@ -350,6 +359,21 @@ function nullablePrice(value: unknown, path: string): number | null {
     throw new Error(`${path} must be null or a non-negative two-decimal price.`);
   }
   return value;
+}
+function productIdsValue(value: unknown, path: string): CatalogProductIds {
+  const products = objectValue(value, path);
+  return {
+    apple: nullableProductId(products.apple, `${path}.apple`),
+    google: nullableProductId(products.google, `${path}.google`),
+  };
+}
+function nullableProductId(value: unknown, path: string): string | null {
+  if (value === null) return null;
+  const result = stringValue(value, path);
+  if (!/^[A-Za-z0-9._-]{1,100}$/.test(result)) {
+    throw new Error(`${path} is not a valid store product ID.`);
+  }
+  return result;
 }
 function nullableUrl(value: unknown, path: string): string | null {
   if (value === null) return null;

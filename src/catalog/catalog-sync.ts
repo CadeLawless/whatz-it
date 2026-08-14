@@ -230,8 +230,9 @@ export async function applyPreparedCatalog(
           access, price_minor_units, tags_json, card_count,
           content_hash, content_bytes, content_url,
           cover_hash, cover_bytes, cover_url,
-          thumbnail_hash, thumbnail_bytes, thumbnail_url, lifecycle_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          thumbnail_hash, thumbnail_bytes, thumbnail_url, apple_product_id,
+          lifecycle_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(deck_id) DO UPDATE SET
           deck_version = excluded.deck_version,
           card_content_version = excluded.card_content_version,
@@ -250,6 +251,7 @@ export async function applyPreparedCatalog(
           thumbnail_hash = excluded.thumbnail_hash,
           thumbnail_bytes = excluded.thumbnail_bytes,
           thumbnail_url = excluded.thumbnail_url,
+          apple_product_id = excluded.apple_product_id,
           lifecycle_status = excluded.lifecycle_status`,
         deck.id,
         deck.deckVersion,
@@ -269,6 +271,7 @@ export async function applyPreparedCatalog(
         deck.thumbnail.hash,
         deck.thumbnail.bytes,
         deck.thumbnail.url,
+        deck.productIds.apple,
         deck.status,
       );
 
@@ -318,8 +321,8 @@ export async function applyPreparedCatalog(
       await transaction.runAsync(
         `INSERT INTO bundles (
           bundle_id, bundle_version, title, description, access,
-          price_minor_units, sort_order, lifecycle_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          price_minor_units, sort_order, apple_product_id, lifecycle_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(bundle_id) DO UPDATE SET
           bundle_version = excluded.bundle_version,
           title = excluded.title,
@@ -327,6 +330,7 @@ export async function applyPreparedCatalog(
           access = excluded.access,
           price_minor_units = excluded.price_minor_units,
           sort_order = excluded.sort_order,
+          apple_product_id = excluded.apple_product_id,
           lifecycle_status = excluded.lifecycle_status`,
         bundle.id,
         bundle.bundleVersion,
@@ -335,6 +339,7 @@ export async function applyPreparedCatalog(
         bundle.access,
         toMinorUnits(bundle.price),
         bundle.order,
+        bundle.productIds.apple,
         bundle.status,
       );
       for (const [position, deckId] of bundle.deckIds.entries()) {
@@ -381,7 +386,7 @@ export async function applyPreparedCatalog(
     }
     await transaction.runAsync(
       `UPDATE catalog_state SET
-        local_schema_version = 2,
+        local_schema_version = 3,
         catalog_schema_version = ?,
         catalog_revision = ?,
         etag = ?,
@@ -420,8 +425,9 @@ export async function downloadVerified(
   expectedHash: string,
   signal?: AbortSignal,
   runtime?: CatalogDownloadRuntime,
+  headers?: HeadersInit,
 ) {
-  const response = await request(url, { signal }, runtime);
+  const response = await request(url, { signal, headers }, runtime);
   if (!response.ok) {
     throw new CatalogSyncError('network_error', `Artifact request failed with HTTP ${response.status}.`);
   }

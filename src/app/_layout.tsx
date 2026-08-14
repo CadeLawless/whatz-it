@@ -11,6 +11,7 @@ import { CatalogProvider, useCatalog } from '@/catalog/catalog-provider';
 import { RoundProvider } from '@/game/round-context';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';
+import { StoreCommerceProvider } from '@/storefront/store-commerce-provider';
 import {
   consumeSettingsReturnRequest,
   settingsPermissionsChanged,
@@ -31,7 +32,9 @@ void SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   return (
     <CatalogProvider>
-      <RootLayoutContent />
+      <StoreCommerceProvider>
+        <RootLayoutContent />
+      </StoreCommerceProvider>
     </CatalogProvider>
   );
 }

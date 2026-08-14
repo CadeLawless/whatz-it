@@ -1,4 +1,4 @@
-import type { Card, DeckAccess } from '@/types/deck';
+import type { Card, DeckAccess, StoreProductMappings } from '@/types/deck';
 
 export type CatalogSeedSource = {
   schemaVersion: 5;
@@ -16,6 +16,7 @@ export type CatalogSeedSource = {
     tags: string[];
     access: DeckAccess;
     price?: number;
+    storeProducts?: StoreProductMappings;
     cards: Card[];
   }[];
   bundles: {
@@ -26,6 +27,7 @@ export type CatalogSeedSource = {
     access: DeckAccess;
     price?: number;
     version?: number;
+    storeProducts?: StoreProductMappings;
     deckIds: string[];
   }[];
   deckOrders: { free: string[]; paid: string[] };
@@ -51,6 +53,9 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
       tagsJson: JSON.stringify(deck.tags),
       cardCount: deck.cardCount ?? deck.cards.length,
       coverPath: deck.coverImage || null,
+      appleProductId: deck.storeProducts?.apple?.status === 'available'
+        ? deck.storeProducts.apple.productId
+        : null,
     };
   });
 
@@ -65,6 +70,9 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
       access: bundle.access,
       priceMinorUnits: toMinorUnits(bundle.price),
       sortOrder: bundle.order,
+      appleProductId: bundle.storeProducts?.apple?.status === 'available'
+        ? bundle.storeProducts.apple.productId
+        : null,
     };
   });
 
@@ -109,7 +117,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
 
   return {
     state: {
-      localSchemaVersion: 2,
+      localSchemaVersion: 3,
       catalogSchemaVersion: catalog.schemaVersion,
       catalogRevision: catalog.revision,
       source: 'bundled' as const,

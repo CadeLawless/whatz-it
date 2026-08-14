@@ -1023,6 +1023,15 @@ Exit criterion: test purchases and restores produce correct, auditable effective
 entitlements without granting pending, cancelled, forged, or duplicate
 transactions.
 
+Implementation note (2026-08-14): the Apple-first slice uses a random
+keychain-held installation credential and app-account token, StoreKit 2 signed
+transactions, and an authenticated App Store Server API lookup. The mobile
+adapter finishes a non-consumable only after the server grant. It immediately
+continues into the smallest Phase 5 boundary—authenticated hash-verified card
+installation—because an owned-but-not-offline-ready success state would violate
+the product's core reconnect-once requirement. Production and the legacy Deck
+Manager path remain unchanged until the staging purchase/restore drill passes.
+
 ### Phase 5: Invisible owned-content installation
 
 - Connect purchase completion and entitlement sync to the installation queue.
@@ -1185,8 +1194,8 @@ resolved:
 ### Apple-first Phase 4 decisions recorded 2026-08-14
 
 - Use `expo-iap` from the current OpenIAP project for the Expo SDK 57 native
-  client. Install and rebuild the development client only when the backend and
-  App Store sandbox product are ready for an end-to-end purchase drill.
+  client. It is installed for the staging purchase slice and requires a rebuilt
+  development client for the end-to-end sandbox drill.
 - Apple products are non-consumables named
   `com.cadelawless.whatzit.deck.<deck_id>` and
   `com.cadelawless.whatzit.bundle.<bundle_id>`. Hyphens in stable catalog IDs

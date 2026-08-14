@@ -35,6 +35,7 @@ type BaselineDeck = {
   tags: string[];
   access: 'free' | 'paid';
   price?: number;
+  storeProducts?: { apple?: { productId: string; status: 'available' } };
   cards: DeckContentArtifact['cards'];
 };
 
@@ -51,6 +52,7 @@ type BaselineCatalog = {
     access: 'free' | 'paid';
     price?: number;
     version: number;
+    storeProducts?: { apple?: { productId: string; status: 'available' } };
     deckIds: string[];
   }[];
   deckOrders: { free: string[]; paid: string[] };
@@ -150,6 +152,9 @@ export function buildBaselineCatalog(
         tags: [...deck.tags],
         access: deck.access,
         ...(deck.price === null ? {} : { price: deck.price }),
+        ...(deck.productIds.apple
+          ? { storeProducts: { apple: { productId: deck.productIds.apple, status: 'available' as const } } }
+          : {}),
         cards: verifiedArtifact?.cards.map((card) => ({ ...card })) ?? [],
       };
     });
@@ -163,6 +168,9 @@ export function buildBaselineCatalog(
       access: bundle.access,
       ...(bundle.price === null ? {} : { price: bundle.price }),
       version: bundle.bundleVersion,
+      ...(bundle.productIds.apple
+        ? { storeProducts: { apple: { productId: bundle.productIds.apple, status: 'available' as const } } }
+        : {}),
       deckIds: bundle.deckIds.filter((deckId) => activeDeckIds.has(deckId)),
     }));
   return {
