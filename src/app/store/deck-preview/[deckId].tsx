@@ -252,6 +252,9 @@ export default function DeckPreviewSheet() {
                   <Text style={styles.purchaseButtonText}>
                     PURCHASE THIS DECK ONLY
                   </Text>
+                  <Text numberOfLines={1} style={styles.purchaseDeckTitle}>
+                    {deck.title}
+                  </Text>
                 </View>
                 {bundle && (
                   <View
@@ -356,9 +359,10 @@ const styles = StyleSheet.create({
   description: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   purchaseArea: { gap: spacing.sm },
   purchaseButton: {
-    minHeight: 48,
+    minHeight: 58,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 2,
     borderRadius: radius.pill,
     borderWidth: 2,
     borderColor: '#CBD5E1',
@@ -369,6 +373,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.7,
+  },
+  purchaseDeckTitle: {
+    color: '#64748B',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   bundlePurchaseButton: {
     minHeight: 48,
