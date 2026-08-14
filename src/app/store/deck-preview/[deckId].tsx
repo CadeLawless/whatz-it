@@ -51,10 +51,11 @@ export default function DeckPreviewSheet() {
             onBack={() => router.back()}
             showBackButton={false}
           />
-          <View style={styles.copy}>
-            {bundle && <Text style={styles.bundleName}>From {bundle.title}</Text>}
-            <Text style={styles.cardCount}>{deck.cardCount} CARDS</Text>
-          </View>
+          {bundle && (
+            <View style={styles.copy}>
+              <Text style={styles.bundleName}>From {bundle.title}</Text>
+            </View>
+          )}
           {deck.access === 'paid' && (
             <View style={styles.purchaseArea}>
               <View
@@ -108,12 +109,6 @@ const styles = StyleSheet.create({
   copy: { gap: 10 },
   bundleName: { color: colors.muted, fontSize: 13, fontWeight: '700' },
   description: { color: colors.muted, fontSize: 15, lineHeight: 22 },
-  cardCount: {
-    color: colors.play,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-  },
   purchaseArea: { gap: spacing.sm },
   purchaseButton: {
     minHeight: 48,

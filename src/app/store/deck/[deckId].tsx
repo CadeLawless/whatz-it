@@ -60,10 +60,6 @@ export default function StoreDeckDetailsScreen() {
           />
 
           <View style={styles.copy}>
-            <View style={styles.metadata}>
-              <Text style={styles.metadataText}>{deck.cardCount} CARDS</Text>
-            </View>
-
             {bundles.length > 0 && (
               <Pressable
                 accessibilityHint="Shows every bundle that includes this deck"
@@ -110,16 +106,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   copy: { gap: 13, marginTop: spacing.xl },
-  metadata: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  metadataText: {
-    color: '#2563EB',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-  },
   seeBundlesButton: {
     minHeight: 44,
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
