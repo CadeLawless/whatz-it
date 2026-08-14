@@ -266,9 +266,7 @@ export default function DeckPreviewSheet() {
                   </View>
                 )}
                 <Text style={styles.purchaseNote}>
-                  Choose {deck.title} by itself, or purchase every deck in{' '}
-                  {bundle?.title ?? 'the full bundle'}. Secure in-app purchasing
-                  is coming soon.
+                  Secure in-app purchasing is coming soon.
                 </Text>
               </View>
             )}
