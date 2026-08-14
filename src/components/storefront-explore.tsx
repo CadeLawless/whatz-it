@@ -578,12 +578,12 @@ function DeckBrowseCard({ deck, onPress }: { deck: CatalogDeckSummary; onPress: 
       style={({ pressed }) => [styles.deckCard, pressed && styles.cardPressed]}
     >
       <View style={styles.deckCover}>
-        {deck.thumbnailUri || deck.coverUri || deck.coverImage ? (
+        {deck.coverUri || deck.thumbnailUri || deck.coverImage ? (
           <Image
             accessibilityLabel={deck.title}
             cachePolicy="memory-disk"
             contentFit="cover"
-            source={deck.thumbnailUri || deck.coverUri || deck.coverImage}
+            source={deck.coverUri || deck.thumbnailUri || deck.coverImage}
             style={StyleSheet.absoluteFill}
           />
         ) : (
