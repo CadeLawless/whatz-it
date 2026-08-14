@@ -145,7 +145,7 @@ export function StorefrontExplore({
     setSearchFocused(false);
     setSection(nextSection);
     if (nextSection === 'bundles') setSelectedTags([]);
-    onBrowseFocus?.(Math.max(0, tabsOffset - 18));
+    onBrowseFocus?.(tabsOffset - 18);
   };
 
   const loadMore = async () => {
@@ -171,12 +171,6 @@ export function StorefrontExplore({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.eyebrow}>EXPLORE</Text>
-      <Text style={styles.title}>Find your next favorite deck</Text>
-      <Text style={styles.intro}>
-        Browse the latest catalog even when you are offline. Purchases will be added in a later phase.
-      </Text>
-
       <View
         accessibilityRole="tablist"
         onLayout={(event) => setTabsOffset(event.nativeEvent.layout.y)}
@@ -415,9 +409,17 @@ function ExploreTab({ active, label, onPress }: { active: boolean; label: string
       accessibilityRole="tab"
       accessibilityState={{ selected: active }}
       onPress={onPress}
-      style={({ pressed }) => [styles.sectionTab, active && styles.sectionTabActive, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.sectionTab, pressed && styles.pressed]}
     >
       <Text style={[styles.sectionTabText, active && styles.sectionTabTextActive]}>{label}</Text>
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[
+          styles.sectionTabIndicator,
+          active && styles.sectionTabIndicatorActive,
+        ]}
+      />
     </Pressable>
   );
 }
@@ -523,15 +525,31 @@ function EmptyResults({ search, type }: { search: string; type: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 18, paddingTop: 4 },
-  eyebrow: { color: '#459EFE', fontSize: 14, fontWeight: '900', letterSpacing: 1.1 },
-  title: { color: '#111827', fontSize: 28, lineHeight: 32, fontWeight: '900' },
-  intro: { color: '#64748B', fontSize: 15, lineHeight: 22 },
-  sectionControl: { flexDirection: 'row', gap: 6, padding: 5, borderRadius: 20, backgroundColor: '#E8EEF5' },
-  sectionTab: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 16 },
-  sectionTabActive: { backgroundColor: '#FFFFFF', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.12)' },
+  container: { gap: 14 },
+  sectionControl: {
+    flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#CBD5E1',
+  },
+  sectionTab: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
   sectionTabText: { color: '#64748B', fontSize: 12, fontWeight: '900', letterSpacing: 0.6 },
   sectionTabTextActive: { color: '#2563EB' },
+  sectionTabIndicator: {
+    width: 64,
+    height: 3,
+    position: 'absolute',
+    bottom: -StyleSheet.hairlineWidth,
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    backgroundColor: 'transparent',
+  },
+  sectionTabIndicatorActive: { backgroundColor: '#459EFE' },
   searchField: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 15, borderWidth: 1, borderColor: '#DCE5EF', borderRadius: 18, backgroundColor: '#FFFFFF' },
   searchIcon: { color: '#64748B', fontSize: 25, marginTop: -4 },
   searchInput: { flex: 1, color: '#111827', fontSize: 15, paddingVertical: 14 },

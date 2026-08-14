@@ -690,7 +690,13 @@ function HomeModeControl({
   onChange: (mode: 'my-decks' | 'explore') => void;
 }) {
   return (
-    <View accessibilityRole="tablist" style={styles.homeModeControl}>
+    <View
+      accessibilityRole="tablist"
+      style={[
+        styles.homeModeControl,
+        mode === 'explore' && styles.homeModeControlExplore,
+      ]}
+    >
       <HomeModeTab
         active={mode === 'my-decks'}
         label="MY DECKS"
@@ -764,6 +770,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: '#DCE5EF',
   },
+  homeModeControlExplore: { marginBottom: 14 },
   homeModeTab: {
     flex: 1,
     minHeight: 44,
