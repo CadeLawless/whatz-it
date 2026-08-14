@@ -208,7 +208,7 @@ function RootLayoutContent() {
             contentStyle: { backgroundColor: colors.surface },
             headerShown: false,
             presentation: 'formSheet',
-            sheetAllowedDetents: [0.95],
+            sheetAllowedDetents: [1],
             sheetGrabberVisible: true,
             title: 'Deck preview',
           }}
