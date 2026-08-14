@@ -72,12 +72,16 @@ export class SqliteCatalogRepository implements CatalogRepository {
       await Promise.all([
         this.database.getAllAsync<DeckRow>(
           `SELECT d.*, i.status AS installation_status,
-                  cover_media.local_uri AS cover_uri
+                  cover_media.local_uri AS cover_uri,
+                  thumbnail_media.local_uri AS thumbnail_uri
            FROM decks d
            JOIN deck_installations i ON i.deck_id = d.deck_id
            LEFT JOIN media_files cover_media
-             ON cover_media.content_hash = d.cover_hash
+            ON cover_media.content_hash = d.cover_hash
             AND cover_media.status = 'ready'
+           LEFT JOIN media_files thumbnail_media
+             ON thumbnail_media.content_hash = d.thumbnail_hash
+            AND thumbnail_media.status = 'ready'
            WHERE d.lifecycle_status = 'active'
            ORDER BY d.title COLLATE NOCASE, d.deck_id`,
         ),
@@ -126,6 +130,9 @@ export class SqliteCatalogRepository implements CatalogRepository {
       cardContentVersion: row.card_content_version,
       ...(row.cover_path ? { coverPath: row.cover_path } : {}),
       ...(row.cover_uri ? { coverUri: row.cover_uri } : {}),
+      ...(row.cover_url ? { coverUrl: row.cover_url } : {}),
+      ...(row.thumbnail_uri ? { thumbnailUri: row.thumbnail_uri } : {}),
+      ...(row.thumbnail_url ? { thumbnailUrl: row.thumbnail_url } : {}),
       installationStatus: row.installation_status,
       ...(row.apple_product_id
         ? {
@@ -225,6 +232,9 @@ type DeckRow = {
   card_count: number;
   cover_path: string | null;
   cover_uri: string | null;
+  cover_url: string | null;
+  thumbnail_uri: string | null;
+  thumbnail_url: string | null;
   installation_status: CatalogDeck['installationStatus'];
   apple_product_id: string | null;
 };

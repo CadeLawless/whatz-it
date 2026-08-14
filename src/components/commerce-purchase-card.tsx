@@ -15,6 +15,7 @@ import {
 } from '@/storefront/commerce-state';
 
 type CommercePurchaseCardProps = {
+  onOwned?: () => void;
   onPurchase?: () => void;
   onRetry?: () => void;
   state: CommerceProductState;
@@ -23,6 +24,7 @@ type CommercePurchaseCardProps = {
 };
 
 export function CommercePurchaseCard({
+  onOwned,
   onPurchase,
   onRetry,
   state,
@@ -31,12 +33,20 @@ export function CommercePurchaseCard({
 }: CommercePurchaseCardProps) {
   const presentation = commercePresentation(state, target);
   const onPress =
-    presentation.action === 'purchase'
+    state.status === 'owned' && onOwned
+      ? onOwned
+      : presentation.action === 'purchase'
       ? onPurchase
       : presentation.action === 'retry'
         ? onRetry
         : undefined;
   const disabled = onPress === undefined;
+  const buttonLabel =
+    state.status === 'owned' && onOwned
+      ? target.kind === 'deck'
+        ? 'PLAY DECK'
+        : 'VIEW BUNDLE'
+      : presentation.buttonLabel;
 
   return (
     <View
@@ -46,7 +56,7 @@ export function CommercePurchaseCard({
       <Text style={styles.title}>{presentation.title}</Text>
       <Text style={styles.copy}>{presentation.copy}</Text>
       <Pressable
-        accessibilityLabel={presentation.buttonLabel}
+        accessibilityLabel={buttonLabel}
         accessibilityRole="button"
         accessibilityState={{ busy: presentation.busy, disabled }}
         disabled={disabled}
@@ -58,7 +68,7 @@ export function CommercePurchaseCard({
           pressed && !disabled && styles.pressed,
         ]}
       >
-        <Text style={styles.buttonText}>{presentation.buttonLabel}</Text>
+        <Text style={styles.buttonText}>{buttonLabel}</Text>
       </Pressable>
     </View>
   );

@@ -136,7 +136,8 @@ export class SqliteCatalogDiscoveryRepository
     const rows = await this.database.getAllAsync<DeckSummaryRow>(
       `SELECT d.deck_id, d.deck_version, d.card_content_version,
               d.title, d.description, d.access, d.price_minor_units,
-              d.tags_json, d.card_count, d.cover_path,
+              d.tags_json, d.card_count, d.cover_path, d.cover_url,
+              d.thumbnail_url,
               i.status AS installation_status,
               cover_media.local_uri AS cover_uri,
               thumbnail_media.local_uri AS thumbnail_uri
@@ -438,7 +439,9 @@ function toDeckSummary(row: DeckSummaryRow): CatalogDeckSummary {
     cardContentVersion: row.card_content_version,
     ...(row.cover_path ? { coverPath: row.cover_path } : {}),
     ...(row.cover_uri ? { coverUri: row.cover_uri } : {}),
+    ...(row.cover_url ? { coverUrl: row.cover_url } : {}),
     ...(row.thumbnail_uri ? { thumbnailUri: row.thumbnail_uri } : {}),
+    ...(row.thumbnail_url ? { thumbnailUrl: row.thumbnail_url } : {}),
     installationStatus: row.installation_status,
   };
 }
@@ -497,8 +500,10 @@ type DeckSummaryRow = {
   tags_json: string;
   card_count: number;
   cover_path: string | null;
+  cover_url: string | null;
   installation_status: CatalogInstallationStatus;
   cover_uri: string | null;
+  thumbnail_url: string | null;
   thumbnail_uri: string | null;
 };
 

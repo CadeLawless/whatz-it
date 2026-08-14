@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -26,6 +25,7 @@ import {
   type CatalogDiscoveryRepository,
 } from '@/catalog/catalog-discovery';
 import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
+import { CatalogCoverImage } from '@/components/catalog-cover-image';
 
 const PAGE_SIZE = 24;
 
@@ -120,7 +120,7 @@ export function StorefrontExplore({
     return () => {
       cancelled = true;
     };
-  }, [catalog.revision, catalog.source]);
+  }, [catalog]);
 
   useEffect(() => {
     if (!repository) return;
@@ -408,16 +408,13 @@ function BundleBrowseCard({
               },
             ]}
           >
-            {deck!.coverUri || deck!.coverImage ? (
-              <Image
-                cachePolicy="memory-disk"
-                contentFit="cover"
-                source={deck!.coverUri || deck!.coverImage}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : (
-              <View style={styles.fanFallback} />
-            )}
+            <CatalogCoverImage
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              deck={deck!}
+              fallback={<View style={styles.fanFallback} />}
+              style={StyleSheet.absoluteFill}
+            />
           </View>
         ))}
       </View>
@@ -435,17 +432,18 @@ function DeckBrowseCard({ deck, onPress }: { deck: CatalogDeckSummary; onPress: 
       style={({ pressed }) => [styles.deckCard, pressed && styles.cardPressed]}
     >
       <View style={styles.deckCover}>
-        {deck.coverUri || deck.thumbnailUri || deck.coverImage ? (
-          <Image
-            accessibilityLabel={deck.title}
-            cachePolicy="memory-disk"
-            contentFit="cover"
-            source={deck.coverUri || deck.thumbnailUri || deck.coverImage}
-            style={StyleSheet.absoluteFill}
-          />
-        ) : (
-          <View style={styles.deckFallback}><Text style={styles.deckFallbackText}>{deck.title}</Text></View>
-        )}
+        <CatalogCoverImage
+          accessibilityLabel={deck.title}
+          cachePolicy="memory-disk"
+          contentFit="cover"
+          deck={deck}
+          fallback={(
+            <View style={styles.deckFallback}>
+              <Text style={styles.deckFallbackText}>{deck.title}</Text>
+            </View>
+          )}
+          style={StyleSheet.absoluteFill}
+        />
       </View>
     </Pressable>
   );

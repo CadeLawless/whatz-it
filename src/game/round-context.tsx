@@ -24,6 +24,7 @@ import {
   rememberDailyCard,
   resetDailySeenCardIds,
 } from '@/storage/daily-card-memory';
+import { rememberDeckPlayed } from '@/storage/deck-library-preferences';
 import {
   requestRoundCameraPermissions,
   RoundCamera,
@@ -683,6 +684,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
         return true;
       },
       startRound: () => {
+        if (round.deckId) void rememberDeckPlayed(round.deckId);
         const cardId = round.cardOrder[round.currentCardIndex];
         rememberCard(round.deckId, cardId);
         const deck = getDeckById(round.deckId ?? undefined);

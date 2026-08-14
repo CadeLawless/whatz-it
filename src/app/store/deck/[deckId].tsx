@@ -102,6 +102,12 @@ export default function StoreDeckDetailsScreen() {
           </View>
 
           <CommercePurchaseCard
+            onOwned={() =>
+              router.push({
+                pathname: '/deck/[deckId]',
+                params: { deckId: deck.id, transition: 'apple-slide' },
+              })
+            }
             onPurchase={commerce.purchase}
             onRetry={commerce.retry}
             state={commerce.state}

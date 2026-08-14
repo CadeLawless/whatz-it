@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
+import { MenuView } from '@expo/ui/community/menu';
 import { useFocusEffect } from 'expo-router';
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -25,6 +26,14 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
+import {
+  DECK_LIBRARY_SORT_LABELS,
+  DECK_LIBRARY_SORTS,
+  DEFAULT_DECK_LIBRARY_SORT,
+  isDeckLibrarySort,
+  sortLibraryDecks,
+  type DeckLibrarySort,
+} from '@/catalog/deck-library-sort';
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { DeckCard } from '@/components/deck-card';
 import { PortraitTransition } from '@/components/orientation-transition';
@@ -33,6 +42,11 @@ import { useScreenshotTransition } from '@/components/screenshot-transition-prov
 import { StorefrontExplore } from '@/components/storefront-explore';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
+import {
+  loadDeckLibrarySort,
+  loadDeckPlayHistory,
+  saveDeckLibrarySort,
+} from '@/storage/deck-library-preferences';
 import {
   getLoadedHomeBranding,
   HOME_BRANDING_SOURCES,
@@ -69,6 +83,10 @@ export default function DeckLibraryScreen() {
   const { revealTransition } = useScreenshotTransition();
   const branding = getLoadedHomeBranding() ?? HOME_BRANDING_SOURCES;
   const [decksExpanded, setDecksExpanded] = useState(true);
+  const [deckSort, setDeckSort] = useState<DeckLibrarySort>(
+    DEFAULT_DECK_LIBRARY_SORT,
+  );
+  const [deckPlayHistory, setDeckPlayHistory] = useState<Record<string, number>>({});
   const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
   const [videosExpanded, setVideosExpanded] = useState(true);
   const [videos, setVideos] = useState<RoundVideo[]>([]);
@@ -93,6 +111,33 @@ export default function DeckLibraryScreen() {
   const brandWidth = Math.min(width * 0.74, 420);
   const headshotWidth = Math.round(brandWidth * 0.16);
   const wordmarkWidth = Math.round(brandWidth * 0.75);
+  const installedDecks = useMemo(
+    () =>
+      sortLibraryDecks(
+        [...catalog.freeDecks, ...catalog.paidDecks].filter(
+          (deck) => deck.installationStatus === 'installed',
+        ),
+        deckPlayHistory,
+        deckSort,
+      ),
+    [catalog.freeDecks, catalog.paidDecks, deckPlayHistory, deckSort],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void Promise.all([loadDeckLibrarySort(), loadDeckPlayHistory()]).then(
+        ([storedSort, storedHistory]) => {
+          if (!active) return;
+          setDeckSort(storedSort);
+          setDeckPlayHistory(storedHistory);
+        },
+      );
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -341,14 +386,43 @@ export default function DeckLibraryScreen() {
               expanded={decksExpanded}
               onExpansionComplete={handleDecksExpanded}
             >
-              <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
-                {[...catalog.freeDecks, ...catalog.paidDecks]
-                  .filter((deck) => deck.installationStatus === 'installed')
-                  .map((deck) => (
+              <View style={styles.deckLibraryContent}>
+                <View style={styles.deckSortRow}>
+                  <Text style={styles.deckSortLabel}>SORT BY</Text>
+                  <MenuView
+                    actions={DECK_LIBRARY_SORTS.map(
+                      (sort) => ({
+                        id: sort,
+                        title: DECK_LIBRARY_SORT_LABELS[sort],
+                        state: sort === deckSort ? 'on' : 'off',
+                      }),
+                    )}
+                    onPressAction={({ nativeEvent }) => {
+                      const sort = nativeEvent.event;
+                      if (!isDeckLibrarySort(sort)) return;
+                      setDeckSort(sort);
+                      void saveDeckLibrarySort(sort);
+                    }}
+                  >
+                    <View
+                      accessibilityLabel={`Sort decks by ${DECK_LIBRARY_SORT_LABELS[deckSort]}`}
+                      accessibilityRole="button"
+                      style={styles.deckSortButton}
+                    >
+                      <Text numberOfLines={1} style={styles.deckSortButtonText}>
+                        {DECK_LIBRARY_SORT_LABELS[deckSort]}
+                      </Text>
+                      <Text accessibilityElementsHidden style={styles.deckSortChevron}>⌄</Text>
+                    </View>
+                  </MenuView>
+                </View>
+                <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
+                  {installedDecks.map((deck) => (
                   <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
                     <DeckCard deck={deck} />
                   </View>
-                ))}
+                  ))}
+                </View>
               </View>
             </CollapsibleContent>
           </View>
@@ -857,6 +931,38 @@ const styles = StyleSheet.create({
   chevronCollapsed: { marginTop: 5, transform: [{ rotate: '-135deg' }] },
   collapsible: { overflow: 'hidden' },
   collapsibleContent: { position: 'absolute', top: 0, right: 0, left: 0 },
+  deckLibraryContent: { gap: 16 },
+  deckSortRow: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 9,
+  },
+  deckSortLabel: {
+    color: '#64748B',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  deckSortButton: {
+    minHeight: 38,
+    maxWidth: 190,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 13,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.11)',
+  },
+  deckSortButtonText: {
+    flexShrink: 1,
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  deckSortChevron: { color: '#64748B', fontSize: 18, lineHeight: 20 },
   deckGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   videoSection: { marginTop: 34 },
   sectionDivider: {
