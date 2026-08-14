@@ -278,6 +278,7 @@ export default function DeckLibraryScreen() {
       <ScrollView
         accessibilityElementsHidden={videoPendingDelete !== null}
         automaticallyAdjustKeyboardInsets
+        bounces={false}
         contentContainerStyle={styles.scrollContent}
         importantForAccessibility={
           videoPendingDelete === null ? 'auto' : 'no-hide-descendants'
@@ -285,6 +286,7 @@ export default function DeckLibraryScreen() {
         ref={scrollViewRef}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
+        overScrollMode="never"
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
       >
@@ -526,50 +528,40 @@ export default function DeckLibraryScreen() {
             </View>
           )}
 
-          <View style={styles.privacySupportCard}>
-            <Text style={styles.privacySupportTitle}>PRIVACY &amp; SUPPORT</Text>
-            <Text style={styles.privacySupportBody}>
-              Learn how WHATZ IT? handles your data or get help from our team.
-            </Text>
-            <View style={styles.privacySupportLinks}>
-              <Pressable
-                accessibilityHint="Opens the WHATZ IT? privacy policy in your browser"
-                accessibilityRole="link"
-                onPress={() =>
-                  openExternalLink(
-                    PRIVACY_POLICY_URL,
-                    `Visit ${PRIVACY_POLICY_URL} in your browser.`,
-                  )
-                }
-                style={({ pressed }) => [
-                  styles.privacySupportLink,
-                  pressed && styles.privacySupportLinkPressed,
-                ]}
-              >
-                <Text style={styles.privacySupportLinkText}>PRIVACY POLICY</Text>
-              </Pressable>
-              <View accessibilityElementsHidden style={styles.privacySupportDivider} />
-              <Pressable
-                accessibilityHint="Opens your email app to contact WHATZ IT? support"
-                accessibilityLabel={`Email WHATZ IT? support at ${SUPPORT_EMAIL}`}
-                accessibilityRole="link"
-                onPress={() =>
-                  openExternalLink(
-                    SUPPORT_EMAIL_URL,
-                    `Email us directly at ${SUPPORT_EMAIL}.`,
-                  )
-                }
-                style={({ pressed }) => [
-                  styles.privacySupportLink,
-                  pressed && styles.privacySupportLinkPressed,
-                ]}
-              >
-                <Text style={styles.privacySupportLinkText}>CONTACT SUPPORT</Text>
-                <Text selectable style={styles.privacySupportEmail}>
-                  {SUPPORT_EMAIL}
-                </Text>
-              </Pressable>
-            </View>
+          <View style={styles.footerLinks}>
+            <Pressable
+              accessibilityHint="Opens the WHATZ IT? privacy policy in your browser"
+              accessibilityRole="link"
+              onPress={() =>
+                openExternalLink(
+                  PRIVACY_POLICY_URL,
+                  `Visit ${PRIVACY_POLICY_URL} in your browser.`,
+                )
+              }
+              style={({ pressed }) => [
+                styles.footerLink,
+                pressed && styles.footerLinkPressed,
+              ]}
+            >
+              <Text style={styles.footerLinkText}>PRIVACY POLICY</Text>
+            </Pressable>
+            <Pressable
+              accessibilityHint="Opens your email app to contact WHATZ IT? support"
+              accessibilityLabel={`Email WHATZ IT? support at ${SUPPORT_EMAIL}`}
+              accessibilityRole="link"
+              onPress={() =>
+                openExternalLink(
+                  SUPPORT_EMAIL_URL,
+                  `Email us directly at ${SUPPORT_EMAIL}.`,
+                )
+              }
+              style={({ pressed }) => [
+                styles.footerLink,
+                pressed && styles.footerLinkPressed,
+              ]}
+            >
+              <Text style={styles.footerLinkText}>CONTACT</Text>
+            </Pressable>
           </View>
         </View>
       </ScrollView>
@@ -879,14 +871,24 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   deleteButtonText: { color: '#64748B', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
-  privacySupportCard: {
-    gap: 14,
+  footerLinks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 28,
     marginTop: 42,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+  },
+  footerLink: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  footerLinkPressed: { opacity: 0.55 },
+  footerLinkText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   catalogStatus: {
     flexDirection: 'row',
@@ -910,37 +912,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '700',
   },
-  privacySupportTitle: {
-    color: '#459EFE',
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '900',
-    letterSpacing: 0.4,
-  },
-  privacySupportBody: { color: '#64748B', fontSize: 14, lineHeight: 20 },
-  privacySupportLinks: {
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 16,
-  },
-  privacySupportLink: {
-    minHeight: 54,
-    justifyContent: 'center',
-    gap: 2,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  privacySupportLinkPressed: { backgroundColor: '#EFF6FF' },
-  privacySupportLinkText: {
-    color: '#2563EB',
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '900',
-    letterSpacing: 0.35,
-  },
-  privacySupportEmail: { color: '#64748B', fontSize: 12, lineHeight: 17 },
-  privacySupportDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E2E8F0' },
   pressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
   disabled: { opacity: 0.55 },
 });
