@@ -5,19 +5,18 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  type LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import Animated, {
   Easing,
   interpolate,
   runOnJS,
-  useAnimatedScrollHandler,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -25,13 +24,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useCatalog } from '@/catalog/catalog-provider';
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { DeckCard } from '@/components/deck-card';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { StorefrontExplore } from '@/components/storefront-explore';
-import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import {
@@ -52,6 +51,7 @@ import {
 const PRIVACY_POLICY_URL = 'https://playwhatzit.com/#privacy';
 const SUPPORT_EMAIL = 'support@playwhatzit.com';
 const SUPPORT_EMAIL_URL = `mailto:${SUPPORT_EMAIL}?subject=WHATZ%20IT%20Support`;
+const HEADER_OVERSCROLL_EXTENSION = 700;
 
 export default function DeckLibraryScreen() {
   const catalogState = useCatalog();
@@ -60,7 +60,6 @@ export default function DeckLibraryScreen() {
     catalogState.status === 'ready' ? catalogState.syncStatus : null;
   const { width } = useWindowDimensions();
   const scrollViewRef = useRef<ScrollView>(null);
-  const scrollOffset = useSharedValue(0);
   const libraryTop = useRef(0);
   const exploreTop = useRef(0);
   const sectionOffsets = useRef({ decks: 0, videos: 0 });
@@ -72,15 +71,6 @@ export default function DeckLibraryScreen() {
   const [decksExpanded, setDecksExpanded] = useState(true);
   const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
   const [videosExpanded, setVideosExpanded] = useState(true);
-
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollOffset.value = event.contentOffset.y;
-    },
-  });
-  const scrollBackgroundStyle = useAnimatedStyle(() => ({
-    backgroundColor: scrollOffset.value <= 0 ? '#FFFFFF' : '#F6F6F6',
-  }));
   const [videos, setVideos] = useState<RoundVideo[]>([]);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
   const [exportingVideoId, setExportingVideoId] = useState<string | null>(null);
@@ -287,7 +277,7 @@ export default function DeckLibraryScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <Animated.ScrollView
+      <ScrollView
         accessibilityElementsHidden={videoPendingDelete !== null}
         automaticallyAdjustKeyboardInsets
         contentContainerStyle={styles.scrollContent}
@@ -297,10 +287,8 @@ export default function DeckLibraryScreen() {
         ref={scrollViewRef}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        style={[styles.scrollView, scrollBackgroundStyle]}
+        style={styles.scrollView}
       >
         <View style={styles.brandCard}>
           <View
@@ -575,7 +563,7 @@ export default function DeckLibraryScreen() {
             <Text style={styles.footerLinkText}>CONTACT</Text>
           </Pressable>
         </View>
-      </Animated.ScrollView>
+      </ScrollView>
       <ConfirmationPrompt
         busy={isDeletingVideo}
         busyLabel="DELETING..."
@@ -788,7 +776,8 @@ const styles = StyleSheet.create({
     minHeight: 118,
     alignItems: 'flex-start',
     justifyContent: 'center',
-    paddingTop: 8,
+    marginTop: -HEADER_OVERSCROLL_EXTENSION,
+    paddingTop: HEADER_OVERSCROLL_EXTENSION + 8,
     paddingBottom: 24,
     paddingLeft: 24,
     backgroundColor: '#FFFFFF',
