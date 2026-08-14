@@ -2,7 +2,8 @@ import { Stack, usePathname, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
@@ -128,7 +129,7 @@ function RootLayoutContent() {
   if (!isReady || settingsReturnPath === undefined) return null;
 
   return (
-    <View onLayout={handleRootLayout} style={styles.root}>
+    <GestureHandlerRootView onLayout={handleRootLayout} style={styles.root}>
       <SafeAreaProvider>
       <RoundSoundProvider>
         <ScreenshotTransitionProvider>
@@ -244,7 +245,7 @@ function RootLayoutContent() {
         </ScreenshotTransitionProvider>
       </RoundSoundProvider>
       </SafeAreaProvider>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
