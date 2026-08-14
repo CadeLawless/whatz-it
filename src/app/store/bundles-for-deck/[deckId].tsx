@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
+import { CircularCloseButton } from '@/components/circular-close-button';
 import { colors, radius, spacing } from '@/theme';
 
 export default function BundlesForDeckSheet() {
@@ -38,14 +39,10 @@ export default function BundlesForDeckSheet() {
               {deck ? `Bundles containing ${deck.title}` : 'Bundles containing this deck'}
             </Text>
           </View>
-          <Pressable
+          <CircularCloseButton
             accessibilityLabel="Close bundle list"
-            accessibilityRole="button"
             onPress={() => sheetRef.current?.close()}
-            style={({ pressed }) => [styles.doneButton, pressed && styles.pressed]}
-          >
-            <Text style={styles.doneText}>DONE</Text>
-          </Pressable>
+          />
         </View>
 
         <ScrollView
@@ -112,19 +109,6 @@ const styles = StyleSheet.create({
   headerCopy: { flex: 1, gap: 3 },
   title: { color: colors.ink, fontSize: 28, fontWeight: '900' },
   subtitle: { color: colors.muted, fontSize: 14, lineHeight: 19 },
-  doneButton: {
-    minHeight: 40,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    borderRadius: radius.pill,
-    backgroundColor: colors.play,
-  },
-  doneText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.6,
-  },
   list: { gap: 12, padding: spacing.lg, paddingTop: spacing.sm },
   bundleRow: {
     minHeight: 132,

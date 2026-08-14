@@ -23,6 +23,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
+import { CircularCloseButton } from '@/components/circular-close-button';
 import { LandscapeViewport } from '@/components/landscape-viewport';
 import { formatRoundClock } from '@/game/round-duration';
 import { colors, radius, spacing } from '@/theme';
@@ -717,19 +718,14 @@ export function RoundVideoPlayer({
                     </Pressable>
                   )}
                 </View>
-                <Pressable
+                <CircularCloseButton
                   accessibilityLabel="Close video"
-                  accessibilityRole="button"
-                  hitSlop={8}
                   onPress={closeExpanded}
-                  style={({ pressed }) => [
-                    styles.closeButton,
+                  style={[
+                    styles.closeButtonPosition,
                     { right: rightChromeInset, top: spacing.md },
-                    pressed && styles.pressed,
                   ]}
-                >
-                  <Text style={styles.closeText}>{'\u00D7'}</Text>
-                </Pressable>
+                />
                 {controlsVisible && (
                   <View
                     style={[
@@ -1086,17 +1082,8 @@ const styles = StyleSheet.create({
   overlayBylineCompact: { marginTop: 1, fontSize: 6, lineHeight: 7 },
   overlayTimer: { marginTop: 2, fontSize: 12, lineHeight: 14, fontWeight: '800', textAlign: 'center' },
   overlayTimerCompact: { marginTop: 1, fontSize: 5, lineHeight: 6 },
-  closeButton: {
+  closeButtonPosition: {
     position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.62)',
-    zIndex: 20,
-    elevation: 20,
   },
   playerActions: {
     position: 'absolute',
@@ -1179,7 +1166,6 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: colors.white,
   },
-  closeText: { color: colors.white, fontSize: 42, fontWeight: '900', lineHeight: 42 },
   pressed: { opacity: 0.7, transform: [{ scale: 0.96 }] },
   disabled: { opacity: 0.55 },
 });

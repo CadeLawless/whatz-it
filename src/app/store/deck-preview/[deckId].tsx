@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
+import { CircularCloseButton } from '@/components/circular-close-button';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
 import { colors, radius, spacing } from '@/theme';
 
@@ -156,17 +157,10 @@ export default function DeckPreviewSheet() {
             <Text numberOfLines={2} style={styles.sheetTitle}>
               {bundle?.title ?? 'Deck Preview'}
             </Text>
-            <Pressable
+            <CircularCloseButton
               accessibilityLabel="Close preview"
-              accessibilityRole="button"
-              hitSlop={8}
               onPress={() => sheetRef.current?.close()}
-              style={styles.closeButton}
-            >
-              <Text accessibilityElementsHidden style={styles.closeButtonText}>
-                ×
-              </Text>
-            </Pressable>
+            />
           </View>
           <View style={styles.previewBody}>
             <GestureDetector gesture={swipeGesture}>
@@ -317,21 +311,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 26,
     fontWeight: '900',
-  },
-  closeButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
-    backgroundColor: colors.surface,
-    boxShadow: '0 4px 12px rgba(100, 116, 139, 0.18)',
-  },
-  closeButtonText: {
-    color: colors.ink,
-    fontSize: 32,
-    lineHeight: 34,
-    fontWeight: '300',
   },
   previewBody: { gap: spacing.xl },
   carouselViewport: { overflow: 'hidden' },
