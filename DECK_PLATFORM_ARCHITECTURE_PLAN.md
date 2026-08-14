@@ -1188,8 +1188,11 @@ resolved:
   client. Install and rebuild the development client only when the backend and
   App Store sandbox product are ready for an end-to-end purchase drill.
 - Apple products are non-consumables named
-  `com.cadelawless.whatzit.deck.<deck-id>` and
-  `com.cadelawless.whatzit.bundle.<bundle-id>`. These IDs are generated from
+  `com.cadelawless.whatzit.deck.<deck_id>` and
+  `com.cadelawless.whatzit.bundle.<bundle_id>`. Hyphens in stable catalog IDs
+  are converted to underscores to match App Store Connect's live IAP form.
+  Existing underscores are doubled first to keep the mapping one-to-one.
+  These IDs are generated from
   stable catalog identities and treated as permanent.
 - Launch Apple ownership without a separate WHATZ IT? player account. Use a
   random installation/app-account UUID and verified App Store restore history;
