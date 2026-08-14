@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  FadeInUp,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -33,6 +34,10 @@ import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
 const PAGE_SIZE = 24;
 
 type ExploreSection = 'bundles' | 'decks';
+
+function createQueryKey(search: string, tags: string[]) {
+  return JSON.stringify([search.trim(), [...tags].sort()]);
+}
 
 export function StorefrontExplore({
   catalog,
@@ -60,6 +65,11 @@ export function StorefrontExplore({
   const [sectionControlWidth, setSectionControlWidth] = useState(0);
   const [tagSheetVisible, setTagSheetVisible] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
+  const [resultVersion, setResultVersion] = useState(0);
+  const loadedQueryKeys = useRef<Record<ExploreSection, string>>({
+    bundles: '',
+    decks: '',
+  });
   const reduceMotion = useReducedMotion();
   const activeSectionPosition = useSharedValue(section === 'decks' ? 1 : 0);
 
@@ -97,16 +107,43 @@ export function StorefrontExplore({
 
   useEffect(() => {
     let cancelled = false;
-    void createCatalogDiscoveryRepository(catalog.source)
-      .then((nextRepository) => {
-        if (!cancelled) setRepository(nextRepository);
-      })
-      .catch((cause: unknown) => {
+    const hydrateRepository = async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+
+      setLoading(true);
+      setError(null);
+      setRepository(null);
+
+      try {
+        const nextRepository = await createCatalogDiscoveryRepository(catalog.source);
+        const [deckPage, facets, bundlePage] = await Promise.all([
+          nextRepository.queryDecks({ access: 'paid', limit: PAGE_SIZE }),
+          nextRepository.listTags('paid'),
+          nextRepository.queryBundles({ access: 'paid', limit: PAGE_SIZE }),
+        ]);
+        if (cancelled) return;
+
+        setDecks(deckPage.decks);
+        setNextCursor(deckPage.nextCursor);
+        setTags(facets);
+        setBundles(bundlePage.bundles);
+        loadedQueryKeys.current = {
+          bundles: createQueryKey('', []),
+          decks: createQueryKey('', []),
+        };
+        setResultVersion((current) => current + 1);
+        setRepository(nextRepository);
+        setLoading(false);
+      } catch (cause: unknown) {
         if (!cancelled) {
           setError(cause instanceof Error ? cause.message : 'Explore could not be loaded.');
           setLoading(false);
         }
-      });
+      }
+    };
+
+    void hydrateRepository();
     return () => {
       cancelled = true;
     };
@@ -115,8 +152,10 @@ export function StorefrontExplore({
   useEffect(() => {
     if (!repository) return;
     let cancelled = false;
+    const queryKey = createQueryKey(search, selectedTags);
+    if (loadedQueryKeys.current[section] === queryKey) return;
+
     const timer = setTimeout(() => {
-      setLoading(true);
       setError(null);
       const request =
         section === 'decks'
@@ -134,22 +173,22 @@ export function StorefrontExplore({
               setDecks(page.decks);
               setNextCursor(page.nextCursor);
               setTags(facets);
+              loadedQueryKeys.current.decks = queryKey;
+              setResultVersion((current) => current + 1);
             })
           : repository
               .queryBundles({ access: 'paid', search, limit: PAGE_SIZE })
               .then((page) => {
                 if (cancelled) return;
                 setBundles(page.bundles);
-                setNextCursor(null);
+                loadedQueryKeys.current.bundles = queryKey;
+                setResultVersion((current) => current + 1);
               });
       void request
         .catch((cause: unknown) => {
           if (!cancelled) {
             setError(cause instanceof Error ? cause.message : 'Explore could not be loaded.');
           }
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
         });
     }, 180);
     return () => {
@@ -310,65 +349,73 @@ export function StorefrontExplore({
           <ActivityIndicator color="#459EFE" />
           <Text style={styles.loadingText}>Loading your saved catalog…</Text>
         </View>
-      ) : error ? (
-        <View accessibilityLiveRegion="polite" style={styles.messageCard}>
-          <Text selectable style={styles.messageTitle}>Explore is unavailable</Text>
-          <Text selectable style={styles.messageBody}>{error}</Text>
-        </View>
-      ) : section === 'bundles' ? (
-        bundles.length > 0 ? (
-          <View style={styles.bundleList}>
-            {bundles.map((bundle, index) => (
-              <BundleBrowseCard
-                bundle={bundle}
-                catalog={catalog}
-                fanSide={index % 2 === 0 ? 'right' : 'left'}
-                key={bundle.id}
-                onPress={() =>
-                  router.push({
-                    pathname: '/store/bundle/[bundleId]',
-                    params: { bundleId: bundle.id },
-                  })
-                }
-              />
-            ))}
-          </View>
-        ) : (
-          <EmptyResults search={search} type="bundles" />
-        )
-      ) : decks.length > 0 ? (
-        <>
-          <View style={styles.deckList}>
-            {decks.map((deck) => (
-              <DeckBrowseCard
-                deck={deck}
-                key={deck.id}
-                onPress={() =>
-                  router.push({
-                    pathname: '/store/deck/[deckId]',
-                    params: { deckId: deck.id },
-                  })
-                }
-              />
-            ))}
-          </View>
-          {nextCursor && (
-            <Pressable
-              accessibilityRole="button"
-              disabled={loadingMore}
-              onPress={() => void loadMore()}
-              style={({ pressed }) => [styles.loadMore, pressed && styles.pressed]}
-            >
-              {loadingMore ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.loadMoreText}>LOAD MORE DECKS</Text>
-              )}
-            </Pressable>
-          )}
-        </>
       ) : (
-        <EmptyResults search={search} type="decks" />
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInUp.duration(200)}
+          key={`${section}-${resultVersion}`}
+          style={styles.resultSurface}
+        >
+          {error ? (
+            <View accessibilityLiveRegion="polite" style={styles.messageCard}>
+              <Text selectable style={styles.messageTitle}>Explore is unavailable</Text>
+              <Text selectable style={styles.messageBody}>{error}</Text>
+            </View>
+          ) : section === 'bundles' ? (
+            bundles.length > 0 ? (
+              <View style={styles.bundleList}>
+                {bundles.map((bundle, index) => (
+                  <BundleBrowseCard
+                    bundle={bundle}
+                    catalog={catalog}
+                    fanSide={index % 2 === 0 ? 'right' : 'left'}
+                    key={bundle.id}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/store/bundle/[bundleId]',
+                        params: { bundleId: bundle.id },
+                      })
+                    }
+                  />
+                ))}
+              </View>
+            ) : (
+              <EmptyResults search={search} type="bundles" />
+            )
+          ) : decks.length > 0 ? (
+            <>
+              <View style={styles.deckList}>
+                {decks.map((deck) => (
+                  <DeckBrowseCard
+                    deck={deck}
+                    key={deck.id}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/store/deck/[deckId]',
+                        params: { deckId: deck.id },
+                      })
+                    }
+                  />
+                ))}
+              </View>
+              {nextCursor && (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={loadingMore}
+                  onPress={() => void loadMore()}
+                  style={({ pressed }) => [styles.loadMore, pressed && styles.pressed]}
+                >
+                  {loadingMore ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.loadMoreText}>LOAD MORE DECKS</Text>
+                  )}
+                </Pressable>
+              )}
+            </>
+          ) : (
+            <EmptyResults search={search} type="decks" />
+          )}
+        </Animated.View>
       )}
 
       <Modal
@@ -599,6 +646,7 @@ const styles = StyleSheet.create({
   moreTagsText: { color: '#2563EB', fontSize: 11, fontWeight: '900', letterSpacing: 0.4 },
   loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
+  resultSurface: { gap: 14 },
   bundleList: { gap: 16 },
   bundleCard: { minHeight: 174, flexDirection: 'row', alignItems: 'center', gap: 10, overflow: 'hidden', padding: 20, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 26, backgroundColor: '#FFFFFF', boxShadow: '0 5px 16px rgba(71, 85, 105, 0.10)' },
   bundleCardReversed: { flexDirection: 'row-reverse' },
