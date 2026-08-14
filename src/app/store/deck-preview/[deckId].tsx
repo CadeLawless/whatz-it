@@ -144,17 +144,22 @@ export default function DeckPreviewSheet() {
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
         >
-          <Pressable
-            accessibilityLabel="Close preview"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={() => router.back()}
-            style={styles.closeButton}
-          >
-            <Text accessibilityElementsHidden style={styles.closeButtonText}>
-              ×
+          <View style={styles.sheetHeader}>
+            <Text numberOfLines={2} style={styles.sheetTitle}>
+              {bundle?.title ?? 'Deck Preview'}
             </Text>
-          </Pressable>
+            <Pressable
+              accessibilityLabel="Close preview"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => router.back()}
+              style={styles.closeButton}
+            >
+              <Text accessibilityElementsHidden style={styles.closeButtonText}>
+                ×
+              </Text>
+            </Pressable>
+          </View>
           <View style={styles.previewBody}>
             <GestureDetector gesture={swipeGesture}>
               <View style={styles.carouselViewport}>
@@ -236,11 +241,6 @@ export default function DeckPreviewSheet() {
                 </Pressable>
               </View>
             )}
-            {bundle && (
-              <View style={styles.copy}>
-                <Text style={styles.bundleName}>From {bundle.title}</Text>
-              </View>
-            )}
             {deck.access === 'paid' && (
               <View style={styles.purchaseArea}>
                 <View
@@ -278,8 +278,20 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xl,
   },
+  sheetHeader: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+  },
+  sheetTitle: {
+    flex: 1,
+    color: colors.ink,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '900',
+  },
   closeButton: {
-    alignSelf: 'flex-end',
     width: 44,
     height: 44,
     alignItems: 'center',
@@ -329,8 +341,6 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     textAlign: 'center',
   },
-  copy: { gap: 10 },
-  bundleName: { color: colors.muted, fontSize: 13, fontWeight: '700' },
   description: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   purchaseArea: { gap: spacing.sm },
   purchaseButton: {
