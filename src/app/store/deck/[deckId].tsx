@@ -21,16 +21,6 @@ export default function StoreDeckDetailsScreen() {
   const isPortrait = usePortraitScreen();
   const deck = catalog.getDeckById(deckId);
   const bundles = catalog.getBundlesForDeck(deckId);
-  const uniqueTags = deck
-    ? [
-        ...new Map(
-          deck.tags
-            .map((tag) => tag.trim())
-            .filter(Boolean)
-            .map((tag) => [tag.toLocaleLowerCase(), tag]),
-        ).values(),
-      ]
-    : [];
 
   if (!isPortrait) {
     return <PortraitTransition style={styles.orientationGate} />;
@@ -94,15 +84,6 @@ export default function StoreDeckDetailsScreen() {
               </Pressable>
             )}
 
-            {uniqueTags.length > 0 && (
-              <View style={styles.tags}>
-                {uniqueTags.map((tag) => (
-                  <View key={tag} style={styles.tag}>
-                    <Text style={styles.tagText}>{tag}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
           </View>
 
           <View style={styles.purchaseCard}>
@@ -157,20 +138,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 26,
     fontWeight: '500',
-  },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: {
-    minHeight: 32,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: '#EAF4FF',
-  },
-  tagText: {
-    color: '#2563EB',
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'capitalize',
   },
   purchaseCard: {
     gap: 10,

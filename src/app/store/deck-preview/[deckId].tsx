@@ -21,16 +21,6 @@ export default function DeckPreviewSheet() {
   const router = useRouter();
   const deck = catalog.getDeckById(deckId);
   const bundle = catalog.getBundleById(bundleId);
-  const uniqueTags = deck
-    ? [
-        ...new Map(
-          deck.tags
-            .map((tag) => tag.trim())
-            .filter(Boolean)
-            .map((tag) => [tag.toLocaleLowerCase(), tag]),
-        ).values(),
-      ]
-    : [];
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
@@ -64,15 +54,6 @@ export default function DeckPreviewSheet() {
           <View style={styles.copy}>
             {bundle && <Text style={styles.bundleName}>From {bundle.title}</Text>}
             <Text style={styles.cardCount}>{deck.cardCount} CARDS</Text>
-            {uniqueTags.length > 0 && (
-              <View style={styles.tags}>
-                {uniqueTags.map((tag) => (
-                  <View key={tag} style={styles.tag}>
-                    <Text style={styles.tagText}>{tag}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
           </View>
           {deck.access === 'paid' && (
             <View style={styles.purchaseArea}>
@@ -132,20 +113,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.7,
-  },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: {
-    minHeight: 32,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: '#EAF4FF',
-  },
-  tagText: {
-    color: colors.play,
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'capitalize',
   },
   purchaseArea: { gap: spacing.sm },
   purchaseButton: {
