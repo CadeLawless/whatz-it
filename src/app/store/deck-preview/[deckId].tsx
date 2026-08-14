@@ -266,6 +266,9 @@ export default function DeckPreviewSheet() {
                     <Text style={styles.bundlePurchaseButtonText}>
                       PURCHASE FULL BUNDLE
                     </Text>
+                    <Text numberOfLines={1} style={styles.bundlePurchaseTitle}>
+                      {bundle.title}
+                    </Text>
                   </View>
                 )}
                 <Text style={styles.purchaseNote}>
@@ -381,9 +384,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   bundlePurchaseButton: {
-    minHeight: 48,
+    minHeight: 58,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 2,
     borderRadius: radius.pill,
     backgroundColor: '#CBD5E1',
   },
@@ -392,6 +396,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.7,
+  },
+  bundlePurchaseTitle: {
+    color: colors.white,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   purchaseNote: {
     color: colors.muted,
