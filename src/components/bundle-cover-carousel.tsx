@@ -14,8 +14,8 @@ import {
 import type { CatalogDeck } from '@/catalog/catalog-snapshot';
 import { colors, spacing } from '@/theme';
 
-const CARD_WIDTH = 178;
-const CARD_GAP = 18;
+const CARD_WIDTH = 138;
+const CARD_GAP = 14;
 const AUTO_ADVANCE_MS = 5_500;
 const MANUAL_PAUSE_MS = 12_000;
 
@@ -114,9 +114,6 @@ export function BundleCoverCarousel({
                 </View>
               )}
             </View>
-            <Text numberOfLines={2} style={styles.deckTitle}>
-              {deck.title}
-            </Text>
           </Pressable>
         ))}
       </ScrollView>
@@ -156,7 +153,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   track: { gap: CARD_GAP, paddingRight: spacing.lg },
-  item: { width: CARD_WIDTH, gap: spacing.sm },
+  item: { width: CARD_WIDTH },
   cover: {
     width: CARD_WIDTH,
     aspectRatio: 2 / 3,
@@ -175,12 +172,6 @@ const styles = StyleSheet.create({
     color: colors.ink,
     textAlign: 'center',
     fontSize: 17,
-    fontWeight: '900',
-  },
-  deckTitle: {
-    color: colors.ink,
-    fontSize: 15,
-    lineHeight: 19,
     fontWeight: '900',
   },
   motionNote: { color: colors.muted, fontSize: 12, lineHeight: 17 },

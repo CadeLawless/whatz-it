@@ -57,7 +57,6 @@ export default function BundleDetailsScreen() {
             <Text style={styles.eyebrow}>BUNDLE</Text>
             <Text style={styles.title}>{bundle.title}</Text>
             <Text style={styles.description}>{bundle.description}</Text>
-            <Text style={styles.bundleCount}>{bundle.decks.length} INCLUDED DECKS</Text>
           </View>
 
           <BundleCoverCarousel
@@ -108,8 +107,8 @@ const styles = StyleSheet.create({
   },
   backText: { color: '#000000', fontSize: 17, fontWeight: '500', marginLeft: 2 },
   hero: {
-    gap: 12,
-    padding: spacing.xl,
+    gap: 8,
+    padding: spacing.lg,
     borderRadius: radius.xl,
     backgroundColor: colors.play,
     boxShadow: '0 7px 13px rgba(100, 116, 139, 0.18)',
@@ -122,18 +121,12 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.white,
-    fontSize: 34,
-    lineHeight: 38,
+    fontSize: 28,
+    lineHeight: 32,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
-  description: { color: colors.white, fontSize: 17, lineHeight: 24 },
-  bundleCount: {
-    color: '#BDEBFF',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-  },
+  description: { color: colors.white, fontSize: 15, lineHeight: 21 },
   purchaseCard: {
     gap: 10,
     padding: spacing.lg,
