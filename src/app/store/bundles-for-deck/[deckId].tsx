@@ -54,7 +54,7 @@ export default function BundlesForDeckSheet() {
               onPress={() =>
                 router.replace({
                   pathname: '/store/bundle/[bundleId]',
-                  params: { bundleId: bundle.id },
+                  params: { bundleId: bundle.id, fromDeckId: deckId },
                 })
               }
               style={({ pressed }) => [styles.bundleRow, pressed && styles.pressed]}

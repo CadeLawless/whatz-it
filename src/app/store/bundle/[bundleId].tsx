@@ -16,10 +16,15 @@ import { colors, radius, spacing, typography } from '@/theme';
 
 export default function BundleDetailsScreen() {
   const { catalog } = useCatalog();
-  const { bundleId } = useLocalSearchParams<{ bundleId: string }>();
+  const { bundleId, fromDeckId } = useLocalSearchParams<{
+    bundleId: string;
+    fromDeckId?: string;
+  }>();
   const router = useRouter();
   const isPortrait = usePortraitScreen();
   const bundle = catalog.getBundleById(bundleId);
+  const sourceDeck = fromDeckId ? catalog.getDeckById(fromDeckId) : undefined;
+  const backLabel = sourceDeck ? `Back to ${sourceDeck.title}` : 'Back to Explore';
 
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
 
@@ -44,13 +49,13 @@ export default function BundleDetailsScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Pressable
-            accessibilityLabel="Back to Explore"
+            accessibilityLabel={backLabel}
             accessibilityRole="button"
             onPress={() => router.back()}
             style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
           >
             <Text style={styles.backChevron}>‹</Text>
-            <Text style={styles.backText}>Back to Explore</Text>
+            <Text numberOfLines={1} style={styles.backText}>{backLabel}</Text>
           </Pressable>
 
           <View style={styles.hero}>
@@ -105,7 +110,13 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     fontWeight: '300',
   },
-  backText: { color: '#000000', fontSize: 17, fontWeight: '500', marginLeft: 2 },
+  backText: {
+    flexShrink: 1,
+    color: '#000000',
+    fontSize: 17,
+    fontWeight: '500',
+    marginLeft: 2,
+  },
   hero: {
     gap: 8,
     padding: spacing.lg,
