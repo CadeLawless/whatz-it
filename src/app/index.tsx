@@ -17,6 +17,7 @@ import Animated, {
   Easing,
   interpolate,
   runOnJS,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -59,6 +60,7 @@ export default function DeckLibraryScreen() {
     catalogState.status === 'ready' ? catalogState.syncStatus : null;
   const { width } = useWindowDimensions();
   const scrollViewRef = useRef<ScrollView>(null);
+  const scrollOffset = useSharedValue(0);
   const libraryTop = useRef(0);
   const exploreTop = useRef(0);
   const sectionOffsets = useRef({ decks: 0, videos: 0 });
@@ -70,6 +72,15 @@ export default function DeckLibraryScreen() {
   const [decksExpanded, setDecksExpanded] = useState(true);
   const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
   const [videosExpanded, setVideosExpanded] = useState(true);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollOffset.value = event.contentOffset.y;
+    },
+  });
+  const scrollBackgroundStyle = useAnimatedStyle(() => ({
+    backgroundColor: scrollOffset.value <= 0 ? '#FFFFFF' : '#F6F6F6',
+  }));
   const [videos, setVideos] = useState<RoundVideo[]>([]);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
   const [exportingVideoId, setExportingVideoId] = useState<string | null>(null);
@@ -275,11 +286,10 @@ export default function DeckLibraryScreen() {
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <ScrollView
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <Animated.ScrollView
         accessibilityElementsHidden={videoPendingDelete !== null}
         automaticallyAdjustKeyboardInsets
-        bounces={false}
         contentContainerStyle={styles.scrollContent}
         importantForAccessibility={
           videoPendingDelete === null ? 'auto' : 'no-hide-descendants'
@@ -287,9 +297,10 @@ export default function DeckLibraryScreen() {
         ref={scrollViewRef}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        overScrollMode="never"
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        style={styles.scrollView}
+        style={[styles.scrollView, scrollBackgroundStyle]}
       >
         <View style={styles.brandCard}>
           <View
@@ -564,7 +575,7 @@ export default function DeckLibraryScreen() {
             <Text style={styles.footerLinkText}>CONTACT</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
       <ConfirmationPrompt
         busy={isDeletingVideo}
         busyLabel="DELETING..."
@@ -772,7 +783,7 @@ const styles = StyleSheet.create({
   orientationGate: { flex: 1, backgroundColor: '#F6F6F6' },
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
   scrollView: { flex: 1, backgroundColor: '#F6F6F6' },
-  scrollContent: { flexGrow: 1 },
+  scrollContent: { flexGrow: 1, backgroundColor: '#F6F6F6' },
   brandCard: {
     minHeight: 118,
     alignItems: 'flex-start',
