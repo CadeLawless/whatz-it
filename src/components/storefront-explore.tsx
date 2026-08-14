@@ -48,6 +48,7 @@ export function StorefrontExplore({
   const [error, setError] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
+  const [tabsOffset, setTabsOffset] = useState(0);
   const [tagSheetVisible, setTagSheetVisible] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
 
@@ -163,14 +164,18 @@ export function StorefrontExplore({
         Browse the latest catalog even when you are offline. Purchases will be added in a later phase.
       </Text>
 
-      <View accessibilityRole="tablist" style={styles.sectionControl}>
+      <View
+        accessibilityRole="tablist"
+        onLayout={(event) => setTabsOffset(event.nativeEvent.layout.y)}
+        style={styles.sectionControl}
+      >
         <ExploreTab
           active={section === 'bundles'}
           label="BUNDLES"
           onPress={() => {
             setSection('bundles');
             setSelectedTags([]);
-            onBrowseFocus?.(searchOffset);
+            onBrowseFocus?.(Math.max(0, tabsOffset - 18));
           }}
         />
         <ExploreTab
@@ -178,7 +183,7 @@ export function StorefrontExplore({
           label="ALL DECKS"
           onPress={() => {
             setSection('decks');
-            onBrowseFocus?.(searchOffset);
+            onBrowseFocus?.(Math.max(0, tabsOffset - 18));
           }}
         />
       </View>

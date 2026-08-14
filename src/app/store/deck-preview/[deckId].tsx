@@ -1,7 +1,5 @@
-import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,6 +8,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
+import { DeckDetailsHeader } from '@/components/deck-details-header';
 import { colors, radius, spacing } from '@/theme';
 
 export default function DeckPreviewSheet() {
@@ -35,45 +34,19 @@ export default function DeckPreviewSheet() {
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.eyebrow}>DECK PREVIEW</Text>
-          {bundle && <Text style={styles.bundleName}>From {bundle.title}</Text>}
-        </View>
-        <Pressable
-          accessibilityLabel="Close deck preview"
-          accessibilityRole="button"
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.closeText}>×</Text>
-        </Pressable>
-      </View>
-
       {deck ? (
         <ScrollView
           contentContainerStyle={styles.content}
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.cover}>
-            {deck.coverUri || deck.coverImage ? (
-              <Image
-                accessibilityLabel={`${deck.title} cover`}
-                cachePolicy="memory-disk"
-                contentFit="cover"
-                source={deck.coverUri || deck.coverImage}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : (
-              <View style={styles.coverFallback}>
-                <Text style={styles.coverFallbackText}>{deck.title}</Text>
-              </View>
-            )}
-          </View>
+          <DeckDetailsHeader
+            backLabel="Close Preview"
+            deck={deck}
+            onBack={() => router.back()}
+          />
           <View style={styles.copy}>
-            <Text style={styles.title}>{deck.title}</Text>
-            <Text style={styles.description}>{deck.description}</Text>
+            {bundle && <Text style={styles.bundleName}>From {bundle.title}</Text>}
             <Text style={styles.cardCount}>{deck.cardCount} CARDS</Text>
             {uniqueTags.length > 0 && (
               <View style={styles.tags}>
@@ -86,19 +59,19 @@ export default function DeckPreviewSheet() {
             )}
           </View>
           {deck.access === 'paid' && (
-            <Pressable
-              accessibilityHint="Opens individual deck details"
-              accessibilityRole="button"
-              onPress={() =>
-                router.replace({
-                  pathname: '/store/deck/[deckId]',
-                  params: { deckId: deck.id },
-                })
-              }
-              style={({ pressed }) => [styles.detailsButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.detailsButtonText}>VIEW DECK DETAILS</Text>
-            </Pressable>
+            <View style={styles.purchaseArea}>
+              <View
+                accessibilityLabel="Purchase Single Deck, coming soon"
+                accessibilityRole="button"
+                accessibilityState={{ disabled: true }}
+                style={styles.purchaseButton}
+              >
+                <Text style={styles.purchaseButtonText}>PURCHASE SINGLE DECK</Text>
+              </View>
+              <Text style={styles.purchaseNote}>
+                Secure in-app purchasing is coming soon.
+              </Text>
+            </View>
           )}
         </ScrollView>
       ) : (
@@ -113,61 +86,14 @@ export default function DeckPreviewSheet() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  headerCopy: { flex: 1, gap: 3 },
-  eyebrow: {
-    color: colors.play,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  bundleName: { color: colors.muted, fontSize: 13 },
-  closeButton: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    backgroundColor: colors.background,
-  },
-  closeText: { color: colors.ink, fontSize: 28, lineHeight: 30, fontWeight: '500' },
   content: {
-    alignItems: 'center',
-    gap: spacing.lg,
-    paddingHorizontal: spacing.lg,
+    flexGrow: 1,
+    gap: spacing.xl,
+    padding: spacing.lg,
     paddingBottom: spacing.xl,
   },
-  cover: {
-    width: '52%',
-    maxWidth: 220,
-    aspectRatio: 2 / 3,
-    overflow: 'hidden',
-    borderRadius: 12,
-    backgroundColor: colors.playSoft,
-    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.18)',
-  },
-  coverFallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.md,
-  },
-  coverFallbackText: {
-    color: colors.ink,
-    textAlign: 'center',
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  copy: { alignSelf: 'stretch', gap: 10 },
-  title: { color: colors.ink, fontSize: 28, lineHeight: 33, fontWeight: '900' },
+  copy: { gap: 10 },
+  bundleName: { color: colors.muted, fontSize: 13, fontWeight: '700' },
   description: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   cardCount: {
     color: colors.play,
@@ -189,19 +115,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textTransform: 'capitalize',
   },
-  detailsButton: {
+  purchaseArea: { gap: spacing.sm },
+  purchaseButton: {
     minHeight: 48,
-    alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.pill,
-    backgroundColor: colors.play,
+    backgroundColor: '#CBD5E1',
   },
-  detailsButtonText: {
+  purchaseButtonText: {
     color: colors.white,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.7,
+  },
+  purchaseNote: {
+    color: colors.muted,
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 17,
   },
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   notFoundTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
