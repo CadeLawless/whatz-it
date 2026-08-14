@@ -186,11 +186,11 @@ function RootLayoutContent() {
         <Stack.Screen
           name="store/bundles-for-deck/[deckId]"
           options={{
-            contentStyle: { backgroundColor: colors.surface },
+            animation: 'none',
+            contentStyle: { backgroundColor: 'transparent' },
+            gestureEnabled: false,
             headerShown: false,
-            presentation: 'formSheet',
-            sheetAllowedDetents: [0.55, 0.9],
-            sheetGrabberVisible: true,
+            presentation: 'transparentModal',
             title: 'Bundles',
           }}
         />
@@ -205,11 +205,11 @@ function RootLayoutContent() {
         <Stack.Screen
           name="store/deck-preview/[deckId]"
           options={{
-            contentStyle: { backgroundColor: colors.surface },
+            animation: 'none',
+            contentStyle: { backgroundColor: 'transparent' },
+            gestureEnabled: false,
             headerShown: false,
-            presentation: 'formSheet',
-            sheetAllowedDetents: [1],
-            sheetGrabberVisible: true,
+            presentation: 'transparentModal',
             title: 'Deck preview',
           }}
         />

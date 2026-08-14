@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useRef } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -10,81 +11,90 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
+import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
 import { colors, radius, spacing } from '@/theme';
 
 export default function BundlesForDeckSheet() {
   const { catalog } = useCatalog();
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
   const router = useRouter();
+  const sheetRef = useRef<AppSheetRef>(null);
   const deck = catalog.getDeckById(deckId);
   const bundles = catalog.getBundlesForDeck(deckId);
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.title}>Bundles</Text>
-          <Text style={styles.subtitle}>
-            {deck ? `Bundles containing ${deck.title}` : 'Bundles containing this deck'}
-          </Text>
+    <AppSheet
+      accessibilityLabel="Bundles containing this deck"
+      heightFraction={0.62}
+      onClose={() => router.back()}
+      ref={sheetRef}
+    >
+      <SafeAreaView edges={['bottom']} style={styles.screen}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.header}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>Bundles</Text>
+            <Text style={styles.subtitle}>
+              {deck ? `Bundles containing ${deck.title}` : 'Bundles containing this deck'}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Close bundle list"
+            accessibilityRole="button"
+            onPress={() => sheetRef.current?.close()}
+            style={({ pressed }) => [styles.doneButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.doneText}>DONE</Text>
+          </Pressable>
         </View>
-        <Pressable
-          accessibilityLabel="Close bundle list"
-          accessibilityRole="button"
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.doneButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.doneText}>DONE</Text>
-        </Pressable>
-      </View>
 
-      <ScrollView
-        contentContainerStyle={styles.list}
-        contentInsetAdjustmentBehavior="automatic"
-        showsVerticalScrollIndicator={false}
-      >
-        {bundles.map((bundle) => {
-          const previewDeck = bundle.decks[0];
-          return (
-            <Pressable
-              accessibilityHint="Opens bundle details"
-              accessibilityRole="link"
-              key={bundle.id}
-              onPress={() =>
-                router.replace({
-                  pathname: '/store/bundle/[bundleId]',
-                  params: { bundleId: bundle.id, fromDeckId: deckId },
-                })
-              }
-              style={({ pressed }) => [styles.bundleRow, pressed && styles.pressed]}
-            >
-              <View style={styles.bundleCover}>
-                {previewDeck?.coverUri || previewDeck?.coverImage ? (
-                  <Image
-                    accessibilityLabel={`${bundle.title} bundle preview`}
-                    cachePolicy="memory-disk"
-                    contentFit="cover"
-                    source={previewDeck.coverUri || previewDeck.coverImage}
-                    style={StyleSheet.absoluteFill}
-                  />
-                ) : (
-                  <View style={styles.coverFallback} />
-                )}
-              </View>
-              <View style={styles.bundleCopy}>
-                <Text style={styles.bundleTitle}>{bundle.title}</Text>
-                <Text numberOfLines={2} style={styles.bundleDescription}>
-                  {bundle.description || `${bundle.decks.length} decks in one collection.`}
-                </Text>
-                <Text style={styles.bundleMeta}>{bundle.decks.length} DECKS</Text>
-              </View>
-              <Text accessibilityElementsHidden style={styles.rowChevron}>›</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </SafeAreaView>
+        <ScrollView
+          contentContainerStyle={styles.list}
+          contentInsetAdjustmentBehavior="automatic"
+          showsVerticalScrollIndicator={false}
+        >
+          {bundles.map((bundle) => {
+            const previewDeck = bundle.decks[0];
+            return (
+              <Pressable
+                accessibilityHint="Opens bundle details"
+                accessibilityRole="link"
+                key={bundle.id}
+                onPress={() =>
+                  router.replace({
+                    pathname: '/store/bundle/[bundleId]',
+                    params: { bundleId: bundle.id, fromDeckId: deckId },
+                  })
+                }
+                style={({ pressed }) => [styles.bundleRow, pressed && styles.pressed]}
+              >
+                <View style={styles.bundleCover}>
+                  {previewDeck?.coverUri || previewDeck?.coverImage ? (
+                    <Image
+                      accessibilityLabel={`${bundle.title} bundle preview`}
+                      cachePolicy="memory-disk"
+                      contentFit="cover"
+                      source={previewDeck.coverUri || previewDeck.coverImage}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  ) : (
+                    <View style={styles.coverFallback} />
+                  )}
+                </View>
+                <View style={styles.bundleCopy}>
+                  <Text style={styles.bundleTitle}>{bundle.title}</Text>
+                  <Text numberOfLines={2} style={styles.bundleDescription}>
+                    {bundle.description || `${bundle.decks.length} decks in one collection.`}
+                  </Text>
+                  <Text style={styles.bundleMeta}>{bundle.decks.length} DECKS</Text>
+                </View>
+                <Text accessibilityElementsHidden style={styles.rowChevron}>›</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </SafeAreaView>
+    </AppSheet>
   );
 }
 

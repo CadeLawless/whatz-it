@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -21,6 +21,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
+import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
 import { colors, radius, spacing } from '@/theme';
 
@@ -31,6 +32,7 @@ export default function DeckPreviewSheet() {
     deckId: string;
   }>();
   const router = useRouter();
+  const sheetRef = useRef<AppSheetRef>(null);
   const { width } = useWindowDimensions();
   const bundle = catalog.getBundleById(bundleId);
   const bundleDecks = useMemo(() => bundle?.decks ?? [], [bundle]);
@@ -136,14 +138,20 @@ export default function DeckPreviewSheet() {
   }));
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <Stack.Screen options={{ headerShown: false }} />
-      {deck ? (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          contentInsetAdjustmentBehavior="automatic"
-          showsVerticalScrollIndicator={false}
-        >
+    <AppSheet
+      accessibilityLabel="Deck preview"
+      heightFraction={0.92}
+      onClose={() => router.back()}
+      ref={sheetRef}
+    >
+      <SafeAreaView edges={['bottom']} style={styles.screen}>
+        <Stack.Screen options={{ headerShown: false }} />
+        {deck ? (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            contentInsetAdjustmentBehavior="automatic"
+            showsVerticalScrollIndicator={false}
+          >
           <View style={styles.sheetHeader}>
             <Text numberOfLines={2} style={styles.sheetTitle}>
               {bundle?.title ?? 'Deck Preview'}
@@ -152,7 +160,7 @@ export default function DeckPreviewSheet() {
               accessibilityLabel="Close preview"
               accessibilityRole="button"
               hitSlop={8}
-              onPress={() => router.back()}
+              onPress={() => sheetRef.current?.close()}
               style={styles.closeButton}
             >
               <Text accessibilityElementsHidden style={styles.closeButtonText}>
@@ -277,14 +285,15 @@ export default function DeckPreviewSheet() {
               </View>
             )}
           </View>
-        </ScrollView>
-      ) : (
-        <View style={styles.notFound}>
-          <Text style={styles.notFoundTitle}>Deck not found</Text>
-          <Text style={styles.description}>This deck is no longer available.</Text>
-        </View>
-      )}
-    </SafeAreaView>
+          </ScrollView>
+        ) : (
+          <View style={styles.notFound}>
+            <Text style={styles.notFoundTitle}>Deck not found</Text>
+            <Text style={styles.description}>This deck is no longer available.</Text>
+          </View>
+        )}
+      </SafeAreaView>
+    </AppSheet>
   );
 }
 
