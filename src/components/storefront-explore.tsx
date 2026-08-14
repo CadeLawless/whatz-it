@@ -56,7 +56,11 @@ export function StorefrontExplore({
   const visibleTags = useMemo(() => {
     const defaults = tags.slice(0, 4);
     const selected = tags.filter(({ tag }) => selectedTags.includes(tag));
-    return [...new Map([...selected, ...defaults].map((facet) => [facet.tag, facet])).values()];
+    return [
+      ...new Map(
+        [...selected, ...defaults].map((facet) => [facet.tag, facet]),
+      ).values(),
+    ];
   }, [selectedTags, tags]);
   const filteredSheetTags = useMemo(() => {
     const query = tagSearch.trim().toLocaleLowerCase();
@@ -228,7 +232,7 @@ export function StorefrontExplore({
       {section === 'decks' && tags.length > 0 && !searchFocused && (
         <View style={styles.filters}>
           <Text style={styles.filterLabel}>FILTER BY TAG</Text>
-          <View style={styles.tagList}>
+          <View style={styles.visibleTagRows}>
             {visibleTags.map((facet) => (
               <Pressable
                 accessibilityRole="checkbox"
@@ -242,6 +246,7 @@ export function StorefrontExplore({
                 ]}
               >
                 <Text
+                  numberOfLines={1}
                   style={[
                     styles.tagText,
                     selectedTags.includes(facet.tag) && styles.tagTextSelected,
@@ -251,16 +256,18 @@ export function StorefrontExplore({
                 </Text>
               </Pressable>
             ))}
-            {tags.length > visibleTags.length && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setTagSheetVisible(true)}
-                style={({ pressed }) => [styles.moreTags, pressed && styles.pressed]}
-              >
-                <Text style={styles.moreTagsText}>MORE FILTERS…</Text>
-              </Pressable>
-            )}
           </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setTagSheetVisible(true)}
+            style={({ pressed }) => [styles.moreTags, pressed && styles.pressed]}
+          >
+            <Text style={styles.moreTagsText}>
+              {selectedTags.length > 0
+                ? `MORE FILTERS (${selectedTags.length} SELECTED)`
+                : 'MORE FILTERS…'}
+            </Text>
+          </Pressable>
         </View>
       )}
 
@@ -532,12 +539,12 @@ const styles = StyleSheet.create({
   clearSearchText: { color: '#475569', fontSize: 23, lineHeight: 25, fontWeight: '700', marginTop: -2 },
   filters: { gap: 10 },
   filterLabel: { color: '#64748B', fontSize: 11, fontWeight: '900', letterSpacing: 0.7 },
-  tagList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: '#DCE5EF', borderRadius: 17, backgroundColor: '#FFFFFF' },
+  visibleTagRows: { maxHeight: 76, flexDirection: 'row', flexWrap: 'wrap', gap: 8, overflow: 'hidden' },
+  tag: { maxWidth: '100%', minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: '#DCE5EF', borderRadius: 17, backgroundColor: '#FFFFFF' },
   tagSelected: { borderColor: '#459EFE', backgroundColor: '#EAF4FF' },
   tagText: { color: '#64748B', fontSize: 12, fontWeight: '800', textTransform: 'capitalize' },
   tagTextSelected: { color: '#2563EB' },
-  moreTags: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 17, backgroundColor: '#EAF4FF' },
+  moreTags: { minHeight: 34, alignSelf: 'flex-start', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 17, backgroundColor: '#EAF4FF' },
   moreTagsText: { color: '#2563EB', fontSize: 11, fontWeight: '900', letterSpacing: 0.4 },
   loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
