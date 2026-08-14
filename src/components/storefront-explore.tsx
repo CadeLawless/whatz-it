@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
   bundleTitle: { color: '#111827', fontSize: 21, lineHeight: 25, fontWeight: '900' },
   bundleDescription: { color: '#64748B', fontSize: 13, lineHeight: 18 },
   bundleMeta: { color: '#459EFE', fontSize: 11, fontWeight: '900', letterSpacing: 0.7 },
-  fan: { width: 150, height: 150, position: 'absolute', top: '50%', marginTop: -75, zIndex: 2 },
+  fan: { width: 150, height: 150, position: 'absolute', top: '50%', marginTop: -57, zIndex: 2 },
   fanLeft: { left: -30, transform: [{ rotate: '12deg' }] },
   fanRight: { right: -30, transform: [{ rotate: '-12deg' }] },
   fanSpotlight: { width: 190, height: 190, position: 'absolute', top: -20, left: -20, borderRadius: 95, backgroundColor: '#EAF4FF' },
