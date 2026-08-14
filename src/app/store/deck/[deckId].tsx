@@ -9,10 +9,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
+import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
+import { useCommerceProduct } from '@/storefront/commerce-provider';
 
 export default function StoreDeckDetailsScreen() {
   const { catalog } = useCatalog();
@@ -21,6 +23,23 @@ export default function StoreDeckDetailsScreen() {
   const isPortrait = usePortraitScreen();
   const deck = catalog.getDeckById(deckId);
   const bundles = catalog.getBundlesForDeck(deckId);
+  const commerceTarget = deck
+    ? {
+        access: deck.access,
+        id: deck.id,
+        installationStatus: deck.installationStatus,
+        kind: 'deck' as const,
+        title: deck.title,
+      }
+    : null;
+  const resolvedCommerceTarget =
+    commerceTarget ?? {
+      access: 'paid',
+      id: deckId,
+      kind: 'deck' as const,
+      title: 'Deck',
+    };
+  const commerce = useCommerceProduct(resolvedCommerceTarget);
 
   if (!isPortrait) {
     return <PortraitTransition style={styles.orientationGate} />;
@@ -82,16 +101,13 @@ export default function StoreDeckDetailsScreen() {
 
           </View>
 
-          <View style={styles.purchaseCard}>
-            <Text style={styles.purchaseTitle}>Purchasing is coming soon</Text>
-            <Text style={styles.purchaseCopy}>
-              This preview lets you browse the complete catalog. Secure in-app
-              purchasing will be connected in the next phase.
-            </Text>
-            <View accessibilityState={{ disabled: true }} style={styles.purchaseButton}>
-              <Text style={styles.purchaseButtonText}>COMING SOON</Text>
-            </View>
-          </View>
+          <CommercePurchaseCard
+            onPurchase={commerce.purchase}
+            onRetry={commerce.retry}
+            state={commerce.state}
+            style={styles.purchaseCardSpacing}
+            target={resolvedCommerceTarget}
+          />
         </ScrollView>
       </SafeAreaView>
     </>
@@ -128,29 +144,7 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontWeight: '500',
   },
-  purchaseCard: {
-    gap: 10,
-    marginTop: spacing.xl,
-    padding: 20,
-    borderRadius: radius.xl,
-    backgroundColor: colors.background,
-  },
-  purchaseTitle: { color: '#111827', fontSize: 18, fontWeight: '900' },
-  purchaseCopy: { color: '#64748B', fontSize: 14, lineHeight: 20 },
-  purchaseButton: {
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-    borderRadius: radius.pill,
-    backgroundColor: '#CBD5E1',
-  },
-  purchaseButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
+  purchaseCardSpacing: { marginTop: spacing.xl },
   centered: {
     flex: 1,
     alignItems: 'center',

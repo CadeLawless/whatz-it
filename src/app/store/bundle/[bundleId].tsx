@@ -10,9 +10,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import { BundleCoverCarousel } from '@/components/bundle-cover-carousel';
+import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
+import { useCommerceProduct } from '@/storefront/commerce-provider';
 
 export default function BundleDetailsScreen() {
   const { catalog } = useCatalog();
@@ -23,6 +25,22 @@ export default function BundleDetailsScreen() {
   const router = useRouter();
   const isPortrait = usePortraitScreen();
   const bundle = catalog.getBundleById(bundleId);
+  const commerceTarget = bundle
+    ? {
+        access: bundle.access,
+        id: bundle.id,
+        kind: 'bundle' as const,
+        title: bundle.title,
+      }
+    : null;
+  const resolvedCommerceTarget =
+    commerceTarget ?? {
+      access: 'paid',
+      id: bundleId,
+      kind: 'bundle' as const,
+      title: 'Bundle',
+    };
+  const commerce = useCommerceProduct(resolvedCommerceTarget);
   const sourceDeck = fromDeckId ? catalog.getDeckById(fromDeckId) : undefined;
   const backLabel = sourceDeck ? `Back to ${sourceDeck.title}` : 'Back to Explore';
 
@@ -74,16 +92,12 @@ export default function BundleDetailsScreen() {
             }
           />
 
-          <View style={styles.purchaseCard}>
-            <Text style={styles.purchaseTitle}>Bundle purchasing is coming soon</Text>
-            <Text style={styles.purchaseCopy}>
-              Current localized pricing and secure purchasing will appear here
-              after Phase 4 connects verified App Store products.
-            </Text>
-            <View accessibilityState={{ disabled: true }} style={styles.purchaseButton}>
-              <Text style={styles.purchaseButtonText}>COMING SOON</Text>
-            </View>
-          </View>
+          <CommercePurchaseCard
+            onPurchase={commerce.purchase}
+            onRetry={commerce.retry}
+            state={commerce.state}
+            target={resolvedCommerceTarget}
+          />
         </ScrollView>
       </SafeAreaView>
     </>
@@ -138,28 +152,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   description: { color: colors.white, fontSize: 15, lineHeight: 21 },
-  purchaseCard: {
-    gap: 10,
-    padding: spacing.lg,
-    borderRadius: radius.xl,
-    backgroundColor: colors.background,
-  },
-  purchaseTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' },
-  purchaseCopy: { color: colors.muted, fontSize: 14, lineHeight: 20 },
-  purchaseButton: {
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-    borderRadius: radius.pill,
-    backgroundColor: '#CBD5E1',
-  },
-  purchaseButtonText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
   centered: {
     flex: 1,
     alignItems: 'center',
