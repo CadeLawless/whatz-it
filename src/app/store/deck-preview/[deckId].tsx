@@ -48,6 +48,7 @@ export default function DeckPreviewSheet() {
   const visibleCarouselIndex = Math.max(0, activeIndex);
   const canBrowseBundle = bundleDecks.length > 1 && activeIndex >= 0;
   const pageWidth = Math.max(1, width - spacing.lg * 2);
+  const pageStride = pageWidth + spacing.md;
 
   const showDeckAtIndex = useCallback(
     (targetIndex: number) => {
@@ -70,13 +71,13 @@ export default function DeckPreviewSheet() {
         .enabled(canBrowseBundle)
         .activeOffsetX([-24, 24])
         .failOffsetY([-18, 18])
-        .onBegin(() => {
+        .onStart(() => {
           cancelAnimation(pageOffset);
           gestureStartOffset.set(pageOffset.get());
         })
         .onUpdate(({ translationX }) => {
           const proposedOffset =
-            gestureStartOffset.get() + translationX / pageWidth;
+            gestureStartOffset.get() + translationX / pageStride;
           const lastOffset = -(bundleDecks.length - 1);
 
           if (proposedOffset > 0) {
@@ -124,14 +125,14 @@ export default function DeckPreviewSheet() {
       canBrowseBundle,
       gestureStartOffset,
       pageOffset,
-      pageWidth,
+      pageStride,
       reduceMotion,
       showDeckAtIndex,
     ],
   );
 
   const carouselAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: pageOffset.get() * pageWidth }],
+    transform: [{ translateX: pageOffset.get() * pageStride }],
   }));
 
   return (
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
   },
   previewBody: { gap: spacing.xl },
   carouselViewport: { overflow: 'hidden' },
-  carouselTrack: { flexDirection: 'row' },
+  carouselTrack: { flexDirection: 'row', gap: spacing.md },
   carouselPage: { flexShrink: 0 },
   deckNavigation: {
     minHeight: 52,
