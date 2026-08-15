@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildDeckLibrarySections, sortLibraryDecks } from './deck-library-sort';
+import {
+  buildDeckLibrarySections,
+  DECK_LIBRARY_SORTS,
+  sortLibraryDecks,
+} from './deck-library-sort';
 
 const decks = [
   { id: 'zoo', title: 'Zoo' },
@@ -9,8 +13,23 @@ const decks = [
   { id: 'movies', title: 'Movies' },
 ];
 const playedAt = { animals: 100, movies: 200 };
+const purchasedDecks = [
+  { id: 'free-new', title: 'Alpha Free', access: 'free' as const, installationStatus: 'installed' as const },
+  { id: 'paid-played', title: 'Bravo Paid', access: 'paid' as const, installationStatus: 'installed' as const },
+  { id: 'paid-new', title: 'Charlie Paid', access: 'paid' as const, installationStatus: 'installed' as const },
+  { id: 'free-played', title: 'Delta Free', access: 'free' as const, installationStatus: 'installed' as const },
+];
+const purchasedPlayedAt = { 'paid-played': 100, 'free-played': 200 };
 
 describe('My Decks sorting', () => {
+  it('orders sort options for the library control', () => {
+    assert.deepEqual(DECK_LIBRARY_SORTS, [
+      'recently-played',
+      'alphabetical',
+      'unplayed-first',
+    ]);
+  });
+
   it('defaults played decks to newest first and leaves unplayed decks afterward', () => {
     assert.deepEqual(
       sortLibraryDecks(decks, playedAt, 'recently-played').map(({ id }) => id),
@@ -29,6 +48,25 @@ describe('My Decks sorting', () => {
     assert.deepEqual(
       sortLibraryDecks(decks, playedAt, 'alphabetical').map(({ id }) => id),
       ['animals', 'movies', 'zoo'],
+    );
+  });
+
+  it('puts purchased unplayed decks first on recency-based sorts', () => {
+    assert.deepEqual(
+      sortLibraryDecks(purchasedDecks, purchasedPlayedAt, 'recently-played').map(({ id }) => id),
+      ['paid-new', 'free-played', 'paid-played', 'free-new'],
+    );
+
+    assert.deepEqual(
+      sortLibraryDecks(purchasedDecks, purchasedPlayedAt, 'unplayed-first').map(({ id }) => id),
+      ['paid-new', 'free-new', 'free-played', 'paid-played'],
+    );
+  });
+
+  it('keeps alphabetical sorting truly alphabetical', () => {
+    assert.deepEqual(
+      sortLibraryDecks(purchasedDecks, purchasedPlayedAt, 'alphabetical').map(({ id }) => id),
+      ['free-new', 'paid-played', 'paid-new', 'free-played'],
     );
   });
 

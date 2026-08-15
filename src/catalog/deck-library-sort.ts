@@ -3,8 +3,8 @@ export type DeckLibrarySort = 'recently-played' | 'unplayed-first' | 'alphabetic
 export const DEFAULT_DECK_LIBRARY_SORT: DeckLibrarySort = 'recently-played';
 export const DECK_LIBRARY_SORTS: readonly DeckLibrarySort[] = [
   'recently-played',
-  'unplayed-first',
   'alphabetical',
+  'unplayed-first',
 ];
 
 export const DECK_LIBRARY_SORT_LABELS: Record<DeckLibrarySort, string> = {
@@ -17,7 +17,12 @@ export function isDeckLibrarySort(value: string): value is DeckLibrarySort {
   return DECK_LIBRARY_SORTS.some((sort) => sort === value);
 }
 
-type SortableDeck = { id: string; title: string };
+type SortableDeck = {
+  id: string;
+  title: string;
+  access?: 'free' | 'paid';
+  installationStatus?: 'installed' | 'not_owned' | 'pending' | 'failed';
+};
 
 export type DeckLibrarySection<T extends SortableDeck> = {
   id: 'all' | 'unplayed' | 'recently-played';
@@ -30,24 +35,38 @@ export function sortLibraryDecks<T extends SortableDeck>(
   playedAt: Readonly<Record<string, number>>,
   sort: DeckLibrarySort,
 ): T[] {
-  return [...decks].sort((left, right) => {
-    const leftPlayedAt = playedAt[left.id];
-    const rightPlayedAt = playedAt[right.id];
+  return decks
+    .map((deck, index) => ({ deck, index }))
+    .sort((leftItem, rightItem) => {
+      const left = leftItem.deck;
+      const right = rightItem.deck;
+      const leftPlayedAt = playedAt[left.id];
+      const rightPlayedAt = playedAt[right.id];
 
-    if (sort === 'alphabetical') return compareDeckTitles(left, right);
+      if (sort === 'alphabetical') return compareDeckTitles(left, right);
 
-    if (sort === 'unplayed-first') {
-      const leftUnplayed = leftPlayedAt === undefined;
-      const rightUnplayed = rightPlayedAt === undefined;
-      if (leftUnplayed !== rightUnplayed) return leftUnplayed ? -1 : 1;
-    }
+      const leftPurchasedUnplayed = isPurchasedUnplayed(left, playedAt);
+      const rightPurchasedUnplayed = isPurchasedUnplayed(right, playedAt);
+      if (leftPurchasedUnplayed !== rightPurchasedUnplayed) {
+        return leftPurchasedUnplayed ? -1 : 1;
+      }
 
-    if (leftPlayedAt !== rightPlayedAt) {
-      return (rightPlayedAt ?? Number.NEGATIVE_INFINITY)
-        - (leftPlayedAt ?? Number.NEGATIVE_INFINITY);
-    }
-    return compareDeckTitles(left, right);
-  });
+      if (sort === 'unplayed-first') {
+        const leftUnplayed = leftPlayedAt === undefined;
+        const rightUnplayed = rightPlayedAt === undefined;
+        if (leftUnplayed !== rightUnplayed) return leftUnplayed ? -1 : 1;
+      }
+
+      if (leftPlayedAt !== rightPlayedAt) {
+        return (rightPlayedAt ?? Number.NEGATIVE_INFINITY)
+          - (leftPlayedAt ?? Number.NEGATIVE_INFINITY);
+      }
+      if (leftPlayedAt !== undefined && rightPlayedAt !== undefined) {
+        return compareDeckTitles(left, right);
+      }
+      return leftItem.index - rightItem.index;
+    })
+    .map(({ deck }) => deck);
 }
 
 export function buildDeckLibrarySections<T extends SortableDeck>(
@@ -87,4 +106,13 @@ export function buildDeckLibrarySections<T extends SortableDeck>(
 function compareDeckTitles(left: SortableDeck, right: SortableDeck) {
   return left.title.localeCompare(right.title, undefined, { sensitivity: 'base' })
     || left.id.localeCompare(right.id);
+}
+
+function isPurchasedUnplayed(
+  deck: SortableDeck,
+  playedAt: Readonly<Record<string, number>>,
+) {
+  return deck.access === 'paid'
+    && deck.installationStatus === 'installed'
+    && playedAt[deck.id] === undefined;
 }

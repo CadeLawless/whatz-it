@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -36,17 +36,32 @@ function createQueryKey(search: string) {
   return search.trim();
 }
 
-export function StorefrontExplore({
-  catalog,
-  syncStatus,
-  onBrowseFocus,
-}: {
-  catalog: CatalogSnapshot;
-  syncStatus: 'disabled' | 'syncing' | 'synced' | 'failed' | null;
-  onBrowseFocus?: (offset: number) => void;
-}) {
+export const StorefrontExplore = forwardRef<
+  { blurSearch: () => void },
+  {
+    catalog: CatalogSnapshot;
+    syncStatus: 'disabled' | 'syncing' | 'synced' | 'failed' | null;
+    onBrowseFocus?: (offset: number) => void;
+  }
+>(function StorefrontExplore(
+  {
+    catalog,
+    syncStatus,
+    onBrowseFocus,
+  },
+  ref,
+) {
   const router = useRouter();
   const searchInputRef = useRef<TextInput>(null);
+  const isScrollingProgrammatically = useRef(false);
+
+  useImperativeHandle(ref, () => ({
+    blurSearch: () => {
+      if (!isScrollingProgrammatically.current) {
+        searchInputRef.current?.blur();
+      }
+    },
+  }), []);
   const [section, setSection] = useState<ExploreSection>('bundles');
   const [search, setSearch] = useState('');
   const [repository, setRepository] = useState<CatalogDiscoveryRepository | null>(null);
@@ -175,9 +190,13 @@ export function StorefrontExplore({
   }, [repository, search, section]);
 
   const selectSection = (nextSection: ExploreSection) => {
+    isScrollingProgrammatically.current = true;
     searchInputRef.current?.blur();
     setSection(nextSection);
     onBrowseFocus?.(tabsOffset - 18);
+    setTimeout(() => {
+      isScrollingProgrammatically.current = false;
+    }, 500);
   };
 
   const loadMore = async () => {
@@ -243,7 +262,11 @@ export function StorefrontExplore({
           autoCorrect={false}
           onChangeText={setSearch}
           onFocus={() => {
+            isScrollingProgrammatically.current = true;
             onBrowseFocus?.(searchOffset);
+            setTimeout(() => {
+              isScrollingProgrammatically.current = false;
+            }, 500);
           }}
           placeholder={section === 'bundles' ? 'Search bundles or included decks' : 'Search decks'}
           placeholderTextColor="#94A3B8"
@@ -337,10 +360,9 @@ export function StorefrontExplore({
           )}
         </Animated.View>
       )}
-
     </View>
   );
-}
+});
 
 function ExploreTab({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
   return (

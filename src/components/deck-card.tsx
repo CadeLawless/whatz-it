@@ -5,16 +5,19 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { CatalogDeck } from '@/catalog/catalog-snapshot';
 import { colors, spacing } from '@/theme';
 
-type DeckCardProps = { deck: CatalogDeck };
+type DeckCardProps = {
+  deck: CatalogDeck;
+  showNewBadge?: boolean;
+};
 
-export function DeckCard({ deck }: DeckCardProps) {
+export function DeckCard({ deck, showNewBadge = false }: DeckCardProps) {
   const router = useRouter();
 
   return (
     <View style={styles.shadow}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={deck.title}
+        accessibilityLabel={showNewBadge ? `${deck.title}, new` : deck.title}
         onPress={() =>
           router.push({
             pathname: '/deck/[deckId]',
@@ -41,6 +44,11 @@ export function DeckCard({ deck }: DeckCardProps) {
             <Text maxFontSizeMultiplier={1.1} style={styles.fallbackTitle}>
               {deck.title}
             </Text>
+          </View>
+        )}
+        {showNewBadge && (
+          <View accessibilityElementsHidden style={styles.newBadge}>
+            <Text style={styles.newBadgeText}>NEW</Text>
           </View>
         )}
       </Pressable>
@@ -80,5 +88,22 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '900',
     textAlign: 'center',
+  },
+  newBadge: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 2px 7px rgba(15, 23, 42, 0.22)',
+  },
+  newBadgeText: {
+    color: colors.play,
+    fontSize: 9,
+    lineHeight: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
 });
