@@ -1,7 +1,6 @@
 import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
 import { useFocusEffect } from 'expo-router';
-import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,17 +10,14 @@ import {
   Text,
   TextInput,
   useWindowDimensions,
-  View,
-  type LayoutChangeEvent,
+  View
 } from 'react-native';
 import Animated, {
   Easing,
-  interpolate,
-  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withTiming,
+  withTiming
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -66,6 +62,7 @@ const SUPPORT_EMAIL_URL = `mailto:${SUPPORT_EMAIL}?subject=WHATZ%20IT%20Support`
 const HEADER_OVERSCROLL_EXTENSION = 700;
 
 export default function DeckLibraryScreen() {
+  const reduceMotion = useReducedMotion();
   const catalogState = useCatalog();
   const { catalog } = catalogState;
   const catalogSyncStatus =
@@ -78,20 +75,19 @@ export default function DeckLibraryScreen() {
   const exploreRef = useRef<{ blurSearch: () => void }>(null);
   const libraryTop = useRef(0);
   const exploreTop = useRef(0);
-  const sectionOffsets = useRef({ decks: 0, videos: 0 });
-  const sectionHeadingOffsets = useRef({ decks: 0, videos: 0 });
   const isPortrait = usePortraitScreen();
   const { isVideoFinalizing } = useRound();
   const { revealTransition } = useScreenshotTransition();
   const branding = getLoadedHomeBranding() ?? HOME_BRANDING_SOURCES;
-  const [decksExpanded, setDecksExpanded] = useState(true);
+  const [librarySection, setLibrarySection] = useState<'decks' | 'videos'>('decks');
   const [deckSort, setDeckSort] = useState<DeckLibrarySort>(
     DEFAULT_DECK_LIBRARY_SORT,
   );
+  const myLibraryPosition = useSharedValue(librarySection === 'videos' ? 1 : 0);
+  const [myLibraryControlWidth, setMyLibraryControlWidth] = useState(0);
   const [deckSearch, setDeckSearch] = useState('');
   const [deckPlayHistory, setDeckPlayHistory] = useState<Record<string, number>>({});
   const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
-  const [videosExpanded, setVideosExpanded] = useState(true);
   const [videos, setVideos] = useState<RoundVideo[]>([]);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
   const [exportingVideoId, setExportingVideoId] = useState<string | null>(null);
@@ -114,6 +110,26 @@ export default function DeckLibraryScreen() {
   const brandWidth = Math.min(width * 0.74, 420);
   const headshotWidth = Math.round(brandWidth * 0.16);
   const wordmarkWidth = Math.round(brandWidth * 0.75);
+  useEffect(() => {
+    myLibraryPosition.value = withTiming(
+      librarySection === 'videos' ? 1 : 0,
+      {
+        duration: reduceMotion ? 0 : 220,
+        easing: Easing.out(Easing.cubic),
+      },
+    );
+  }, [librarySection, myLibraryPosition, reduceMotion]);
+  const myLibraryIndicatorStyle = useAnimatedStyle(
+    () => ({
+      transform: [
+        {
+          translateX:
+            myLibraryPosition.value * (myLibraryControlWidth / 2),
+        },
+      ],
+    }),
+    [myLibraryControlWidth],
+  );
   const filteredDecks = useMemo(() => {
     const searchLower = deckSearch.trim().toLowerCase();
     const allInstalledDecks = [...catalog.freeDecks, ...catalog.paidDecks].filter(
@@ -198,10 +214,10 @@ export default function DeckLibraryScreen() {
   );
 
   useEffect(() => {
-    if (!decksExpanded) {
+    if (librarySection !== 'decks') {
       deckSearchInputRef.current?.blur();
     }
-  }, [decksExpanded]);
+  }, [librarySection]);
 
   const handleDeckSearchFocus = useCallback(() => {
     isScrollingProgrammatically.current = true;
@@ -219,39 +235,6 @@ export default function DeckLibraryScreen() {
       }, 500);
     });
   }, []);
-
-  const scrollToExpandedSection = useCallback((section: 'decks' | 'videos') => {
-    requestAnimationFrame(() => {
-      scrollViewRef.current?.scrollTo({
-        animated: true,
-        y: Math.max(
-          0,
-          libraryTop.current +
-            sectionOffsets.current[section] +
-            sectionHeadingOffsets.current[section],
-        ),
-      });
-    });
-  }, []);
-
-  const handleDecksExpanded = useCallback(
-    () => scrollToExpandedSection('decks'),
-    [scrollToExpandedSection],
-  );
-  const handleVideosExpanded = useCallback(
-    () => scrollToExpandedSection('videos'),
-    [scrollToExpandedSection],
-  );
-
-  const toggleDecks = () => {
-    const expanded = !decksExpanded;
-    setDecksExpanded(expanded);
-  };
-
-  const toggleVideos = () => {
-    const expanded = !videosExpanded;
-    setVideosExpanded(expanded);
-  };
 
   const handleSave = async (video: RoundVideo): Promise<VideoSaveNotice> => {
     if (savingVideoId || !isRoundVideoReadyToSave(video)) {
@@ -348,6 +331,163 @@ export default function DeckLibraryScreen() {
     }, 60);
   }, []);
 
+  const deckLibraryContent = (
+    <View style={styles.deckLibraryContent}>
+      <DeckSearchBar
+        inputRef={deckSearchInputRef}
+        onChangeText={setDeckSearch}
+        onFocus={handleDeckSearchFocus}
+        value={deckSearch}
+      />
+      <DeckSortControl
+        onChange={(sort) => {
+          setDeckSort(sort);
+          void saveDeckLibrarySort(sort);
+        }}
+        value={deckSort}
+      />
+      {visibleDecks.length > 0 ? (
+        <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
+          {visibleDecks.map((deck) => (
+            <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
+              <DeckCard
+                deck={deck}
+                showNewBadge={
+                  deck.access === 'paid'
+                  && deck.installationStatus === 'installed'
+                  && deckPlayHistory[deck.id] === undefined
+                }
+              />
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text accessibilityLiveRegion="polite" style={styles.emptyDecks}>
+          {deckSearch.trim()
+            ? 'No decks match your search.'
+            : 'Your decks will appear here.'}
+        </Text>
+      )}
+    </View>
+  );
+
+  const videoLibraryContent = (
+    <View style={styles.videoLibraryContent}>
+      {isVideoFinalizing && (
+        <View
+          accessibilityLabel="Preparing latest round video"
+          accessibilityRole="progressbar"
+          style={styles.pendingVideo}
+        >
+          <ActivityIndicator color="#459EFE" size="small" />
+          <Text style={styles.pendingVideoText}>Preparing latest round video…</Text>
+        </View>
+      )}
+      {videos.length === 0 ? (
+        !isVideoFinalizing && (
+          <Text style={styles.emptyVideos}>Your last 10 round videos will appear here.</Text>
+        )
+      ) : (
+        <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
+          {videos.map((video) => {
+            const deck = catalog.getDeckById(video.deckId);
+            const videoReady = isRoundVideoReadyToSave(video);
+            const exportFailed = video.exportStatus === 'failed';
+            const exportPreparing = !videoReady && !exportFailed;
+            return (
+              <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
+                {exportPreparing ? (
+                  <View
+                    accessibilityLabel="Preparing round video"
+                    accessibilityRole="progressbar"
+                    style={[styles.video, styles.videoPreparing]}
+                  >
+                    <ActivityIndicator color="#459EFE" size="small" />
+                  </View>
+                ) : (
+                  <RoundVideoPlayer
+                    isSaving={savingVideoId === video.id}
+                    saveDisabled={!isRoundVideoReadyToSave(video)}
+                    onDelete={deleteFromPlayer}
+                    onSave={handleSave}
+                    staticThumbnail
+                    video={video}
+                    style={styles.video}
+                  />
+                )}
+                <Text numberOfLines={1} style={styles.videoDeckName}>
+                  {deck?.title ?? 'Round video'}
+                </Text>
+                <Text style={styles.videoDate}>
+                  {new Date(video.createdAt).toLocaleString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
+                </Text>
+                <View style={styles.videoActions}>
+                  <Pressable
+                    accessibilityLabel={
+                      exportFailed
+                        ? 'Retry video export'
+                        : videoReady
+                          ? 'Save video'
+                          : 'Video is exporting'
+                    }
+                    accessibilityRole="button"
+                    accessibilityState={{
+                      busy: exportPreparing || savingVideoId === video.id,
+                      disabled:
+                        savingVideoId !== null ||
+                        exportingVideoId !== null ||
+                        exportPreparing,
+                    }}
+                    disabled={
+                      savingVideoId !== null ||
+                      exportingVideoId !== null ||
+                      exportPreparing
+                    }
+                    onPress={() =>
+                      void (exportFailed
+                        ? handleRetryExport(video)
+                        : handlePortraitSave(video))
+                    }
+                    style={({ pressed }) => [
+                      styles.saveButton,
+                      exportPreparing && styles.disabled,
+                      pressed && (videoReady || exportFailed) && styles.pressed,
+                    ]}
+                  >
+                    {exportPreparing ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text numberOfLines={1} style={styles.saveButtonText}>
+                        {exportFailed
+                          ? 'RETRY'
+                          : savingVideoId === video.id
+                            ? 'SAVING…'
+                            : 'SAVE'}
+                      </Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => handleDelete(video)}
+                    style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.deleteButtonText}>DELETE</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
 
   return (
@@ -406,201 +546,19 @@ export default function DeckLibraryScreen() {
 
           {homeMode === 'my-decks' ? (
             <View style={styles.myDecksContent}>
-          <View
-            onLayout={(event) => {
-              sectionOffsets.current.decks = event.nativeEvent.layout.y;
-            }}
-          >
-            <SectionHeading
-              expanded={decksExpanded}
-              label="MY DECKS"
-              onLayout={(event) => {
-                sectionHeadingOffsets.current.decks = event.nativeEvent.layout.y;
-              }}
-              onPress={toggleDecks}
-            />
+              <MyLibraryControl
+                indicatorStyle={myLibraryIndicatorStyle}
+                onLayout={(width) => setMyLibraryControlWidth(width)}
+                section={librarySection}
+                onChange={(section) => {
+                  setLibrarySection(section);
 
-            <CollapsibleContent
-              expanded={decksExpanded}
-              onExpansionComplete={handleDecksExpanded}
-            >
-              <View style={styles.deckLibraryContent}>
-                <DeckSearchBar
-                  inputRef={deckSearchInputRef}
-                  onChangeText={setDeckSearch}
-                  onFocus={handleDeckSearchFocus}
-                  value={deckSearch}
-                />
-                <DeckSortControl
-                  onChange={(sort) => {
-                    setDeckSort(sort);
-                    void saveDeckLibrarySort(sort);
-                  }}
-                  value={deckSort}
-                />
-                {visibleDecks.length > 0 ? (
-                  <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
-                    {visibleDecks.map((deck) => (
-                      <View key={deck.id} style={{ width: deckWidth, aspectRatio: 2 / 3 }}>
-                        <DeckCard
-                          deck={deck}
-                          showNewBadge={
-                            deck.access === 'paid'
-                            && deck.installationStatus === 'installed'
-                            && deckPlayHistory[deck.id] === undefined
-                          }
-                        />
-                      </View>
-                    ))}
-                  </View>
-                ) : (
-                  <Text accessibilityLiveRegion="polite" style={styles.emptyDecks}>
-                    {deckSearch.trim()
-                      ? 'No decks match your search.'
-                      : 'Your decks will appear here.'}
-                  </Text>
-                )}
-              </View>
-            </CollapsibleContent>
-          </View>
-
-          <View
-            onLayout={(event) => {
-              sectionOffsets.current.videos = event.nativeEvent.layout.y;
-            }}
-            style={styles.videoSection}
-          >
-            <View accessibilityElementsHidden style={styles.sectionDivider} />
-
-            <SectionHeading
-              expanded={videosExpanded}
-              label="MY VIDEOS"
-              onLayout={(event) => {
-                sectionHeadingOffsets.current.videos = event.nativeEvent.layout.y;
-              }}
-              onPress={toggleVideos}
-            />
-
-            <CollapsibleContent
-              expanded={videosExpanded}
-              onExpansionComplete={handleVideosExpanded}
-            >
-              <View style={styles.videoLibraryContent}>
-                {isVideoFinalizing && (
-                  <View
-                    accessibilityLabel="Preparing latest round video"
-                    accessibilityRole="progressbar"
-                    style={styles.pendingVideo}
-                  >
-                    <ActivityIndicator color="#459EFE" size="small" />
-                    <Text style={styles.pendingVideoText}>Preparing latest round video…</Text>
-                  </View>
-                )}
-                {videos.length === 0 ? (
-                  !isVideoFinalizing && (
-                    <Text style={styles.emptyVideos}>Your last 10 round videos will appear here.</Text>
-                  )
-                ) : (
-                  <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
-                  {videos.map((video) => {
-                    const deck = catalog.getDeckById(video.deckId);
-                    const videoReady = isRoundVideoReadyToSave(video);
-                    const exportFailed = video.exportStatus === 'failed';
-                    const exportPreparing = !videoReady && !exportFailed;
-                    return (
-                      <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
-                      {exportPreparing ? (
-                        <View
-                          accessibilityLabel="Preparing round video"
-                          accessibilityRole="progressbar"
-                          style={[styles.video, styles.videoPreparing]}
-                        >
-                          <ActivityIndicator color="#459EFE" size="small" />
-                        </View>
-                      ) : (
-                        <RoundVideoPlayer
-                          isSaving={savingVideoId === video.id}
-                          saveDisabled={!isRoundVideoReadyToSave(video)}
-                          onDelete={deleteFromPlayer}
-                          onSave={handleSave}
-                          staticThumbnail
-                          video={video}
-                          style={styles.video}
-                        />
-                      )}
-                      <Text numberOfLines={1} style={styles.videoDeckName}>
-                        {deck?.title ?? 'Round video'}
-                      </Text>
-                      <Text style={styles.videoDate}>
-                        {new Date(video.createdAt).toLocaleString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </Text>
-                      <View style={styles.videoActions}>
-                        <Pressable
-                          accessibilityLabel={
-                            exportFailed
-                              ? 'Retry video export'
-                              : videoReady
-                                ? 'Save video'
-                                : 'Video is exporting'
-                          }
-                          accessibilityRole="button"
-                          accessibilityState={{
-                            busy: exportPreparing || savingVideoId === video.id,
-                            disabled:
-                              savingVideoId !== null ||
-                              exportingVideoId !== null ||
-                              exportPreparing,
-                          }}
-                          disabled={
-                            savingVideoId !== null ||
-                            exportingVideoId !== null ||
-                            exportPreparing
-                          }
-                          onPress={() =>
-                            void (exportFailed
-                              ? handleRetryExport(video)
-                              : handlePortraitSave(video))
-                          }
-                          style={({ pressed }) => [
-                            styles.saveButton,
-                            exportPreparing && styles.disabled,
-                            pressed && (videoReady || exportFailed) && styles.pressed,
-                          ]}
-                        >
-                          {exportPreparing ? (
-                            <ActivityIndicator color="#FFFFFF" size="small" />
-                          ) : (
-                            <Text numberOfLines={1} style={styles.saveButtonText}>
-                              {exportFailed
-                                ? 'RETRY'
-                                : savingVideoId === video.id
-                                  ? 'SAVING…'
-                                  : 'SAVE'}
-                            </Text>
-                          )}
-                        </Pressable>
-                        <Pressable
-                          accessibilityRole="button"
-                          onPress={() => handleDelete(video)}
-                          style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
-                        >
-                          <Text style={styles.deleteButtonText}>DELETE</Text>
-                        </Pressable>
-                      </View>
-                      </View>
-                    );
-                  })}
-                  </View>
-                )}
-              </View>
-            </CollapsibleContent>
-          </View>
+                  if (section === 'videos') {
+                    deckSearchInputRef.current?.blur();
+                  }
+                }}
+              />
+              {librarySection === 'decks' ? deckLibraryContent : videoLibraryContent}
             </View>
           ) : (
             <View
@@ -716,57 +674,6 @@ export default function DeckLibraryScreen() {
   );
 }
 
-const COLLAPSE_DURATION = 280;
-
-function CollapsibleContent({
-  expanded,
-  children,
-  onExpansionComplete,
-}: {
-  expanded: boolean;
-  children: ReactNode;
-  onExpansionComplete?: () => void;
-}) {
-  const [contentHeight, setContentHeight] = useState(0);
-  const progress = useSharedValue(expanded ? 1 : 0);
-  const previousExpanded = useRef(expanded);
-
-  useEffect(() => {
-    const shouldNotifyExpansion = expanded && !previousExpanded.current;
-    previousExpanded.current = expanded;
-    progress.value = withTiming(expanded ? 1 : 0, {
-      duration: COLLAPSE_DURATION,
-      easing: Easing.out(Easing.cubic),
-    }, (finished) => {
-      if (finished && shouldNotifyExpansion && onExpansionComplete) {
-        runOnJS(onExpansionComplete)();
-      }
-    });
-  }, [expanded, onExpansionComplete, progress]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    height: contentHeight * progress.value,
-    opacity: progress.value,
-    transform: [{ translateY: interpolate(progress.value, [0, 1], [-10, 0]) }],
-  }));
-
-  return (
-    <Animated.View
-      accessibilityElementsHidden={!expanded}
-      importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}
-      pointerEvents={expanded ? 'auto' : 'none'}
-      style={[styles.collapsible, animatedStyle]}
-    >
-      <View
-        onLayout={(event) => setContentHeight(event.nativeEvent.layout.height)}
-        style={styles.collapsibleContent}
-      >
-        {children}
-      </View>
-    </Animated.View>
-  );
-}
-
 function DeckSearchBar({
   onChangeText,
   onFocus,
@@ -864,32 +771,71 @@ function DeckSortControl({
   );
 }
 
-function SectionHeading({
-  expanded,
-  label,
+function MyLibraryControl({
+  section,
+  onChange,
   onLayout,
-  onPress,
+  indicatorStyle,
 }: {
-  expanded: boolean;
-  label: string;
-  onLayout?: (event: LayoutChangeEvent) => void;
-  onPress: () => void;
+  section: 'decks' | 'videos';
+  onChange: (section: 'decks' | 'videos') => void;
+  onLayout: (width: number) => void;
+  indicatorStyle: any;
 }) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ expanded }}
-      onLayout={onLayout}
-      onPress={onPress}
-      style={({ pressed }) => [styles.sectionHeading, pressed && styles.headingPressed]}
+    <View
+      accessibilityRole="tablist"
+      onLayout={(event) => {
+        onLayout(event.nativeEvent.layout.width);
+      }}
+      style={styles.myLibraryControl}
     >
-      <Text style={styles.sectionTitle}>{label}</Text>
-      <View
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={[styles.chevron, !expanded && styles.chevronCollapsed]}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.myLibraryIndicator,
+          indicatorStyle,
+        ]}
       />
-    </Pressable>
+
+      <Pressable
+        accessibilityRole="tab"
+        accessibilityState={{ selected: section === 'decks' }}
+        onPress={() => onChange('decks')}
+        style={({ pressed }) => [
+          styles.myLibraryTab,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Text
+          style={[
+            styles.myLibraryTabText,
+            section === 'decks' && styles.myLibraryTabTextActive,
+          ]}
+        >
+          MY DECKS
+        </Text>
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="tab"
+        accessibilityState={{ selected: section === 'videos' }}
+        onPress={() => onChange('videos')}
+        style={({ pressed }) => [
+          styles.myLibraryTab,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Text
+          style={[
+            styles.myLibraryTabText,
+            section === 'videos' && styles.myLibraryTabTextActive,
+          ]}
+        >
+          MY VIDEOS
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -969,7 +915,7 @@ function HomeModeTab({
       onPress={onPress}
       style={({ pressed }) => [
         styles.homeModeTab,
-        pressed && styles.headingPressed,
+        pressed && styles.pressed,
       ]}
     >
       <Text style={[styles.homeModeTabText, active && styles.homeModeTabTextActive]}>
@@ -1008,7 +954,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     flexDirection: 'row',
     gap: 6,
-    marginBottom: 30,
+    marginBottom: 14,
     padding: 5,
     borderRadius: 22,
     backgroundColor: '#DCE5EF',
@@ -1039,34 +985,48 @@ const styles = StyleSheet.create({
   },
   homeModeTabTextActive: { color: '#2563EB' },
   myDecksContent: { gap: 0 },
-  sectionHeading: {
-    minHeight: 46,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 22,
-    paddingLeft: 3,
-  },
-  headingPressed: { opacity: 0.65 },
-  sectionTitle: {
-    color: '#459efe',
-    fontSize: 20,
-    lineHeight: 24,
-    fontWeight: '900',
-    letterSpacing: 0.1,
-  },
-  chevron: {
-    width: 13,
-    height: 13,
-    marginLeft: 16,
-    marginTop: -5,
-    borderRightWidth: 2.5,
-    borderBottomWidth: 2.5,
-    borderColor: '#111111',
-    transform: [{ rotate: '45deg' }],
-  },
-  chevronCollapsed: { marginTop: 5, transform: [{ rotate: '-135deg' }] },
-  collapsible: { overflow: 'hidden' },
-  collapsibleContent: { position: 'absolute', top: 0, right: 0, left: 0 },
+myLibraryControl: {
+  position: 'relative',
+  flexDirection: 'row',
+  marginBottom: 14,
+  borderBottomWidth: StyleSheet.hairlineWidth,
+  borderBottomColor: '#CBD5E1',
+},
+
+myLibraryTab: {
+  flex: 1,
+  minHeight: 44,
+  alignItems: 'center',
+  justifyContent: 'center',
+  position: 'relative',
+  zIndex: 1,
+},
+
+myLibraryTabText: {
+  color: '#64748B',
+  fontSize: 12,
+  fontWeight: '900',
+  letterSpacing: 0.6,
+},
+
+myLibraryTabTextActive: {
+  color: '#2563EB',
+},
+
+myLibraryIndicator: {
+  width: 64,
+  height: 3,
+  position: 'absolute',
+  bottom: -StyleSheet.hairlineWidth,
+  left: '25%',
+  marginLeft: -32,
+  borderTopLeftRadius: 3,
+  borderTopRightRadius: 3,
+  backgroundColor: '#459EFE',
+},
+myLibraryIndicatorVideos: {
+  left: '62.5%',
+},
   deckLibraryContent: { gap: 14, marginTop: -10 },
   deckSortRow: {
     minHeight: 38,
@@ -1103,12 +1063,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     paddingVertical: 12,
-  },
-  videoSection: { marginTop: 34 },
-  sectionDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginBottom: 30,
-    backgroundColor: '#CBD5E1',
   },
   emptyVideos: {
     color: '#64748B',

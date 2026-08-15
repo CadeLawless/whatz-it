@@ -91,8 +91,9 @@ const styles = StyleSheet.create({
   },
   newBadge: {
     position: 'absolute',
-    top: 7,
-    right: 7,
+    bottom: 7,
+    left: '50%',
+    transform: [{ translateX: '-50%' }],
     paddingHorizontal: 7,
     paddingVertical: 4,
     borderRadius: 9,
