@@ -12,8 +12,10 @@ import {
   useWindowDimensions,
   View
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
+  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -61,6 +63,19 @@ const SUPPORT_EMAIL = 'support@playwhatzit.com';
 const SUPPORT_EMAIL_URL = `mailto:${SUPPORT_EMAIL}?subject=WHATZ%20IT%20Support`;
 const HEADER_OVERSCROLL_EXTENSION = 700;
 
+const DECK_SORT_LABELS: Record<DeckLibrarySort, string> = {
+  'recently-played': 'Recently played',
+  alphabetical: 'Alphabetical',
+  'unplayed-first': 'Unplayed first',
+};
+
+type SortMenuAnchor = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export default function DeckLibraryScreen() {
   const reduceMotion = useReducedMotion();
   const catalogState = useCatalog();
@@ -86,6 +101,16 @@ export default function DeckLibraryScreen() {
   const myLibraryPosition = useSharedValue(librarySection === 'videos' ? 1 : 0);
   const [myLibraryControlWidth, setMyLibraryControlWidth] = useState(0);
   const [deckSearch, setDeckSearch] = useState('');
+  const [isDeckSearchOpen, setIsDeckSearchOpen] = useState(false);
+  const [isDeckSearchFocused, setIsDeckSearchFocused] = useState(false);
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+  const [sortMenuAnchor, setSortMenuAnchor] = useState<SortMenuAnchor>({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  });
+  const deckToolbarProgress = useSharedValue(isDeckSearchOpen ? 1 : 0);
   const [deckPlayHistory, setDeckPlayHistory] = useState<Record<string, number>>({});
   const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
   const [videos, setVideos] = useState<RoundVideo[]>([]);
@@ -119,6 +144,29 @@ export default function DeckLibraryScreen() {
       },
     );
   }, [librarySection, myLibraryPosition, reduceMotion]);
+  useEffect(() => {
+    deckToolbarProgress.value = withTiming(isDeckSearchOpen ? 1 : 0, {
+      duration: reduceMotion ? 0 : 220,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [deckToolbarProgress, isDeckSearchOpen, reduceMotion]);
+  const deckSortToolbarStyle = useAnimatedStyle(() => ({
+    opacity: 1 - deckToolbarProgress.value,
+    transform: [
+      {
+        translateX: deckToolbarProgress.value * -14,
+      },
+    ],
+  }));
+
+  const deckSearchToolbarStyle = useAnimatedStyle(() => ({
+    opacity: deckToolbarProgress.value,
+    transform: [
+      {
+        translateX: (1 - deckToolbarProgress.value) * 14,
+      },
+    ],
+  }));
   const myLibraryIndicatorStyle = useAnimatedStyle(
     () => ({
       transform: [
@@ -331,20 +379,84 @@ export default function DeckLibraryScreen() {
     }, 60);
   }, []);
 
+  const nativeScrollGesture = useMemo(() => Gesture.Native(), []);
+
+  const closeSortTapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .enabled(isSortMenuOpen)
+        .maxDistance(8)
+        .onEnd((_event, success) => {
+          if (success) {
+            runOnJS(setIsSortMenuOpen)(false);
+          }
+        }),
+    [isSortMenuOpen],
+  );
+
+  const scrollAndOutsideTapGesture = useMemo(
+    () => Gesture.Simultaneous(nativeScrollGesture, closeSortTapGesture),
+    [closeSortTapGesture, nativeScrollGesture],
+  );
+
+  const handleToggleSortMenu = useCallback(
+    (anchor?: SortMenuAnchor) => {
+      if (isSortMenuOpen || !anchor) {
+        setIsSortMenuOpen(false);
+        return;
+      }
+
+      setSortMenuAnchor(anchor);
+      setIsSortMenuOpen(true);
+    },
+    [isSortMenuOpen],
+  );
+
   const deckLibraryContent = (
     <View style={styles.deckLibraryContent}>
-      <DeckSearchBar
+      <DeckLibraryToolbar
         inputRef={deckSearchInputRef}
-        onChangeText={setDeckSearch}
-        onFocus={handleDeckSearchFocus}
-        value={deckSearch}
-      />
-      <DeckSortControl
-        onChange={(sort) => {
+        isSearchOpen={isDeckSearchOpen}
+        isSearchFocused={isDeckSearchFocused}
+        isSortMenuOpen={isSortMenuOpen}
+        searchAnimatedStyle={deckSearchToolbarStyle}
+        sortAnimatedStyle={deckSortToolbarStyle}
+        onChangeSearch={setDeckSearch}
+        onClearSearch={() => {
+          setDeckSearch('');
+
+          if (isDeckSearchFocused) {
+            requestAnimationFrame(() => {
+              deckSearchInputRef.current?.focus();
+            });
+          } else {
+            setIsDeckSearchOpen(false);
+          }
+        }}
+        onChangeSort={(sort) => {
           setDeckSort(sort);
+          setIsSortMenuOpen(false);
           void saveDeckLibrarySort(sort);
         }}
-        value={deckSort}
+        onCloseSearch={() => {
+          setDeckSearch('');
+          setIsDeckSearchOpen(false);
+          setIsDeckSearchFocused(false);
+          deckSearchInputRef.current?.blur();
+        }}
+        onFocusChange={setIsDeckSearchFocused}
+        onFocusSearch={handleDeckSearchFocus}
+        onOpenSearch={() => {
+          setIsSortMenuOpen(false);
+          setIsDeckSearchOpen(true);
+
+          setTimeout(() => {
+            deckSearchInputRef.current?.focus();
+          }, reduceMotion ? 0 : 120);
+        }}
+        onToggleSort={handleToggleSortMenu}
+        search={deckSearch}
+        sort={deckSort}
       />
       {visibleDecks.length > 0 ? (
         <View style={[styles.deckGrid, { columnGap, rowGap: columnGap }]}>
@@ -492,8 +604,9 @@ export default function DeckLibraryScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView
-        accessibilityElementsHidden={videoPendingDelete !== null}
+      <GestureDetector gesture={scrollAndOutsideTapGesture}>
+        <ScrollView
+          accessibilityElementsHidden={videoPendingDelete !== null}
         automaticallyAdjustKeyboardInsets
         contentContainerStyle={styles.scrollContent}
         importantForAccessibility={
@@ -504,9 +617,18 @@ export default function DeckLibraryScreen() {
         keyboardShouldPersistTaps="handled"
         onScroll={(e) => {
           currentScrollOffset.current = e.nativeEvent.contentOffset.y;
+
+          if (isSortMenuOpen) {
+            setIsSortMenuOpen(false);
+          }
+
           if (!isScrollingProgrammatically.current) {
             deckSearchInputRef.current?.blur();
             exploreRef.current?.blurSearch();
+
+            if (isDeckSearchOpen && !deckSearch.trim()) {
+              setIsDeckSearchOpen(false);
+            }
           }
         }}
         scrollEventThrottle={16}
@@ -636,7 +758,106 @@ export default function DeckLibraryScreen() {
             <Text style={styles.footerLinkText}>CONTACT</Text>
           </Pressable>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </GestureDetector>
+
+      {isSortMenuOpen && (
+        <>
+          <View
+            pointerEvents="none"
+            style={styles.sortBackdropVisual}
+          />
+
+          <View
+            pointerEvents="box-none"
+            style={styles.sortFloatingLayer}
+          >
+            <Pressable
+              accessibilityLabel={`Sort decks by ${DECK_SORT_LABELS[deckSort]}`}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: true }}
+              onPress={() => setIsSortMenuOpen(false)}
+              style={({ pressed }) => [
+                styles.deckSortDropdown,
+                styles.sortFloatingButton,
+                {
+                  left: sortMenuAnchor.x,
+                  top: sortMenuAnchor.y,
+                  width: sortMenuAnchor.width,
+                  height: sortMenuAnchor.height,
+                },
+                pressed && styles.deckSortDropdownPressed,
+              ]}
+            >
+              <Text
+                numberOfLines={1}
+                style={styles.deckSortDropdownText}
+              >
+                {DECK_SORT_LABELS[deckSort]}
+              </Text>
+
+              <Text
+                accessibilityElementsHidden
+                style={[
+                  styles.deckSortChevron,
+                  styles.deckSortChevronOpen,
+                ]}
+              >
+                ‹
+              </Text>
+            </Pressable>
+
+            <View
+              style={[
+                styles.deckSortMenu,
+                styles.sortFloatingMenu,
+                {
+                  left: sortMenuAnchor.x,
+                  top: sortMenuAnchor.y + sortMenuAnchor.height + 6,
+                  width: sortMenuAnchor.width,
+                },
+              ]}
+            >
+              {DECK_LIBRARY_SORTS.map((option) => {
+                const selected = option === deckSort;
+
+                return (
+                  <Pressable
+                    accessibilityLabel={`Sort decks by ${DECK_SORT_LABELS[option]}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    key={option}
+                    onPress={() => {
+                      setDeckSort(option);
+                      setIsSortMenuOpen(false);
+                      void saveDeckLibrarySort(option);
+                    }}
+                    style={({ pressed }) => [
+                      styles.deckSortMenuItem,
+                      selected && styles.deckSortMenuItemSelected,
+                      pressed && styles.deckSortMenuItemPressed,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.deckSortMenuItemText,
+                        selected && styles.deckSortMenuItemTextSelected,
+                      ]}
+                    >
+                      {DECK_SORT_LABELS[option]}
+                    </Text>
+
+                    {selected && (
+                      <Text style={styles.deckSortCheck}>✓</Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </>
+      )}
+
       <ConfirmationPrompt
         busy={isDeletingVideo}
         busyLabel="DELETING..."
@@ -674,100 +895,169 @@ export default function DeckLibraryScreen() {
   );
 }
 
-function DeckSearchBar({
-  onChangeText,
-  onFocus,
-  value,
+function DeckLibraryToolbar({
   inputRef,
+  isSearchOpen,
+  isSearchFocused,
+  isSortMenuOpen,
+  onChangeSearch,
+  onClearSearch,
+  onChangeSort,
+  onCloseSearch,
+  onFocusChange,
+  onFocusSearch,
+  onOpenSearch,
+  onToggleSort,
+  search,
+  searchAnimatedStyle,
+  sort,
+  sortAnimatedStyle,
 }: {
-  onChangeText: (text: string) => void;
-  onFocus?: () => void;
-  value: string;
-  inputRef: React.RefObject<TextInput|null>;
+  inputRef: React.RefObject<TextInput | null>;
+  isSearchOpen: boolean;
+  isSearchFocused: boolean;
+  isSortMenuOpen: boolean;
+  onChangeSearch: (text: string) => void;
+  onChangeSort: (sort: DeckLibrarySort) => void;
+  onClearSearch: () => void;
+  onCloseSearch: () => void;
+  onFocusChange: (focused: boolean) => void;
+  onFocusSearch?: () => void;
+  onOpenSearch: () => void;
+  onToggleSort: (anchor?: SortMenuAnchor) => void;
+  search: string;
+  searchAnimatedStyle: any;
+  sort: DeckLibrarySort;
+  sortAnimatedStyle: any;
 }) {
-  return (
-    <View style={styles.deckSearchField}>
-      <Text accessibilityElementsHidden style={styles.deckSearchIcon}>⌕</Text>
-      <TextInput
-        accessibilityLabel="Search installed decks"
-        autoCapitalize="none"
-        autoCorrect={false}
-        onChangeText={onChangeText}
-        onFocus={onFocus}
-        placeholder="Search decks"
-        placeholderTextColor="#94A3B8"
-        ref={inputRef}
-        returnKeyType="default"
-        style={styles.deckSearchInput}
-        value={value}
-      />
-      {value.length > 0 && (
-        <Pressable
-          accessibilityLabel="Clear search"
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={() => onChangeText('')}
-          style={({ pressed }) => [styles.deckSearchClear, pressed && styles.deckSearchClearPressed]}
-        >
-          <Text style={styles.deckSearchClearText}>×</Text>
-        </Pressable>
-      )}
-    </View>
-  );
-}
+  const sortButtonRef = useRef<View>(null);
 
-function DeckSortControl({
-  onChange,
-  value,
-}: {
-  onChange: (sort: DeckLibrarySort) => void;
-  value: DeckLibrarySort;
-}) {
-  const labels: Record<DeckLibrarySort, string> = {
-    'recently-played': 'Recently played',
-    alphabetical: 'Alphabetical',
-    'unplayed-first': 'Unplayed first',
+  const handleSortButtonPress = () => {
+    if (isSortMenuOpen) {
+      onToggleSort();
+      return;
+    }
+
+    sortButtonRef.current?.measureInWindow((x, y, width, height) => {
+      onToggleSort({ x, y, width, height });
+    });
   };
 
   return (
-    <View style={styles.deckSortRow}>
-      <Text style={styles.deckSortLabel}>SORT BY</Text>
-      <ScrollView
-        horizontal
-        keyboardShouldPersistTaps="handled"
-        showsHorizontalScrollIndicator={false}
-        style={styles.deckSortScroller}
-        contentContainerStyle={styles.deckSortOptions}
-      >
-        {DECK_LIBRARY_SORTS.map((sort) => {
-          const selected = sort === value;
-          return (
-            <Pressable
-              accessibilityLabel={`Sort decks by ${labels[sort]}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              key={sort}
-              onPress={() => onChange(sort)}
-              style={({ pressed }) => [
-                styles.deckSortPill,
-                selected && styles.deckSortPillSelected,
-                pressed && styles.deckSortPillPressed,
-              ]}
-            >
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.deckSortPillText,
-                  selected && styles.deckSortPillTextSelected,
+    <>
+      <View style={styles.deckToolbarContainer}>
+        <Animated.View
+          pointerEvents={isSearchOpen ? 'none' : 'auto'}
+          style={[
+            styles.deckToolbarLayer,
+            sortAnimatedStyle,
+          ]}
+        >
+          <View style={styles.deckSortArea}>
+            <Text style={styles.deckSortLabel}>SORT BY</Text>
+
+            <View style={styles.deckSortDropdownWrapper}>
+              <Pressable
+                accessibilityLabel={`Sort decks by ${DECK_SORT_LABELS[sort]}`}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: isSortMenuOpen }}
+                onPress={handleSortButtonPress}
+                ref={sortButtonRef}
+                style={({ pressed }) => [
+                  styles.deckSortDropdown,
+                  isSortMenuOpen && styles.deckSortDropdownOpen,
+                  pressed && styles.deckSortDropdownPressed,
                 ]}
               >
-                {labels[sort]}
-              </Text>
+                <Text
+                  numberOfLines={1}
+                  style={styles.deckSortDropdownText}
+                >
+                  {DECK_SORT_LABELS[sort]}
+                </Text>
+
+                <Text
+                  accessibilityElementsHidden
+                  style={[
+                    styles.deckSortChevron,
+                    isSortMenuOpen && styles.deckSortChevronOpen,
+                  ]}
+                >
+                  ‹
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <Pressable
+            accessibilityLabel="Search decks"
+            accessibilityRole="button"
+            onPress={onOpenSearch}
+            style={({ pressed }) => [
+              styles.deckSearchButton,
+              pressed && styles.deckSearchButtonPressed,
+            ]}
+          >
+            <Text style={styles.deckSearchButtonIcon}>⌕</Text>
+          </Pressable>
+        </Animated.View>
+
+        <Animated.View
+          pointerEvents={isSearchOpen ? 'auto' : 'none'}
+          style={[
+            styles.deckToolbarLayer,
+            styles.deckSearchLayer,
+            searchAnimatedStyle,
+          ]}
+        >
+          <View style={styles.deckSearchField}>
+            <Text
+              accessibilityElementsHidden
+              style={styles.deckSearchIcon}
+            >
+              ⌕
+            </Text>
+
+            <TextInput
+              accessibilityLabel="Search installed decks"
+              autoCapitalize="none"
+              autoCorrect={false}
+              onBlur={() => onFocusChange(false)}
+              onChangeText={onChangeSearch}
+              onFocus={() => {
+                onFocusChange(true);
+                onFocusSearch?.();
+              }}
+              placeholder="Search decks"
+              placeholderTextColor="#94A3B8"
+              ref={inputRef}
+              returnKeyType="search"
+              style={styles.deckSearchInput}
+              value={search}
+            />
+
+            <Pressable
+              accessibilityLabel={search.length > 0 ? 'Clear search' : 'Close search'}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => {
+                if (search.trim().length > 0) {
+                  onClearSearch();
+                } else {
+                  onCloseSearch();
+                }
+              }}
+              style={({ pressed }) => [
+                styles.deckSearchClear,
+                pressed && styles.deckSearchClearPressed,
+              ]}
+            >
+              <Text style={styles.deckSearchClearText}>×</Text>
             </Pressable>
-          );
-        })}
-      </ScrollView>
-    </View>
+          </View>
+        </Animated.View>
+      </View>
+    </>
   );
 }
 
@@ -985,78 +1275,276 @@ const styles = StyleSheet.create({
   },
   homeModeTabTextActive: { color: '#2563EB' },
   myDecksContent: { gap: 0 },
-myLibraryControl: {
-  position: 'relative',
-  flexDirection: 'row',
-  marginBottom: 14,
-  borderBottomWidth: StyleSheet.hairlineWidth,
-  borderBottomColor: '#CBD5E1',
-},
-
-myLibraryTab: {
-  flex: 1,
-  minHeight: 44,
-  alignItems: 'center',
-  justifyContent: 'center',
-  position: 'relative',
-  zIndex: 1,
-},
-
-myLibraryTabText: {
-  color: '#64748B',
-  fontSize: 12,
-  fontWeight: '900',
-  letterSpacing: 0.6,
-},
-
-myLibraryTabTextActive: {
-  color: '#2563EB',
-},
-
-myLibraryIndicator: {
-  width: 64,
-  height: 3,
-  position: 'absolute',
-  bottom: -StyleSheet.hairlineWidth,
-  left: '25%',
-  marginLeft: -32,
-  borderTopLeftRadius: 3,
-  borderTopRightRadius: 3,
-  backgroundColor: '#459EFE',
-},
-myLibraryIndicatorVideos: {
-  left: '62.5%',
-},
-  deckLibraryContent: { gap: 14, marginTop: -10 },
-  deckSortRow: {
-    minHeight: 38,
+  myLibraryControl: {
+    position: 'relative',
     flexDirection: 'row',
+    marginBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#CBD5E1',
+  },
+
+  myLibraryTab: {
+    flex: 1,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 9,
-    marginTop: 10,
+    position: 'relative',
+    zIndex: 1,
   },
+
+  myLibraryTabText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+
+  myLibraryTabTextActive: {
+    color: '#2563EB',
+  },
+
+  myLibraryIndicator: {
+    width: 64,
+    height: 3,
+    position: 'absolute',
+    bottom: -StyleSheet.hairlineWidth,
+    left: '25%',
+    marginLeft: -32,
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    backgroundColor: '#459EFE',
+  },
+  myLibraryIndicatorVideos: {
+    left: '62.5%',
+  },
+  deckLibraryContent: { gap: 14, marginTop: -10 },
   deckSortLabel: {
     color: '#64748B',
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.8,
   },
-  deckSortScroller: { flex: 1 },
-  deckSortOptions: { gap: 8, paddingRight: 4 },
-  deckSortPill: {
-    minHeight: 36,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
+  deckToolbarContainer: {
+    height: 48,
+    marginTop: 10,
+    position: 'relative',
+    zIndex: 20,
+  },
+
+  deckToolbarLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  deckSearchLayer: {
+    zIndex: 2,
+  },
+
+  deckSortArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+
+  deckSortDropdownWrapper: {
+    flex: 1,
+    position: 'relative',
+    zIndex: 30,
+  },
+
+  deckSortDropdown: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 15,
+    paddingRight: 12,
     borderWidth: 1,
     borderColor: '#DCE5EF',
-    borderRadius: 18,
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
-  deckSortPillSelected: { borderColor: '#459EFE', backgroundColor: '#EAF4FF' },
-  deckSortPillPressed: { opacity: 0.74, transform: [{ scale: 0.98 }] },
-  deckSortPillText: { color: '#64748B', fontSize: 12, fontWeight: '800' },
-  deckSortPillTextSelected: { color: '#2563EB' },
+
+  deckSortDropdownOpen: {
+    borderColor: '#459EFE',
+  },
+
+  deckSortDropdownPressed: {
+    opacity: 0.78,
+  },
+
+  deckSortDropdownText: {
+    flex: 1,
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  deckSortChevron: {
+    color: '#64748B',
+    fontSize: 22,
+    fontWeight: '700',
+    transform: [{ rotate: '-90deg' }],
+  },
+
+  deckSortChevronOpen: {
+    transform: [{ rotate: '90deg' }],
+  },
+
+  deckSortMenu: {
+    position: 'absolute',
+    top: 50,
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#DCE5EF',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+
+    shadowColor: '#0F172A',
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    shadowOpacity: 0.13,
+    shadowRadius: 14,
+
+    elevation: 8,
+    zIndex: 40,
+  },
+
+  deckSortMenuItem: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+  },
+
+  deckSortMenuItemSelected: {
+    backgroundColor: '#EAF4FF',
+  },
+
+  deckSortMenuItemPressed: {
+    opacity: 0.7,
+  },
+
+  sortBackdropVisual: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 50,
+  },
+
+  sortFloatingLayer: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 60,
+  },
+
+  sortFloatingButton: {
+    position: 'absolute',
+    borderColor: '#459EFE',
+    zIndex: 2,
+  },
+
+  sortFloatingMenu: {
+    right: undefined,
+    zIndex: 3,
+  },
+
+  deckSortMenuItemText: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  deckSortMenuItemTextSelected: {
+    color: '#2563EB',
+    fontWeight: '900',
+  },
+
+  deckSortCheck: {
+    color: '#459EFE',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  deckSearchButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#DCE5EF',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+
+  deckSearchButtonPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.96 }],
+  },
+
+  deckSearchButtonIcon: {
+    color: '#2563EB',
+    fontSize: 25,
+    lineHeight: 27,
+    marginTop: -3,
+  },
+
+  deckSearchField: {
+    flex: 1,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 15,
+    borderWidth: 1,
+    borderColor: '#459EFE',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+
+  deckSearchIcon: {
+    color: '#459EFE',
+    fontSize: 25,
+    marginTop: -4,
+  },
+
+  deckSearchInput: {
+    flex: 1,
+    color: '#111827',
+    fontSize: 15,
+    paddingVertical: 12,
+  },
+
+  deckSearchClear: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 15,
+    backgroundColor: '#EAF4FF',
+  },
+
+  deckSearchClearPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.96 }],
+  },
+
+  deckSearchClearText: {
+    color: '#2563EB',
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '700',
+    marginTop: -2,
+  },
   deckGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   emptyDecks: {
     color: '#64748B',
@@ -1162,12 +1650,6 @@ myLibraryIndicatorVideos: {
     lineHeight: 17,
     fontWeight: '700',
   },
-  deckSearchField: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 15, marginTop: 10, borderWidth: 1, borderColor: '#DCE5EF', borderRadius: 18, backgroundColor: '#FFFFFF' },
-  deckSearchIcon: { color: '#64748B', fontSize: 25, marginTop: -4 },
-  deckSearchInput: { flex: 1, color: '#111827', fontSize: 15, paddingVertical: 14 },
-  deckSearchClear: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#E2E8F0' },
-  deckSearchClearPressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
-  deckSearchClearText: { color: '#475569', fontSize: 23, lineHeight: 25, fontWeight: '700', marginTop: -2 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
   disabled: { opacity: 0.55 },
 });
