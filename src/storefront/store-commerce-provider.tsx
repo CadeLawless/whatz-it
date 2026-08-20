@@ -13,7 +13,12 @@ import {
   type CommerceEntitlements,
   verifyApplePurchase,
 } from './commerce-api';
-import { CommerceProvider, type CommerceAdapter } from './commerce-provider';
+import { reconcileApplePurchases } from './apple-purchase-restore';
+import {
+  CommerceProvider,
+  type CommerceAdapter,
+  type CommerceRestoreState,
+} from './commerce-provider';
 import type { CommerceProductState, CommerceTarget } from './commerce-state';
 import { installEntitledDeck } from './entitled-deck-installer';
 import {
@@ -29,9 +34,11 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const [identity, setIdentity] = useState<InstallationIdentity | null>(null);
   const [ownedProducts, setOwnedProducts] = useState<OwnedProduct[]>([]);
   const [operationStates, setOperationStates] = useState<Map<string, CommerceProductState>>(new Map());
+  const [restoreState, setRestoreState] = useState<CommerceRestoreState>({ status: 'idle' });
   const [serverReachable, setServerReachable] = useState(true);
   const processedTransactions = useRef(new Set<string>());
-  const restoreMode = useRef(false);
+  const restoreInFlight = useRef(false);
+  const restoreSnapshotPending = useRef(false);
 
   const appleProducts = useMemo(() => {
     const result = new Map<string, { kind: 'deck' | 'bundle'; id: string }>();
@@ -88,16 +95,27 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   ) => {
     if (!apiBaseUrl) return;
     const database = await openCatalogDatabase();
+    const directlyOwnedDecks = new Set(
+      entitlements.products
+        .filter((product) => product.kind === 'deck')
+        .map((product) => product.targetId),
+    );
     for (const deckId of entitlements.deckIds) {
-      await installEntitledDeck(database, apiBaseUrl, currentIdentity, deckId);
+      await installEntitledDeck(
+        database,
+        apiBaseUrl,
+        currentIdentity,
+        deckId,
+        directlyOwnedDecks.has(deckId) ? 'purchase' : 'bundle',
+      );
     }
     await refreshCatalog();
   }, [apiBaseUrl, refreshCatalog]);
 
-  const processPurchaseRef = useRef<(purchase: Purchase, reason: 'purchase' | 'restore') => Promise<void>>(async () => {});
+  const processPurchaseRef = useRef<(purchase: Purchase) => Promise<void>>(async () => {});
   const iap = useIAP({
     onPurchaseSuccess: (purchase) => {
-      void processPurchaseRef.current(purchase, restoreMode.current ? 'restore' : 'purchase');
+      void processPurchaseRef.current(purchase);
     },
     onPurchaseError: (error) => {
       if (error.productId) {
@@ -107,13 +125,21 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     },
   });
 
-  const { connected, fetchProducts, finishTransaction, getAvailablePurchases, products, requestPurchase } = iap;
+  const {
+    availablePurchases,
+    connected,
+    fetchProducts,
+    finishTransaction,
+    products,
+    requestPurchase,
+    restorePurchases: restoreStorePurchases,
+  } = iap;
   const prices = useMemo(
     () => new Map(products.map((product) => [product.id, product.displayPrice])),
     [products],
   );
 
-  const processPurchase = useCallback(async (purchase: Purchase, reason: 'purchase' | 'restore') => {
+  const processPurchase = useCallback(async (purchase: Purchase) => {
     if (!apiBaseUrl || !identity || Platform.OS !== 'ios') return;
     const transactionKey = purchase.transactionId ?? purchase.id;
     if (processedTransactions.current.has(transactionKey)) return;
@@ -131,7 +157,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
         apiBaseUrl,
         identity,
         purchase.purchaseToken,
-        reason,
+        'purchase',
       );
       await persistEntitlements(entitlements);
       await finishTransaction({ purchase, isConsumable: false });
@@ -218,7 +244,6 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     if (!productId || !identity || Platform.OS !== 'ios') return;
     setTargetState(target, { status: 'purchasing', localizedPrice: prices.get(productId) ?? '' });
     try {
-      restoreMode.current = false;
       await requestPurchase({
         request: { apple: { sku: productId, appAccountToken: identity.appAccountToken } },
         type: 'in-app',
@@ -229,16 +254,78 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   }, [identity, prices, requestPurchase, setTargetState, targetProductId]);
 
   const restorePurchases = useCallback(async () => {
-    if (!identity || Platform.OS !== 'ios') return;
-    restoreMode.current = true;
-    try {
-      await getAvailablePurchases({ alsoPublishToEventListenerIOS: true });
-    } catch {
-      // The UI remains usable; the next restore attempt can retry the store.
-    } finally {
-      restoreMode.current = false;
+    if (restoreInFlight.current) return;
+    if (!identity || !apiBaseUrl || Platform.OS !== 'ios' || !connected) {
+      setRestoreState({
+        status: 'error',
+        message: 'Connect to the App Store and try restoring again.',
+      });
+      return;
     }
-  }, [getAvailablePurchases, identity]);
+
+    restoreInFlight.current = true;
+    restoreSnapshotPending.current = true;
+    setRestoreState({ status: 'restoring' });
+    try {
+      await restoreStorePurchases({ alsoPublishToEventListenerIOS: false });
+    } catch {
+      restoreInFlight.current = false;
+      restoreSnapshotPending.current = false;
+      setRestoreState({
+        status: 'error',
+        message: 'Purchases could not be restored. Check your connection and try again.',
+      });
+    }
+  }, [apiBaseUrl, connected, identity, restoreStorePurchases]);
+
+  useEffect(() => {
+    if (!restoreSnapshotPending.current || !identity || !apiBaseUrl) return;
+    restoreSnapshotPending.current = false;
+
+    void reconcileApplePurchases({
+      purchases: availablePurchases,
+      knownProductIds: new Set(appleProducts.keys()),
+      verify: (signedTransaction) =>
+        verifyApplePurchase(apiBaseUrl, identity, signedTransaction, 'restore'),
+      finish: (purchase) => finishTransaction({ purchase, isConsumable: false }),
+      fetchEntitlements: () => fetchEntitlements(apiBaseUrl, identity),
+      persistEntitlements,
+      prepareEntitledDecks: (entitlements) =>
+        prepareEntitledDecks(entitlements, identity),
+    })
+      .then((result) => {
+        for (const purchase of availablePurchases) {
+          if (
+            purchase.purchaseState === 'purchased'
+            && purchase.purchaseToken
+            && appleProducts.has(purchase.productId)
+          ) {
+            processedTransactions.current.add(purchase.transactionId ?? purchase.id);
+          }
+        }
+        restoreInFlight.current = false;
+        setServerReachable(true);
+        setRestoreState({
+          status: 'success',
+          restoredProductCount: result.entitlements.products.length,
+        });
+      })
+      .catch(() => {
+        restoreInFlight.current = false;
+        setRestoreState({
+          status: 'error',
+          message: 'Your purchases are safe, but restoration could not finish. Please try again.',
+        });
+      });
+  }, [
+    apiBaseUrl,
+    appleProducts,
+    availablePurchases,
+    finishTransaction,
+    identity,
+    persistEntitlements,
+    prepareEntitledDecks,
+  ]);
 
   const retryPreparation = useCallback(async (target: CommerceTarget) => {
     if (!identity || !apiBaseUrl) return;
@@ -257,9 +344,11 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const adapter = useMemo<CommerceAdapter>(() => ({
     getProductState,
     purchase,
-    restorePurchases,
+    restorePurchases:
+      Platform.OS === 'ios' && apiBaseUrl ? restorePurchases : undefined,
+    restoreState,
     retryPreparation,
-  }), [getProductState, purchase, restorePurchases, retryPreparation]);
+  }), [apiBaseUrl, getProductState, purchase, restorePurchases, restoreState, retryPreparation]);
 
   return <CommerceProvider adapter={adapter}>{children}</CommerceProvider>;
 }

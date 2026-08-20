@@ -1032,6 +1032,14 @@ installation—because an owned-but-not-offline-ready success state would violat
 the product's core reconnect-once requirement. Production and the legacy Deck
 Manager path remain unchanged until the staging purchase/restore drill passes.
 
+Implementation note (2026-08-20): explicit Apple restoration is exposed from
+Explore and reconciles StoreKit's returned non-consumable snapshot directly
+instead of classifying asynchronous purchase events with a temporary restore
+flag. Every known transaction is verified idempotently, followed by one
+authoritative entitlement fetch and automatic repair of missing deck content.
+Local installation records distinguish direct purchases from bundle-derived
+ownership while continuing to deduplicate overlapping decks.
+
 ### Phase 5: Invisible owned-content installation
 
 - Connect purchase completion and entitlement sync to the installation queue.

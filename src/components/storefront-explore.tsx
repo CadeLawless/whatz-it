@@ -27,6 +27,7 @@ import {
 import { catalogLocalCoverSources } from '@/catalog/catalog-media';
 import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { CatalogCoverImage } from '@/components/catalog-cover-image';
+import { useRestorePurchases } from '@/storefront/commerce-provider';
 
 const PAGE_SIZE = 24;
 
@@ -52,6 +53,7 @@ export const StorefrontExplore = forwardRef<
   ref,
 ) {
   const router = useRouter();
+  const restore = useRestorePurchases();
   const searchInputRef = useRef<TextInput>(null);
   const isScrollingProgrammatically = useRef(false);
 
@@ -360,6 +362,49 @@ export const StorefrontExplore = forwardRef<
           )}
         </Animated.View>
       )}
+
+      {restore.restorePurchases && (
+        <View
+          accessibilityLiveRegion="polite"
+          style={styles.restorePurchases}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{
+              busy: restore.state.status === 'restoring',
+              disabled: restore.state.status === 'restoring',
+            }}
+            disabled={restore.state.status === 'restoring'}
+            onPress={() => void restore.restorePurchases?.()}
+            style={({ pressed }) => [
+              styles.restorePurchasesButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            {restore.state.status === 'restoring' && (
+              <ActivityIndicator color="#2563EB" size="small" />
+            )}
+            <Text style={styles.restorePurchasesText}>
+              {restore.state.status === 'restoring'
+                ? 'RESTORING…'
+                : 'RESTORE PURCHASES'}
+            </Text>
+          </Pressable>
+
+          {restore.state.status === 'success' && (
+            <Text selectable style={styles.restorePurchasesMessage}>
+              {restore.state.restoredProductCount > 0
+                ? 'Your purchases are restored and available decks are ready offline.'
+                : 'No previous purchases were found for this Apple Account.'}
+            </Text>
+          )}
+          {restore.state.status === 'error' && (
+            <Text selectable style={styles.restorePurchasesError}>
+              {restore.state.message}
+            </Text>
+          )}
+        </View>
+      )}
     </View>
   );
 });
@@ -554,6 +599,37 @@ const styles = StyleSheet.create({
   messageBody: { color: '#64748B', fontSize: 14, lineHeight: 20 },
   loadMore: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#459EFE' },
   loadMoreText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900', letterSpacing: 0.7 },
+  restorePurchases: { alignItems: 'center', gap: 9, paddingTop: 8 },
+  restorePurchasesButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 22,
+    backgroundColor: '#EFF6FF',
+  },
+  restorePurchasesText: {
+    color: '#2563EB',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  restorePurchasesMessage: {
+    color: '#4B7A27',
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  restorePurchasesError: {
+    color: '#B45309',
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
   pressed: { opacity: 0.72 },
   cardPressed: { opacity: 0.86, transform: [{ scale: 0.985 }] },
 });

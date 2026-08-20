@@ -10,8 +10,15 @@ export type CommerceAdapter = {
   getProductState: (target: CommerceTarget) => CommerceProductState;
   purchase?: (target: CommerceTarget) => void | Promise<void>;
   restorePurchases?: () => void | Promise<void>;
+  restoreState?: CommerceRestoreState;
   retryPreparation?: (target: CommerceTarget) => void | Promise<void>;
 };
+
+export type CommerceRestoreState =
+  | { status: 'idle' }
+  | { status: 'restoring' }
+  | { status: 'success'; restoredProductCount: number }
+  | { status: 'error'; message: string };
 
 const fallbackAdapter: CommerceAdapter = {
   getProductState: fallbackCommerceState,
@@ -44,5 +51,9 @@ export function useCommerceProduct(target: CommerceTarget) {
 }
 
 export function useRestorePurchases() {
-  return use(CommerceContext).restorePurchases;
+  const adapter = use(CommerceContext);
+  return {
+    restorePurchases: adapter.restorePurchases,
+    state: adapter.restoreState ?? { status: 'idle' as const },
+  };
 }

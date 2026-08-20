@@ -18,6 +18,7 @@ export async function installEntitledDeck(
   apiBaseUrl: string,
   identity: InstallationIdentity,
   deckId: string,
+  ownershipSource: 'purchase' | 'bundle',
 ) {
   const row = await database.getFirstAsync<DeckArtifactRow>(
     `SELECT deck_id, card_content_version, card_count, content_hash, content_bytes
@@ -31,7 +32,18 @@ export async function installEntitledDeck(
     'SELECT installed_content_version FROM deck_installations WHERE deck_id = ?',
     deckId,
   );
-  if (installed?.installed_content_version === row.card_content_version) return;
+  if (installed?.installed_content_version === row.card_content_version) {
+    await database.runAsync(
+      `UPDATE deck_installations SET ownership_source = ?, status = 'installed',
+       desired_content_version = ?, last_verified_at = ?, last_error_code = NULL
+       WHERE deck_id = ?`,
+      ownershipSource,
+      row.card_content_version,
+      new Date().toISOString(),
+      deckId,
+    );
+    return;
+  }
 
   await database.runAsync(
     "UPDATE deck_installations SET status = 'pending', last_error_code = NULL WHERE deck_id = ?",
@@ -73,9 +85,10 @@ export async function installEntitledDeck(
         );
       }
       await transaction.runAsync(
-        `UPDATE deck_installations SET ownership_source = 'none', status = 'installed',
+        `UPDATE deck_installations SET ownership_source = ?, status = 'installed',
          desired_content_version = ?, installed_content_version = ?,
          last_verified_at = ?, last_error_code = NULL WHERE deck_id = ?`,
+        ownershipSource,
         row.card_content_version,
         row.card_content_version,
         new Date().toISOString(),
