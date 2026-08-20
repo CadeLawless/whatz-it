@@ -12,16 +12,14 @@ import {
   useWindowDimensions,
   View
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
-  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withTiming
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import {
@@ -62,6 +60,9 @@ const PRIVACY_POLICY_URL = 'https://playwhatzit.com/#privacy';
 const SUPPORT_EMAIL = 'support@playwhatzit.com';
 const SUPPORT_EMAIL_URL = `mailto:${SUPPORT_EMAIL}?subject=WHATZ%20IT%20Support`;
 const HEADER_OVERSCROLL_EXTENSION = 700;
+const SORT_MENU_GAP = 6;
+const SORT_MENU_VIEWPORT_MARGIN = 12;
+const SORT_MENU_ESTIMATED_HEIGHT = DECK_LIBRARY_SORTS.length * 44 + 2;
 
 const DECK_SORT_LABELS: Record<DeckLibrarySort, string> = {
   'recently-played': 'Recently played',
@@ -82,7 +83,8 @@ export default function DeckLibraryScreen() {
   const { catalog } = catalogState;
   const catalogSyncStatus =
     catalogState.status === 'ready' ? catalogState.syncStatus : null;
-  const { width } = useWindowDimensions();
+  const { height: windowHeight, width } = useWindowDimensions();
+  const safeAreaInsets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   const deckSearchInputRef = useRef<TextInput>(null);
   const isScrollingProgrammatically = useRef(false);
@@ -110,6 +112,7 @@ export default function DeckLibraryScreen() {
     width: 0,
     height: 0,
   });
+  const [sortMenuHeight, setSortMenuHeight] = useState(SORT_MENU_ESTIMATED_HEIGHT);
   const deckToolbarProgress = useSharedValue(isDeckSearchOpen ? 1 : 0);
   const [deckPlayHistory, setDeckPlayHistory] = useState<Record<string, number>>({});
   const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
@@ -379,26 +382,6 @@ export default function DeckLibraryScreen() {
     }, 60);
   }, []);
 
-  const nativeScrollGesture = useMemo(() => Gesture.Native(), []);
-
-  const closeSortTapGesture = useMemo(
-    () =>
-      Gesture.Tap()
-        .enabled(isSortMenuOpen)
-        .maxDistance(8)
-        .onEnd((_event, success) => {
-          if (success) {
-            runOnJS(setIsSortMenuOpen)(false);
-          }
-        }),
-    [isSortMenuOpen],
-  );
-
-  const scrollAndOutsideTapGesture = useMemo(
-    () => Gesture.Simultaneous(nativeScrollGesture, closeSortTapGesture),
-    [closeSortTapGesture, nativeScrollGesture],
-  );
-
   const handleToggleSortMenu = useCallback(
     (anchor?: SortMenuAnchor) => {
       if (isSortMenuOpen || !anchor) {
@@ -410,6 +393,31 @@ export default function DeckLibraryScreen() {
       setIsSortMenuOpen(true);
     },
     [isSortMenuOpen],
+  );
+
+  const sortMenuLeft = Math.min(
+    Math.max(SORT_MENU_VIEWPORT_MARGIN, sortMenuAnchor.x),
+    Math.max(
+      SORT_MENU_VIEWPORT_MARGIN,
+      width - sortMenuAnchor.width - SORT_MENU_VIEWPORT_MARGIN,
+    ),
+  );
+  const sortMenuTopBelow = sortMenuAnchor.y + sortMenuAnchor.height + SORT_MENU_GAP;
+  const sortMenuTopAbove = sortMenuAnchor.y - sortMenuHeight - SORT_MENU_GAP;
+  const sortMenuViewportTop = safeAreaInsets.top + SORT_MENU_VIEWPORT_MARGIN;
+  const sortMenuViewportBottom =
+    windowHeight - safeAreaInsets.bottom - SORT_MENU_VIEWPORT_MARGIN;
+  const sortMenuFitsBelow =
+    sortMenuTopBelow + sortMenuHeight <= sortMenuViewportBottom;
+  const sortMenuTop = Math.min(
+    Math.max(
+      sortMenuViewportTop,
+      sortMenuFitsBelow ? sortMenuTopBelow : sortMenuTopAbove,
+    ),
+    Math.max(
+      sortMenuViewportTop,
+      sortMenuViewportBottom - sortMenuHeight,
+    ),
   );
 
   const deckLibraryContent = (
@@ -432,11 +440,6 @@ export default function DeckLibraryScreen() {
           } else {
             setIsDeckSearchOpen(false);
           }
-        }}
-        onChangeSort={(sort) => {
-          setDeckSort(sort);
-          setIsSortMenuOpen(false);
-          void saveDeckLibrarySort(sort);
         }}
         onCloseSearch={() => {
           setDeckSearch('');
@@ -604,13 +607,14 @@ export default function DeckLibraryScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <GestureDetector gesture={scrollAndOutsideTapGesture}>
-        <ScrollView
-          accessibilityElementsHidden={videoPendingDelete !== null}
+      <ScrollView
+        accessibilityElementsHidden={videoPendingDelete !== null || isSortMenuOpen}
         automaticallyAdjustKeyboardInsets
         contentContainerStyle={styles.scrollContent}
         importantForAccessibility={
-          videoPendingDelete === null ? 'auto' : 'no-hide-descendants'
+          videoPendingDelete === null && !isSortMenuOpen
+            ? 'auto'
+            : 'no-hide-descendants'
         }
         ref={scrollViewRef}
         keyboardDismissMode="interactive"
@@ -758,104 +762,111 @@ export default function DeckLibraryScreen() {
             <Text style={styles.footerLinkText}>CONTACT</Text>
           </Pressable>
         </View>
-        </ScrollView>
-      </GestureDetector>
+      </ScrollView>
 
       {isSortMenuOpen && (
-        <>
-          <View
-            pointerEvents="none"
-            style={styles.sortBackdropVisual}
+        <View
+          accessibilityViewIsModal
+          importantForAccessibility="yes"
+          pointerEvents="box-none"
+          style={styles.sortFloatingLayer}
+        >
+          <Pressable
+            accessible={false}
+            onPress={() => setIsSortMenuOpen(false)}
+            style={styles.sortBackdrop}
           />
 
-          <View
-            pointerEvents="box-none"
-            style={styles.sortFloatingLayer}
+          <Pressable
+            accessibilityLabel={`Sort decks by ${DECK_SORT_LABELS[deckSort]}`}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: true }}
+            onPress={() => setIsSortMenuOpen(false)}
+            style={({ pressed }) => [
+              styles.deckSortDropdown,
+              styles.sortFloatingButton,
+              {
+                left: sortMenuLeft,
+                top: sortMenuAnchor.y,
+                width: sortMenuAnchor.width,
+                height: sortMenuAnchor.height,
+              },
+              pressed && styles.deckSortDropdownPressed,
+            ]}
           >
-            <Pressable
-              accessibilityLabel={`Sort decks by ${DECK_SORT_LABELS[deckSort]}`}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: true }}
-              onPress={() => setIsSortMenuOpen(false)}
-              style={({ pressed }) => [
-                styles.deckSortDropdown,
-                styles.sortFloatingButton,
-                {
-                  left: sortMenuAnchor.x,
-                  top: sortMenuAnchor.y,
-                  width: sortMenuAnchor.width,
-                  height: sortMenuAnchor.height,
-                },
-                pressed && styles.deckSortDropdownPressed,
-              ]}
+            <Text
+              numberOfLines={1}
+              style={styles.deckSortDropdownText}
             >
-              <Text
-                numberOfLines={1}
-                style={styles.deckSortDropdownText}
-              >
-                {DECK_SORT_LABELS[deckSort]}
-              </Text>
+              {DECK_SORT_LABELS[deckSort]}
+            </Text>
 
-              <Text
-                accessibilityElementsHidden
-                style={[
-                  styles.deckSortChevron,
-                  styles.deckSortChevronOpen,
-                ]}
-              >
-                ‹
-              </Text>
-            </Pressable>
-
-            <View
+            <Text
+              accessibilityElementsHidden
               style={[
-                styles.deckSortMenu,
-                styles.sortFloatingMenu,
-                {
-                  left: sortMenuAnchor.x,
-                  top: sortMenuAnchor.y + sortMenuAnchor.height + 6,
-                  width: sortMenuAnchor.width,
-                },
+                styles.deckSortChevron,
+                styles.deckSortChevronOpen,
               ]}
             >
-              {DECK_LIBRARY_SORTS.map((option) => {
-                const selected = option === deckSort;
+              ‹
+            </Text>
+          </Pressable>
 
-                return (
-                  <Pressable
-                    accessibilityLabel={`Sort decks by ${DECK_SORT_LABELS[option]}`}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    key={option}
-                    onPress={() => {
-                      setDeckSort(option);
-                      setIsSortMenuOpen(false);
-                      void saveDeckLibrarySort(option);
-                    }}
-                    style={({ pressed }) => [
-                      styles.deckSortMenuItem,
-                      selected && styles.deckSortMenuItemSelected,
-                      pressed && styles.deckSortMenuItemPressed,
+          <View
+            onLayout={(event) => {
+              const measuredHeight = event.nativeEvent.layout.height;
+
+              if (measuredHeight !== sortMenuHeight) {
+                setSortMenuHeight(measuredHeight);
+              }
+            }}
+            style={[
+              styles.deckSortMenu,
+              styles.sortFloatingMenu,
+              {
+                left: sortMenuLeft,
+                top: sortMenuTop,
+                width: sortMenuAnchor.width,
+              },
+            ]}
+          >
+            {DECK_LIBRARY_SORTS.map((option) => {
+              const selected = option === deckSort;
+
+              return (
+                <Pressable
+                  accessibilityLabel={`Sort decks by ${DECK_SORT_LABELS[option]}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  key={option}
+                  onPress={() => {
+                    setDeckSort(option);
+                    setIsSortMenuOpen(false);
+                    void saveDeckLibrarySort(option);
+                  }}
+                  style={({ pressed }) => [
+                    styles.deckSortMenuItem,
+                    selected && styles.deckSortMenuItemSelected,
+                    pressed && styles.deckSortMenuItemPressed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.deckSortMenuItemText,
+                      selected && styles.deckSortMenuItemTextSelected,
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.deckSortMenuItemText,
-                        selected && styles.deckSortMenuItemTextSelected,
-                      ]}
-                    >
-                      {DECK_SORT_LABELS[option]}
-                    </Text>
+                    {DECK_SORT_LABELS[option]}
+                  </Text>
 
-                    {selected && (
-                      <Text style={styles.deckSortCheck}>✓</Text>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
+                  {selected && (
+                    <Text style={styles.deckSortCheck}>✓</Text>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
-        </>
+        </View>
       )}
 
       <ConfirmationPrompt
@@ -902,7 +913,6 @@ function DeckLibraryToolbar({
   isSortMenuOpen,
   onChangeSearch,
   onClearSearch,
-  onChangeSort,
   onCloseSearch,
   onFocusChange,
   onFocusSearch,
@@ -918,7 +928,6 @@ function DeckLibraryToolbar({
   isSearchFocused: boolean;
   isSortMenuOpen: boolean;
   onChangeSearch: (text: string) => void;
-  onChangeSort: (sort: DeckLibrarySort) => void;
   onClearSearch: () => void;
   onCloseSearch: () => void;
   onFocusChange: (focused: boolean) => void;
@@ -1437,9 +1446,8 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
 
-  sortBackdropVisual: {
+  sortBackdrop: {
     ...StyleSheet.absoluteFill,
-    zIndex: 50,
   },
 
   sortFloatingLayer: {
