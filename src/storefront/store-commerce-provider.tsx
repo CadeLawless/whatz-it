@@ -10,6 +10,7 @@ import {
   configuredCommerceApiBaseUrl,
   fetchEntitlements,
   registerInstallation,
+  resetSandboxPurchases,
   type CommerceEntitlements,
   verifyApplePurchase,
 } from './commerce-api';
@@ -18,11 +19,14 @@ import {
   CommerceProvider,
   type CommerceAdapter,
   type CommerceRestoreState,
+  type CommerceTestingState,
 } from './commerce-provider';
 import type { CommerceProductState, CommerceTarget } from './commerce-state';
 import { installEntitledDeck } from './entitled-deck-installer';
+import { resetLocalPaidOwnership } from './commerce-testing';
 import {
   loadOrCreateInstallationIdentity,
+  resetInstallationIdentity,
   type InstallationIdentity,
 } from './installation-identity';
 
@@ -35,6 +39,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const [ownedProducts, setOwnedProducts] = useState<OwnedProduct[]>([]);
   const [operationStates, setOperationStates] = useState<Map<string, CommerceProductState>>(new Map());
   const [restoreState, setRestoreState] = useState<CommerceRestoreState>({ status: 'idle' });
+  const [testingState, setTestingState] = useState<CommerceTestingState>({ status: 'idle' });
   const [serverReachable, setServerReachable] = useState(true);
   const processedTransactions = useRef(new Set<string>());
   const restoreInFlight = useRef(false);
@@ -201,7 +206,9 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       } catch {
         if (!cancelled) setServerReachable(false);
       }
-    })();
+    })().catch(() => {
+      if (!cancelled) setServerReachable(false);
+    });
     return () => { cancelled = true; };
   }, [apiBaseUrl, persistEntitlements, prepareEntitledDecks]);
 
@@ -341,6 +348,68 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     }
   }, [apiBaseUrl, identity, persistEntitlements, prepareEntitledDecks, setTargetState]);
 
+  const testingEnabled =
+    process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled'
+    && Platform.OS === 'ios'
+    && Boolean(apiBaseUrl);
+
+  const clearLocalOwnership = useCallback(async () => {
+    const database = await openCatalogDatabase();
+    await resetLocalPaidOwnership(database);
+    processedTransactions.current.clear();
+    setOwnedProducts([]);
+    setOperationStates(new Map());
+    setRestoreState({ status: 'idle' });
+    await refreshCatalog();
+  }, [refreshCatalog]);
+
+  const simulateNewDevice = useCallback(async () => {
+    if (!testingEnabled || !apiBaseUrl) return;
+    setTestingState({ status: 'working', operation: 'new-device' });
+    try {
+      await clearLocalOwnership();
+      const newIdentity = await resetInstallationIdentity();
+      await registerInstallation(apiBaseUrl, newIdentity);
+      setIdentity(newIdentity);
+      setServerReachable(true);
+      setTestingState({
+        status: 'success',
+        message: 'A new test installation is ready. Tap Restore Purchases to recover this Apple Account’s decks.',
+      });
+    } catch {
+      setTestingState({
+        status: 'error',
+        message: 'The new-device simulation could not finish. Check the staging connection and try again.',
+      });
+    }
+  }, [apiBaseUrl, clearLocalOwnership, testingEnabled]);
+
+  const resetSandboxOwnership = useCallback(async () => {
+    if (!testingEnabled || !apiBaseUrl) return;
+    if (!identity) {
+      setTestingState({
+        status: 'error',
+        message: 'The staging installation is still connecting. Wait a moment and try again.',
+      });
+      return;
+    }
+    setTestingState({ status: 'working', operation: 'reset-ownership' });
+    try {
+      const result = await resetSandboxPurchases(apiBaseUrl, identity);
+      await clearLocalOwnership();
+      setServerReachable(true);
+      setTestingState({
+        status: 'success',
+        message: `${result.revokedEntitlementCount} sandbox entitlement${result.revokedEntitlementCount === 1 ? '' : 's'} reset. Clear the Sandbox Apple Account purchase history before buying again.`,
+      });
+    } catch {
+      setTestingState({
+        status: 'error',
+        message: 'Sandbox ownership could not be reset. Confirm the staging API is deployed and try again.',
+      });
+    }
+  }, [apiBaseUrl, clearLocalOwnership, identity, testingEnabled]);
+
   const adapter = useMemo<CommerceAdapter>(() => ({
     getProductState,
     purchase,
@@ -348,7 +417,23 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       Platform.OS === 'ios' && apiBaseUrl ? restorePurchases : undefined,
     restoreState,
     retryPreparation,
-  }), [apiBaseUrl, getProductState, purchase, restorePurchases, restoreState, retryPreparation]);
+    testing: testingEnabled ? {
+      simulateNewDevice,
+      resetSandboxOwnership,
+      state: testingState,
+    } : undefined,
+  }), [
+    apiBaseUrl,
+    getProductState,
+    purchase,
+    resetSandboxOwnership,
+    restorePurchases,
+    restoreState,
+    retryPreparation,
+    simulateNewDevice,
+    testingEnabled,
+    testingState,
+  ]);
 
   return <CommerceProvider adapter={adapter}>{children}</CommerceProvider>;
 }

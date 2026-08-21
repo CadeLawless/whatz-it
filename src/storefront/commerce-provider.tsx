@@ -12,6 +12,19 @@ export type CommerceAdapter = {
   restorePurchases?: () => void | Promise<void>;
   restoreState?: CommerceRestoreState;
   retryPreparation?: (target: CommerceTarget) => void | Promise<void>;
+  testing?: CommerceTestingAdapter;
+};
+
+export type CommerceTestingState =
+  | { status: 'idle' }
+  | { status: 'working'; operation: 'new-device' | 'reset-ownership' }
+  | { status: 'success'; message: string }
+  | { status: 'error'; message: string };
+
+export type CommerceTestingAdapter = {
+  simulateNewDevice: () => void | Promise<void>;
+  resetSandboxOwnership: () => void | Promise<void>;
+  state: CommerceTestingState;
 };
 
 export type CommerceRestoreState =
@@ -56,4 +69,8 @@ export function useRestorePurchases() {
     restorePurchases: adapter.restorePurchases,
     state: adapter.restoreState ?? { status: 'idle' as const },
   };
+}
+
+export function useCommerceTesting() {
+  return use(CommerceContext).testing;
 }

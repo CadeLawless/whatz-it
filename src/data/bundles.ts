@@ -27,8 +27,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 42,
-    "updatedAt": "2026-08-13T20:55:08Z",
+    "revision": 43,
+    "updatedAt": "2026-08-14T22:16:34Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -13093,6 +13093,7 @@ const bundleCatalog: PortableCatalog =
             "order": 16,
             "title": "Lift Your Voice",
             "description": "From church classics to today's worship favorites!",
+            "coverImage": "assets/images/decks/baseline/d3fcf66ca4bc3cb3b79cd9acabc7dbe89c797dd2469379218e1230f79c7a3407.webp",
             "version": 1,
             "cardContentVersion": 1,
             "cardCount": 167,
@@ -13117,7 +13118,8 @@ const bundleCatalog: PortableCatalog =
             "order": 17,
             "title": "Worship Icons",
             "description": "The biggest names in Christian music.",
-            "version": 1,
+            "coverImage": "assets/images/decks/baseline/65f159824cd8f2ce8c2c56272f4f487f50b5625dc2135dbce3b725278a119bd8.webp",
+            "version": 2,
             "cardContentVersion": 1,
             "cardCount": 158,
             "tags": [
@@ -13136,6 +13138,12 @@ const bundleCatalog: PortableCatalog =
             ],
             "access": "paid",
             "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.worship_icons",
+                    "status": "available"
+                }
+            },
             "cards": []
         },
         {
@@ -13143,6 +13151,7 @@ const bundleCatalog: PortableCatalog =
             "order": 18,
             "title": "Bible Characters",
             "description": "From Genesis to Revelation, test your Bible knowledge.",
+            "coverImage": "assets/images/decks/baseline/c104c44658919e8dc9a9fd0d9b06b3e5bbe539c43980f7586692c50e23f29623.webp",
             "version": 1,
             "cardContentVersion": 1,
             "cardCount": 109,
@@ -13162,6 +13171,7 @@ const bundleCatalog: PortableCatalog =
             "order": 19,
             "title": "Growing Up Christian",
             "description": "The church kid experience in one deck.",
+            "coverImage": "assets/images/decks/baseline/825d388e8034fa5c38db81dea8977dc91b7107561e06d06d90fb9f50cb203c4c.webp",
             "version": 1,
             "cardContentVersion": 1,
             "cardCount": 150,
@@ -13181,6 +13191,7 @@ const bundleCatalog: PortableCatalog =
             "order": 20,
             "title": "Accents & Impressions",
             "description": "Put your impression skills to the test!",
+            "coverImage": "assets/images/decks/baseline/e12b2f021153592645ee2899681fd43b81d9f62ebef737d944f97610d5373cd9.webp",
             "version": 1,
             "cardContentVersion": 1,
             "cardCount": 86,
@@ -13276,14 +13287,19 @@ const deckCoverImages: Record<string, number> =
   "assets/images/decks/baseline/215a98b84f2bca55770cb39f022d373dda076ea9e007b0203edb102d2a204997.webp": require("../../assets/images/decks/baseline/215a98b84f2bca55770cb39f022d373dda076ea9e007b0203edb102d2a204997.webp"),
   "assets/images/decks/baseline/3e6b2f069c9b417830adca343edea9d9c9f5fa26b2af8af7609652b5bc8981e8.webp": require("../../assets/images/decks/baseline/3e6b2f069c9b417830adca343edea9d9c9f5fa26b2af8af7609652b5bc8981e8.webp"),
   "assets/images/decks/baseline/6083910d174ab007549db16efa1816f7ae33f234fa7e9bcde1fadf9d698aae47.webp": require("../../assets/images/decks/baseline/6083910d174ab007549db16efa1816f7ae33f234fa7e9bcde1fadf9d698aae47.webp"),
+  "assets/images/decks/baseline/65f159824cd8f2ce8c2c56272f4f487f50b5625dc2135dbce3b725278a119bd8.webp": require("../../assets/images/decks/baseline/65f159824cd8f2ce8c2c56272f4f487f50b5625dc2135dbce3b725278a119bd8.webp"),
   "assets/images/decks/baseline/6c7413e5705c1e405b081a5b5730559727ec58ba8a3f123653f4205a8c00e856.webp": require("../../assets/images/decks/baseline/6c7413e5705c1e405b081a5b5730559727ec58ba8a3f123653f4205a8c00e856.webp"),
   "assets/images/decks/baseline/7b3a7031c9045f07766930ee393a3e8e0e106c78206ba76f5b584f1e961bdf87.webp": require("../../assets/images/decks/baseline/7b3a7031c9045f07766930ee393a3e8e0e106c78206ba76f5b584f1e961bdf87.webp"),
   "assets/images/decks/baseline/801f0bcc45a3e6485a98aa9d4b462e63ad8de3ea5599c91f378f5ec996604791.webp": require("../../assets/images/decks/baseline/801f0bcc45a3e6485a98aa9d4b462e63ad8de3ea5599c91f378f5ec996604791.webp"),
+  "assets/images/decks/baseline/825d388e8034fa5c38db81dea8977dc91b7107561e06d06d90fb9f50cb203c4c.webp": require("../../assets/images/decks/baseline/825d388e8034fa5c38db81dea8977dc91b7107561e06d06d90fb9f50cb203c4c.webp"),
   "assets/images/decks/baseline/8539c37838aa6093a812a7c0f36d32aa13a3980b65300b924957ac5aa8217c1c.webp": require("../../assets/images/decks/baseline/8539c37838aa6093a812a7c0f36d32aa13a3980b65300b924957ac5aa8217c1c.webp"),
   "assets/images/decks/baseline/9afb8181a1cf3b0bb04a2a00efbd5dd7c131d3212db26f0c043f14d1a6fde49e.webp": require("../../assets/images/decks/baseline/9afb8181a1cf3b0bb04a2a00efbd5dd7c131d3212db26f0c043f14d1a6fde49e.webp"),
   "assets/images/decks/baseline/a6e18142ae3178eff5f0600fc0964f7fb8ff7ae743d286e2f5ea055919c75c18.webp": require("../../assets/images/decks/baseline/a6e18142ae3178eff5f0600fc0964f7fb8ff7ae743d286e2f5ea055919c75c18.webp"),
+  "assets/images/decks/baseline/c104c44658919e8dc9a9fd0d9b06b3e5bbe539c43980f7586692c50e23f29623.webp": require("../../assets/images/decks/baseline/c104c44658919e8dc9a9fd0d9b06b3e5bbe539c43980f7586692c50e23f29623.webp"),
   "assets/images/decks/baseline/cf3562120ddb63dc7c96aea4dcfe328bc4128f516c5f1f8a0840e931938dec4d.webp": require("../../assets/images/decks/baseline/cf3562120ddb63dc7c96aea4dcfe328bc4128f516c5f1f8a0840e931938dec4d.webp"),
+  "assets/images/decks/baseline/d3fcf66ca4bc3cb3b79cd9acabc7dbe89c797dd2469379218e1230f79c7a3407.webp": require("../../assets/images/decks/baseline/d3fcf66ca4bc3cb3b79cd9acabc7dbe89c797dd2469379218e1230f79c7a3407.webp"),
   "assets/images/decks/baseline/dd63f2e85d36ec658fcc5c8a1152d205815d66cdecabd5baecb940039688f43f.webp": require("../../assets/images/decks/baseline/dd63f2e85d36ec658fcc5c8a1152d205815d66cdecabd5baecb940039688f43f.webp"),
+  "assets/images/decks/baseline/e12b2f021153592645ee2899681fd43b81d9f62ebef737d944f97610d5373cd9.webp": require("../../assets/images/decks/baseline/e12b2f021153592645ee2899681fd43b81d9f62ebef737d944f97610d5373cd9.webp"),
   "assets/images/decks/baseline/fa3c1b43e049506aa24597868f5bce44ae3db0a0d7078145d6b3773bc345a560.webp": require("../../assets/images/decks/baseline/fa3c1b43e049506aa24597868f5bce44ae3db0a0d7078145d6b3773bc345a560.webp"),
   "assets/images/decks/baseline/fbba3caf2280a856a7ca0fdba37b7e8e18d0197495227ca641aa037ce6b8d47e.webp": require("../../assets/images/decks/baseline/fbba3caf2280a856a7ca0fdba37b7e8e18d0197495227ca641aa037ce6b8d47e.webp"),
 }

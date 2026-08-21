@@ -6,7 +6,22 @@ import {
   migrateCatalogDatabase,
 } from './catalog-schema';
 
-export async function openCatalogDatabase() {
+export function createCatalogDatabaseOpener<Database>(
+  initialize: () => Promise<Database>,
+) {
+  let databasePromise: Promise<Database> | undefined;
+  return () => {
+    if (!databasePromise) {
+      databasePromise = initialize().catch((error: unknown) => {
+        databasePromise = undefined;
+        throw error;
+      });
+    }
+    return databasePromise;
+  };
+}
+
+async function initializeCatalogDatabase() {
   const [SQLite, { bundledCatalog }] = await Promise.all([
     import('expo-sqlite'),
     import('@/data/bundles'),
@@ -16,6 +31,10 @@ export async function openCatalogDatabase() {
   await applyBundledCatalogBaseline(database, bundledCatalog);
   return database;
 }
+
+export const openCatalogDatabase = createCatalogDatabaseOpener(
+  initializeCatalogDatabase,
+);
 
 export async function seedBundledCatalogIfEmpty(
   database: SQLiteDatabase,

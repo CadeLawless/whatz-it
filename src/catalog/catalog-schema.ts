@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const CATALOG_DATABASE_NAME = 'whatz-it-catalog.db';
-export const CATALOG_DATABASE_VERSION = 3;
+export const CATALOG_DATABASE_VERSION = 4;
 
 const CREATE_SCHEMA_SQL = `
 CREATE TABLE catalog_state (
@@ -83,7 +83,7 @@ CREATE TABLE cards (
 
 CREATE TABLE deck_installations (
   deck_id TEXT PRIMARY KEY NOT NULL REFERENCES decks(deck_id) ON DELETE CASCADE,
-  ownership_source TEXT NOT NULL CHECK (ownership_source IN ('free', 'none')),
+  ownership_source TEXT NOT NULL CHECK (ownership_source IN ('free', 'none', 'purchase', 'bundle')),
   desired_content_version INTEGER NOT NULL,
   installed_content_version INTEGER,
   status TEXT NOT NULL CHECK (status IN ('installed', 'not_owned', 'pending', 'failed')),
@@ -120,6 +120,7 @@ CREATE INDEX idx_bundle_decks_deck ON bundle_decks(deck_id, bundle_id);
 `;
 
 export async function migrateCatalogDatabase(database: SQLiteDatabase) {
+  await database.execAsync('PRAGMA busy_timeout = 5000');
   await database.execAsync('PRAGMA journal_mode = WAL');
   await database.execAsync('PRAGMA foreign_keys = ON');
   const row = await database.getFirstAsync<{ user_version: number }>(
@@ -172,6 +173,33 @@ export async function migrateCatalogDatabase(database: SQLiteDatabase) {
           last_error_code TEXT
         );
         PRAGMA user_version = 3;
+      `);
+    });
+  }
+  if (currentVersion <= 3 && currentVersion !== 0) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(`
+        CREATE TABLE deck_installations_v4 (
+          deck_id TEXT PRIMARY KEY NOT NULL REFERENCES decks(deck_id) ON DELETE CASCADE,
+          ownership_source TEXT NOT NULL
+            CHECK (ownership_source IN ('free', 'none', 'purchase', 'bundle')),
+          desired_content_version INTEGER NOT NULL,
+          installed_content_version INTEGER,
+          status TEXT NOT NULL
+            CHECK (status IN ('installed', 'not_owned', 'pending', 'failed')),
+          last_verified_at TEXT,
+          last_error_code TEXT
+        );
+        INSERT INTO deck_installations_v4 (
+          deck_id, ownership_source, desired_content_version,
+          installed_content_version, status, last_verified_at, last_error_code
+        )
+        SELECT deck_id, ownership_source, desired_content_version,
+          installed_content_version, status, last_verified_at, last_error_code
+        FROM deck_installations;
+        DROP TABLE deck_installations;
+        ALTER TABLE deck_installations_v4 RENAME TO deck_installations;
+        PRAGMA user_version = 4;
       `);
     });
   }

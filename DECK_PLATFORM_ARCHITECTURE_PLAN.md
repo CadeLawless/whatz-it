@@ -462,7 +462,9 @@ implementation: <https://docs.expo.dev/versions/v57.0.0/sdk/sqlite/>.
 
 ### 8.1 Seed behavior
 
-- Every build includes a valid baseline catalog plus a small free starter set.
+- Every build includes a valid baseline catalog, a small free starter set, and
+  verified covers for every storefront deck so Explore is complete immediately
+  after a clean installation without exposing paid card content.
 - First launch creates/migrates SQLite and imports the bundled baseline.
 - A later app build may contain a newer baseline than the local database. The
   app imports it only when its revision is newer and preserves locally owned
@@ -494,9 +496,10 @@ implementation: <https://docs.expo.dev/versions/v57.0.0/sdk/sqlite/>.
   bundle membership—and the addition or removal of a starter deck—marks the
   app baseline as needing refresh.
 - Before an app-store release, a release-preparation command fetches the active
-  baseline export and immutable free content/media, verifies every revision,
-  size, and SHA-256 hash, regenerates the bundled catalog and Metro static image
-  registry, and runs parity tests before the generated files are committed.
+  baseline export, immutable free content, and all storefront cover media;
+  verifies every revision, size, and SHA-256 hash; regenerates the bundled
+  catalog and Metro static image registry; and runs parity tests before the
+  generated files are committed.
 - Existing installations do not wait for an app release: after one successful
   foreground/resume synchronization, updated metadata and persisted thumbnails
   remain browsable offline, and verified free-deck cards and covers remain

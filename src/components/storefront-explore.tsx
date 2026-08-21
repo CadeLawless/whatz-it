@@ -27,7 +27,11 @@ import {
 import { catalogLocalCoverSources } from '@/catalog/catalog-media';
 import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { CatalogCoverImage } from '@/components/catalog-cover-image';
-import { useRestorePurchases } from '@/storefront/commerce-provider';
+import { ConfirmationPrompt } from '@/components/confirmation-prompt';
+import {
+  useCommerceTesting,
+  useRestorePurchases,
+} from '@/storefront/commerce-provider';
 
 const PAGE_SIZE = 24;
 
@@ -54,6 +58,8 @@ export const StorefrontExplore = forwardRef<
 ) {
   const router = useRouter();
   const restore = useRestorePurchases();
+  const commerceTesting = useCommerceTesting();
+  const [testingPrompt, setTestingPrompt] = useState<'new-device' | 'reset-ownership' | null>(null);
   const searchInputRef = useRef<TextInput>(null);
   const isScrollingProgrammatically = useRef(false);
 
@@ -115,6 +121,10 @@ export const StorefrontExplore = forwardRef<
           (deck) => catalogLocalCoverSources(deck, 'cover')[0],
         );
         if (localCoverSources.some((source) => source === undefined)) {
+          if (syncStatus === 'failed' || syncStatus === 'disabled') {
+            setError('Storefront covers are not available on this installation.');
+            setLoading(false);
+          }
           return;
         }
 
@@ -405,6 +415,63 @@ export const StorefrontExplore = forwardRef<
           )}
         </View>
       )}
+
+      {commerceTesting && (
+        <View accessibilityLiveRegion="polite" style={styles.testingTools}>
+          <Text style={styles.testingTitle}>STAGING PURCHASE TESTING</Text>
+          <Text style={styles.testingDescription}>
+            These controls affect only this staging build and its sandbox ownership.
+          </Text>
+          <View style={styles.testingActions}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={commerceTesting.state.status === 'working'}
+              onPress={() => setTestingPrompt('new-device')}
+              style={({ pressed }) => [styles.testingButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.testingButtonText}>SIMULATE NEW DEVICE</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={commerceTesting.state.status === 'working'}
+              onPress={() => setTestingPrompt('reset-ownership')}
+              style={({ pressed }) => [styles.testingButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.testingButtonText}>RESET SANDBOX OWNERSHIP</Text>
+            </Pressable>
+          </View>
+          {commerceTesting.state.status === 'working' && (
+            <ActivityIndicator color="#2563EB" size="small" />
+          )}
+          {(commerceTesting.state.status === 'success' || commerceTesting.state.status === 'error') && (
+            <Text
+              selectable
+              style={commerceTesting.state.status === 'success'
+                ? styles.restorePurchasesMessage
+                : styles.restorePurchasesError}
+            >
+              {commerceTesting.state.message}
+            </Text>
+          )}
+        </View>
+      )}
+
+      <ConfirmationPrompt
+        visible={testingPrompt !== null}
+        title={testingPrompt === 'new-device' ? 'Simulate a new device?' : 'Reset sandbox ownership?'}
+        message={testingPrompt === 'new-device'
+          ? 'This clears paid decks from this installation and creates a new installation identity. Your Apple sandbox purchase remains available to restore.'
+          : 'This revokes this installation’s staging entitlements and removes its paid decks. You must also clear the Sandbox Apple Account purchase history before buying again.'}
+        confirmLabel={testingPrompt === 'new-device' ? 'SIMULATE' : 'RESET'}
+        destructive={testingPrompt === 'reset-ownership'}
+        onCancel={() => setTestingPrompt(null)}
+        onConfirm={() => {
+          const operation = testingPrompt;
+          setTestingPrompt(null);
+          if (operation === 'new-device') void commerceTesting?.simulateNewDevice();
+          if (operation === 'reset-ownership') void commerceTesting?.resetSandboxOwnership();
+        }}
+      />
     </View>
   );
 });
@@ -630,6 +697,30 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: 'center',
   },
+  testingTools: {
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 18,
+    backgroundColor: '#FFFBEB',
+  },
+  testingTitle: { color: '#92400E', fontSize: 11, fontWeight: '900', letterSpacing: 0.8 },
+  testingDescription: { color: '#78716C', fontSize: 12, lineHeight: 17, textAlign: 'center' },
+  testingActions: { width: '100%', gap: 8 },
+  testingButton: {
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 21,
+    backgroundColor: '#FFFFFF',
+  },
+  testingButtonText: { color: '#92400E', fontSize: 10, fontWeight: '900', letterSpacing: 0.65 },
   pressed: { opacity: 0.72 },
   cardPressed: { opacity: 0.86, transform: [{ scale: 0.985 }] },
 });

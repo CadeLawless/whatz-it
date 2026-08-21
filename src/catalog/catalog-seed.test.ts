@@ -151,6 +151,15 @@ describe('bundled SQLite catalog seed', () => {
         CREATE TABLE bundles (
           bundle_id TEXT PRIMARY KEY NOT NULL
         );
+        CREATE TABLE deck_installations (
+          deck_id TEXT PRIMARY KEY NOT NULL REFERENCES decks(deck_id) ON DELETE CASCADE,
+          ownership_source TEXT NOT NULL CHECK (ownership_source IN ('free', 'none')),
+          desired_content_version INTEGER NOT NULL,
+          installed_content_version INTEGER,
+          status TEXT NOT NULL CHECK (status IN ('installed', 'not_owned', 'pending', 'failed')),
+          last_verified_at TEXT,
+          last_error_code TEXT
+        );
         INSERT INTO decks (deck_id) VALUES ('kept-deck');
         PRAGMA user_version = 1;
       `);
@@ -174,7 +183,7 @@ describe('bundled SQLite catalog seed', () => {
         adapter as unknown as Parameters<typeof migrateCatalogDatabase>[0],
       );
 
-      assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 3);
+      assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 4);
       assert.equal(
         database.prepare('SELECT deck_id FROM decks').get()?.deck_id,
         'kept-deck',

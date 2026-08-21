@@ -76,27 +76,17 @@ export async function fetchPreparedBaseline(
   }
   const manifest = parseCatalogManifest(await manifestResponse.json());
   const activeDecks = manifest.decks.filter((deck) => deck.status === 'active');
-  const freeDecks = activeDecks.filter((deck) => deck.access === 'free');
-
   const entries = await mapConcurrent(
-    freeDecks,
+    activeDecks,
     DEFAULT_CONCURRENCY,
     async (deck) => {
-      if (!deck.content.url) throw new Error(`Free deck ${deck.id} has no content URL.`);
-      const [contentBytes, coverBytes] = await Promise.all([
-        fetchVerifiedBytes(
-          deck.content.url,
-          deck.content.bytes,
-          deck.content.hash,
-          request,
-        ),
+      const [artifact, coverBytes] = await Promise.all([
+        deck.access === 'free'
+          ? fetchFreeDeckArtifact(deck, request)
+          : Promise.resolve(undefined),
         fetchVerifiedBytes(deck.cover.url, deck.cover.bytes, deck.cover.hash, request),
       ]);
       assertWebp(coverBytes, deck.id);
-      const artifact = parseDeckContentArtifact(
-        JSON.parse(new TextDecoder().decode(contentBytes)),
-        deck,
-      );
       return {
         artifact,
         coverBytes,
@@ -106,7 +96,9 @@ export async function fetchPreparedBaseline(
     },
   );
 
-  const artifacts = new Map(entries.map((entry) => [entry.deckId, entry.artifact]));
+  const artifacts = new Map(
+    entries.flatMap((entry) => entry.artifact ? [[entry.deckId, entry.artifact] as const] : []),
+  );
   const coverPaths = new Map(entries.map((entry) => [entry.deckId, entry.coverPath]));
   const covers = new Map(entries.map((entry) => [entry.coverPath, entry.coverBytes]));
   return { catalog: buildBaselineCatalog(manifest, artifacts, coverPaths), covers };
@@ -128,14 +120,11 @@ export function buildBaselineCatalog(
       if (deck.access === 'free' && !artifact) {
         throw new Error(`Free deck ${deck.id} is missing its verified baseline artifact.`);
       }
-      if (deck.access === 'free' && coverPath !== baselineCoverPath(deck.cover.hash)) {
-        throw new Error(`Free deck ${deck.id} is missing its verified baseline cover.`);
+      if (coverPath !== baselineCoverPath(deck.cover.hash)) {
+        throw new Error(`Deck ${deck.id} is missing its verified baseline cover.`);
       }
       if (deck.access === 'paid' && artifact) {
         throw new Error(`Paid deck ${deck.id} must not be included as baseline card content.`);
-      }
-      if (deck.access === 'paid' && coverPath) {
-        throw new Error(`Paid deck ${deck.id} must not be included as baseline cover media.`);
       }
       const verifiedArtifact = artifact
         ? parseDeckContentArtifact(artifact, deck)
@@ -294,7 +283,7 @@ async function run() {
   }
   await writePreparedBaseline(repositoryRoot, prepared);
   console.log(`UPDATED: bundled catalog now matches revision ${prepared.catalog.revision}.`);
-  console.log(`Free starter covers: ${prepared.covers.size}`);
+  console.log(`Storefront covers: ${prepared.covers.size}`);
   console.log(
     `Free starter cards: ${prepared.catalog.decks
       .filter((deck) => deck.access === 'free')
@@ -347,6 +336,23 @@ async function fetchVerifiedBytes(
     throw new Error(`Artifact ${expectedHash} failed SHA-256 verification.`);
   }
   return bytes;
+}
+
+async function fetchFreeDeckArtifact(
+  deck: CatalogManifest['decks'][number],
+  request: typeof fetch,
+) {
+  if (!deck.content.url) throw new Error(`Free deck ${deck.id} has no content URL.`);
+  const contentBytes = await fetchVerifiedBytes(
+    deck.content.url,
+    deck.content.bytes,
+    deck.content.hash,
+    request,
+  );
+  return parseDeckContentArtifact(
+    JSON.parse(new TextDecoder().decode(contentBytes)),
+    deck,
+  );
 }
 
 function replaceManagedBlock(

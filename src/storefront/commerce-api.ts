@@ -11,6 +11,12 @@ export type CommerceEntitlements = {
   verifiedAt: string;
 };
 
+export type SandboxResetResult = {
+  installationId: string;
+  revokedEntitlementCount: number;
+  resetAt: string;
+};
+
 export class CommerceApiError extends Error {
   public constructor(
     public readonly code: string,
@@ -65,13 +71,25 @@ export function verifyApplePurchase(
   );
 }
 
-function authenticatedRequest(
+export function resetSandboxPurchases(
+  baseUrl: string,
+  identity: InstallationIdentity,
+) {
+  return authenticatedRequest<SandboxResetResult>(
+    baseUrl,
+    '/api/v1/testing/reset-purchases',
+    identity,
+    { method: 'POST' },
+  );
+}
+
+function authenticatedRequest<T = CommerceEntitlements>(
   baseUrl: string,
   path: string,
   identity: InstallationIdentity,
   init: RequestInit = {},
 ) {
-  return apiRequest<CommerceEntitlements>(baseUrl, path, {
+  return apiRequest<T>(baseUrl, path, {
     ...init,
     headers: {
       ...objectHeaders(init.headers),

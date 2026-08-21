@@ -17,13 +17,16 @@ import {
 const placeholderHash = 'a'.repeat(64);
 
 describe('release catalog baseline preparation', () => {
-  it('embeds verified free cards while retaining paid metadata only', () => {
+  it('embeds verified storefront covers while retaining paid metadata only', () => {
     const manifest = parseCatalogManifest(manifestFixture());
     const artifact = freeArtifact();
     const catalog = buildBaselineCatalog(
       manifest,
       new Map([['starter-deck', artifact]]),
-      new Map([['starter-deck', `assets/images/decks/baseline/${placeholderHash}.webp`]]),
+      new Map([
+        ['starter-deck', `assets/images/decks/baseline/${placeholderHash}.webp`],
+        ['paid-deck', `assets/images/decks/baseline/${placeholderHash}.webp`],
+      ]),
     );
 
     assert.equal(catalog.revision, 41);
@@ -33,7 +36,10 @@ describe('release catalog baseline preparation', () => {
     assert.equal(catalog.decks[1].access, 'paid');
     assert.equal(catalog.decks[1].cardCount, 100);
     assert.deepEqual(catalog.decks[1].cards, []);
-    assert.equal(catalog.decks[1].coverImage, undefined);
+    assert.equal(
+      catalog.decks[1].coverImage,
+      `assets/images/decks/baseline/${placeholderHash}.webp`,
+    );
     assert.equal(catalog.bundles[0].version, 4);
     assert.equal(JSON.stringify(catalog).includes('protected card text'), false);
   });
@@ -59,13 +65,17 @@ describe('release catalog baseline preparation', () => {
               'starter-deck',
               `assets/images/decks/baseline/${placeholderHash}.webp`,
             ],
+            [
+              'paid-deck',
+              `assets/images/decks/baseline/${placeholderHash}.webp`,
+            ],
           ]),
         ),
       /Paid deck paid-deck must not be included/,
     );
   });
 
-  it('downloads and verifies only public starter artifacts', async () => {
+  it('downloads every public cover but only free card content', async () => {
     const contentBytes = new TextEncoder().encode(JSON.stringify(freeArtifact()));
     const coverBytes = webpFixture();
     const fixture = manifestFixture();
@@ -73,6 +83,8 @@ describe('release catalog baseline preparation', () => {
     fixture.decks[0].content.bytes = contentBytes.byteLength;
     fixture.decks[0].cover.hash = sha256(coverBytes);
     fixture.decks[0].cover.bytes = coverBytes.byteLength;
+    fixture.decks[1].cover.hash = sha256(coverBytes);
+    fixture.decks[1].cover.bytes = coverBytes.byteLength;
     const requested: string[] = [];
     const request = (async (input: URL | RequestInfo) => {
       const url = String(input);
@@ -82,6 +94,7 @@ describe('release catalog baseline preparation', () => {
       }
       if (url === fixture.decks[0].content.url) return new Response(contentBytes);
       if (url === fixture.decks[0].cover.url) return new Response(coverBytes);
+      if (url === fixture.decks[1].cover.url) return new Response(coverBytes);
       return new Response('missing', { status: 404 });
     }) as typeof fetch;
 
@@ -93,8 +106,9 @@ describe('release catalog baseline preparation', () => {
     assert.equal(prepared.catalog.decks[0].cards.length, 1);
     assert.equal(prepared.catalog.decks[1].cards.length, 0);
     assert.equal(prepared.covers.size, 1);
-    assert.equal(requested.length, 3);
+    assert.equal(requested.length, 4);
     assert.equal(requested.some((url) => url.includes('paid-content')), false);
+    assert.equal(requested.includes(fixture.decks[1].cover.url), true);
   });
 
   it('rejects an artifact whose bytes do not match its manifest hash', async () => {
@@ -104,11 +118,14 @@ describe('release catalog baseline preparation', () => {
     fixture.decks[0].content.bytes = contentBytes.byteLength;
     fixture.decks[0].cover.hash = sha256(coverBytes);
     fixture.decks[0].cover.bytes = coverBytes.byteLength;
+    fixture.decks[1].cover.hash = sha256(coverBytes);
+    fixture.decks[1].cover.bytes = coverBytes.byteLength;
     const request = (async (input: URL | RequestInfo) => {
       const url = String(input);
       if (url === 'https://api.example.test/manifest') return Response.json(fixture);
       if (url === fixture.decks[0].content.url) return new Response(contentBytes);
       if (url === fixture.decks[0].cover.url) return new Response(coverBytes);
+      if (url === fixture.decks[1].cover.url) return new Response(coverBytes);
       return new Response('missing', { status: 404 });
     }) as typeof fetch;
 
@@ -127,7 +144,10 @@ describe('release catalog baseline preparation', () => {
       const catalog = buildBaselineCatalog(
         parseCatalogManifest(manifestFixture()),
         new Map([['starter-deck', freeArtifact()]]),
-        new Map([['starter-deck', `assets/images/decks/baseline/${placeholderHash}.webp`]]),
+        new Map([
+          ['starter-deck', `assets/images/decks/baseline/${placeholderHash}.webp`],
+          ['paid-deck', `assets/images/decks/baseline/${placeholderHash}.webp`],
+        ]),
       );
       const prepared = {
         catalog,

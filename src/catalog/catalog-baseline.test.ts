@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { applyBundledCatalogBaseline } from './catalog-database';
+import {
+  applyBundledCatalogBaseline,
+  createCatalogDatabaseOpener,
+} from './catalog-database';
 import { type CatalogSeedSource } from './catalog-seed';
 import { catalogSchemaSqlForTests } from './catalog-schema';
 
@@ -21,6 +24,34 @@ const bundledCatalog = JSON.parse(managedCatalog) as CatalogSeedSource;
 const baselineRevision = bundledCatalog.revision;
 
 describe('bundled catalog baseline activation', () => {
+  it('shares one database initialization across concurrent startup consumers', async () => {
+    let initializationCount = 0;
+    const database = { id: 'catalog' };
+    const open = createCatalogDatabaseOpener(async () => {
+      initializationCount += 1;
+      await Promise.resolve();
+      return database;
+    });
+
+    const opened = await Promise.all([open(), open(), open()]);
+
+    assert.equal(initializationCount, 1);
+    assert.deepEqual(opened, [database, database, database]);
+  });
+
+  it('allows database initialization to retry after a failed attempt', async () => {
+    let initializationCount = 0;
+    const open = createCatalogDatabaseOpener(async () => {
+      initializationCount += 1;
+      if (initializationCount === 1) throw new Error('startup failed');
+      return { id: 'catalog' };
+    });
+
+    await assert.rejects(open(), /startup failed/);
+    assert.deepEqual(await open(), { id: 'catalog' });
+    assert.equal(initializationCount, 2);
+  });
+
   it('inserts the baseline into an empty migrated database', async () => {
     const harness = createDatabaseHarness();
     try {

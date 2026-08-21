@@ -13,17 +13,24 @@ export type InstallationIdentity = {
 
 let identityPromise: Promise<InstallationIdentity> | null = null;
 
+const identityOptions: SecureStore.SecureStoreOptions = {
+  keychainService: KEYCHAIN_SERVICE,
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+};
+
 export function loadOrCreateInstallationIdentity() {
   identityPromise ??= loadOrCreate();
   return identityPromise;
 }
 
+export async function resetInstallationIdentity() {
+  identityPromise = null;
+  await SecureStore.deleteItemAsync(IDENTITY_KEY, identityOptions);
+  return loadOrCreateInstallationIdentity();
+}
+
 async function loadOrCreate(): Promise<InstallationIdentity> {
-  const options = {
-    keychainService: KEYCHAIN_SERVICE,
-    keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
-  };
-  const stored = await SecureStore.getItemAsync(IDENTITY_KEY, options);
+  const stored = await SecureStore.getItemAsync(IDENTITY_KEY, identityOptions);
   if (stored) {
     const parsed: unknown = JSON.parse(stored);
     if (isIdentity(parsed)) return parsed;
@@ -38,7 +45,7 @@ async function loadOrCreate(): Promise<InstallationIdentity> {
       .map((value) => value.toString(16).padStart(2, '0'))
       .join(''),
   };
-  await SecureStore.setItemAsync(IDENTITY_KEY, JSON.stringify(identity), options);
+  await SecureStore.setItemAsync(IDENTITY_KEY, JSON.stringify(identity), identityOptions);
   return identity;
 }
 
