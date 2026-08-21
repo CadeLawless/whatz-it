@@ -59,6 +59,7 @@ export const StorefrontExplore = forwardRef<
   const router = useRouter();
   const restore = useRestorePurchases();
   const commerceTesting = useCommerceTesting();
+  const [restoreNoticeVisible, setRestoreNoticeVisible] = useState(false);
   const [testingPrompt, setTestingPrompt] = useState<'new-device' | 'reset-ownership' | null>(null);
   const searchInputRef = useRef<TextInput>(null);
   const isScrollingProgrammatically = useRef(false);
@@ -385,7 +386,10 @@ export const StorefrontExplore = forwardRef<
               disabled: restore.state.status === 'restoring',
             }}
             disabled={restore.state.status === 'restoring'}
-            onPress={() => void restore.restorePurchases?.()}
+            onPress={() => {
+              setRestoreNoticeVisible(true);
+              void restore.restorePurchases?.();
+            }}
             style={({ pressed }) => [
               styles.restorePurchasesButton,
               pressed && styles.pressed,
@@ -401,18 +405,6 @@ export const StorefrontExplore = forwardRef<
             </Text>
           </Pressable>
 
-          {restore.state.status === 'success' && (
-            <Text selectable style={styles.restorePurchasesMessage}>
-              {restore.state.restoredProductCount > 0
-                ? 'Your purchases are restored and available decks are ready offline.'
-                : 'No previous purchases were found for this Apple Account.'}
-            </Text>
-          )}
-          {restore.state.status === 'error' && (
-            <Text selectable style={styles.restorePurchasesError}>
-              {restore.state.message}
-            </Text>
-          )}
         </View>
       )}
 
@@ -455,6 +447,27 @@ export const StorefrontExplore = forwardRef<
           )}
         </View>
       )}
+
+      <ConfirmationPrompt
+        visible={restoreNoticeVisible
+          && (restore.state.status === 'success' || restore.state.status === 'error')}
+        title={restore.state.status === 'success'
+          ? restore.state.restoredProductCount > 0
+            ? 'Purchases restored'
+            : 'No purchases found'
+          : 'Restore couldn’t finish'}
+        message={restore.state.status === 'success'
+          ? restore.state.restoredProductCount > 0
+            ? 'Your purchases are restored and available decks are ready offline.'
+            : 'No previous purchases were found for this Apple Account.'
+          : restore.state.status === 'error'
+            ? restore.state.message
+            : ''}
+        cancelLabel={null}
+        confirmLabel="OK"
+        onCancel={() => setRestoreNoticeVisible(false)}
+        onConfirm={() => setRestoreNoticeVisible(false)}
+      />
 
       <ConfirmationPrompt
         visible={testingPrompt !== null}
