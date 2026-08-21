@@ -33,7 +33,10 @@ import { DeckCard } from '@/components/deck-card';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
-import { StorefrontExplore } from '@/components/storefront-explore';
+import {
+  StorefrontExplore,
+  type RestorePurchasesNotice,
+} from '@/components/storefront-explore';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import {
@@ -130,6 +133,8 @@ export default function DeckLibraryScreen() {
     title: string;
     message: string;
   } | null>(null);
+  const [restorePurchasesNotice, setRestorePurchasesNotice] =
+    useState<RestorePurchasesNotice | null>(null);
   const pageWidth = Math.min(width, 720);
   const horizontalPadding = width < 380 ? 22 : Math.min(48, Math.round(width * 0.074));
   const columnGap = width < 380 ? 16 : Math.min(32, Math.round(width * 0.06));
@@ -695,6 +700,7 @@ export default function DeckLibraryScreen() {
               <StorefrontExplore
                 catalog={catalog}
                 onBrowseFocus={scrollToExploreOffset}
+                onRestoreNotice={setRestorePurchasesNotice}
                 ref={exploreRef}
                 syncStatus={catalogSyncStatus}
               />
@@ -892,6 +898,15 @@ export default function DeckLibraryScreen() {
         onConfirm={() => setSaveNotice(null)}
         title={saveNotice?.title ?? ''}
         visible={saveNotice !== null}
+      />
+      <ConfirmationPrompt
+        cancelLabel={null}
+        confirmLabel="OK"
+        message={restorePurchasesNotice?.message ?? ''}
+        onCancel={() => setRestorePurchasesNotice(null)}
+        onConfirm={() => setRestorePurchasesNotice(null)}
+        title={restorePurchasesNotice?.title ?? ''}
+        visible={restorePurchasesNotice !== null}
       />
       <ConfirmationPrompt
         cancelLabel={null}

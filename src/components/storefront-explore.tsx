@@ -37,6 +37,11 @@ const PAGE_SIZE = 24;
 
 type ExploreSection = 'bundles' | 'decks';
 
+export type RestorePurchasesNotice = {
+  title: string;
+  message: string;
+};
+
 function createQueryKey(search: string) {
   return search.trim();
 }
@@ -47,19 +52,21 @@ export const StorefrontExplore = forwardRef<
     catalog: CatalogSnapshot;
     syncStatus: 'disabled' | 'syncing' | 'synced' | 'failed' | null;
     onBrowseFocus?: (offset: number) => void;
+    onRestoreNotice?: (notice: RestorePurchasesNotice) => void;
   }
 >(function StorefrontExplore(
   {
     catalog,
     syncStatus,
     onBrowseFocus,
+    onRestoreNotice,
   },
   ref,
 ) {
   const router = useRouter();
   const restore = useRestorePurchases();
   const commerceTesting = useCommerceTesting();
-  const [restoreNoticeVisible, setRestoreNoticeVisible] = useState(false);
+  const restoreNoticePending = useRef(false);
   const [testingPrompt, setTestingPrompt] = useState<'new-device' | 'reset-ownership' | null>(null);
   const searchInputRef = useRef<TextInput>(null);
   const isScrollingProgrammatically = useRef(false);
@@ -90,6 +97,28 @@ export const StorefrontExplore = forwardRef<
   });
   const reduceMotion = useReducedMotion();
   const activeSectionPosition = useSharedValue(section === 'decks' ? 1 : 0);
+
+  useEffect(() => {
+    if (!restoreNoticePending.current) return;
+
+    if (restore.state.status === 'success') {
+      restoreNoticePending.current = false;
+      onRestoreNotice?.({
+        title: restore.state.restoredProductCount > 0
+          ? 'Purchases restored'
+          : 'No purchases found',
+        message: restore.state.restoredProductCount > 0
+          ? 'Your purchases are restored and available decks are ready offline.'
+          : 'No previous purchases were found for this Apple Account.',
+      });
+    } else if (restore.state.status === 'error') {
+      restoreNoticePending.current = false;
+      onRestoreNotice?.({
+        title: 'Restore couldn’t finish',
+        message: restore.state.message,
+      });
+    }
+  }, [onRestoreNotice, restore.state]);
 
   useEffect(() => {
     activeSectionPosition.value = withTiming(section === 'decks' ? 1 : 0, {
@@ -387,7 +416,7 @@ export const StorefrontExplore = forwardRef<
             }}
             disabled={restore.state.status === 'restoring'}
             onPress={() => {
-              setRestoreNoticeVisible(true);
+              restoreNoticePending.current = true;
               void restore.restorePurchases?.();
             }}
             style={({ pressed }) => [
@@ -447,27 +476,6 @@ export const StorefrontExplore = forwardRef<
           )}
         </View>
       )}
-
-      <ConfirmationPrompt
-        visible={restoreNoticeVisible
-          && (restore.state.status === 'success' || restore.state.status === 'error')}
-        title={restore.state.status === 'success'
-          ? restore.state.restoredProductCount > 0
-            ? 'Purchases restored'
-            : 'No purchases found'
-          : 'Restore couldn’t finish'}
-        message={restore.state.status === 'success'
-          ? restore.state.restoredProductCount > 0
-            ? 'Your purchases are restored and available decks are ready offline.'
-            : 'No previous purchases were found for this Apple Account.'
-          : restore.state.status === 'error'
-            ? restore.state.message
-            : ''}
-        cancelLabel={null}
-        confirmLabel="OK"
-        onCancel={() => setRestoreNoticeVisible(false)}
-        onConfirm={() => setRestoreNoticeVisible(false)}
-      />
 
       <ConfirmationPrompt
         visible={testingPrompt !== null}
