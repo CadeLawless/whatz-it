@@ -34,8 +34,6 @@ export function ConfirmationPrompt({
   onCancel,
   onConfirm,
 }: ConfirmationPromptProps) {
-  if (!visible) return null;
-
   const prompt = (
     <View accessibilityViewIsModal style={[styles.overlay, embedded && styles.embeddedOverlay]}>
       <Pressable
@@ -84,7 +82,7 @@ export function ConfirmationPrompt({
     </View>
   );
 
-  if (embedded) return prompt;
+  if (embedded) return visible ? prompt : null;
 
   return (
     <Modal
