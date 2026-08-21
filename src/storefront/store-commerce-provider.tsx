@@ -8,6 +8,7 @@ import { useCatalog } from '@/catalog/catalog-provider';
 
 import {
   configuredCommerceApiBaseUrl,
+  CommerceApiError,
   fetchEntitlements,
   registerInstallation,
   resetSandboxPurchases,
@@ -42,6 +43,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const [testingState, setTestingState] = useState<CommerceTestingState>({ status: 'idle' });
   const [serverReachable, setServerReachable] = useState(true);
   const processedTransactions = useRef(new Set<string>());
+  const failedPurchases = useRef(new Map<string, Purchase>());
   const restoreInFlight = useRef(false);
   const restoreSnapshotPending = useRef(false);
 
@@ -168,14 +170,21 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       await finishTransaction({ purchase, isConsumable: false });
       if (target) setTargetState(target, { status: 'preparing' });
       await prepareEntitledDecks(entitlements, identity);
+      if (target) failedPurchases.current.delete(`${target.kind}:${target.id}`);
       if (target) setTargetState(target);
       setServerReachable(true);
-    } catch {
+    } catch (error) {
       processedTransactions.current.delete(transactionKey);
+      console.error('[StoreCommerce] Purchase verification or preparation failed', {
+        error,
+        productId: purchase.productId,
+        transactionId: purchase.transactionId,
+      });
       if (target) {
+        failedPurchases.current.set(`${target.kind}:${target.id}`, purchase);
         setTargetState(target, {
           status: 'retry',
-          message: 'Your transaction is safe. Reconnect and retry preparing this purchase.',
+          message: purchaseFailureMessage(error),
         });
       }
     }
@@ -336,6 +345,11 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
 
   const retryPreparation = useCallback(async (target: CommerceTarget) => {
     if (!identity || !apiBaseUrl) return;
+    const failedPurchase = failedPurchases.current.get(`${target.kind}:${target.id}`);
+    if (failedPurchase) {
+      await processPurchase(failedPurchase);
+      return;
+    }
     setTargetState(target, { status: 'preparing' });
     try {
       const entitlements = await fetchEntitlements(apiBaseUrl, identity);
@@ -346,7 +360,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     } catch {
       setTargetState(target, { status: 'retry' });
     }
-  }, [apiBaseUrl, identity, persistEntitlements, prepareEntitledDecks, setTargetState]);
+  }, [apiBaseUrl, identity, persistEntitlements, prepareEntitledDecks, processPurchase, setTargetState]);
 
   const testingEnabled =
     process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled'
@@ -436,4 +450,17 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   ]);
 
   return <CommerceProvider adapter={adapter}>{children}</CommerceProvider>;
+}
+
+function purchaseFailureMessage(error: unknown) {
+  if (error instanceof CommerceApiError) {
+    if (process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled') {
+      return `${error.message} [${error.code}; HTTP ${error.status}]`;
+    }
+    if (error.code === 'network_error') {
+      return 'Your transaction is safe. Reconnect and retry preparing this purchase.';
+    }
+    return error.message;
+  }
+  return 'Your transaction is safe, but its offline content could not be prepared. Please retry.';
 }
