@@ -666,7 +666,10 @@ export default function DeckLibraryScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
         accessibilityElementsHidden={videoPendingDelete !== null || isSortMenuOpen}
-        automaticallyAdjustKeyboardInsets
+        // StoreKit and modal dismissal can be misidentified as a keyboard frame
+        // change on iOS, leaving a full-screen bottom inset behind. Both search
+        // controls already scroll themselves into view when focused.
+        automaticallyAdjustKeyboardInsets={false}
         contentContainerStyle={styles.scrollContent}
         importantForAccessibility={
           videoPendingDelete === null && !isSortMenuOpen
