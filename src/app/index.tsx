@@ -9,6 +9,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   useWindowDimensions,
   View
 } from 'react-native';
@@ -66,6 +68,7 @@ const HEADER_OVERSCROLL_EXTENSION = 700;
 const SORT_MENU_GAP = 6;
 const SORT_MENU_VIEWPORT_MARGIN = 12;
 const SORT_MENU_ESTIMATED_HEIGHT = DECK_LIBRARY_SORTS.length * 44 + 2;
+const HOME_SCROLL_DIAGNOSTICS = __DEV__;
 
 const DECK_SORT_LABELS: Record<DeckLibrarySort, string> = {
   'recently-played': 'Recently played',
@@ -80,6 +83,39 @@ type SortMenuAnchor = {
   height: number;
 };
 
+function homeScrollMetrics(event: NativeSyntheticEvent<NativeScrollEvent>) {
+  const {
+    contentInset,
+    contentOffset,
+    contentSize,
+    layoutMeasurement,
+    velocity,
+  } = event.nativeEvent;
+  const maxOffsetY = Math.max(
+    0,
+    contentSize.height + contentInset.bottom - layoutMeasurement.height,
+  );
+
+  return {
+    y: Math.round(contentOffset.y * 10) / 10,
+    maxY: Math.round(maxOffsetY * 10) / 10,
+    beyondBottom: Math.round(Math.max(0, contentOffset.y - maxOffsetY) * 10) / 10,
+    contentHeight: Math.round(contentSize.height * 10) / 10,
+    viewportHeight: Math.round(layoutMeasurement.height * 10) / 10,
+    insetTop: Math.round(contentInset.top * 10) / 10,
+    insetBottom: Math.round(contentInset.bottom * 10) / 10,
+    velocityY: velocity ? Math.round(velocity.y * 100) / 100 : null,
+  };
+}
+
+function logHomeScroll(
+  eventName: string,
+  details?: Record<string, unknown>,
+) {
+  if (!HOME_SCROLL_DIAGNOSTICS) return;
+  console.log(`[HomeScroll] ${eventName}`, details ?? {});
+}
+
 export default function DeckLibraryScreen() {
   const reduceMotion = useReducedMotion();
   const catalogState = useCatalog();
@@ -92,6 +128,10 @@ export default function DeckLibraryScreen() {
   const deckSearchInputRef = useRef<TextInput>(null);
   const isScrollingProgrammatically = useRef(false);
   const currentScrollOffset = useRef(0);
+  const scrollContentHeight = useRef(0);
+  const scrollViewportHeight = useRef(0);
+  const scrollDragSequence = useRef(0);
+  const loggedBottomOverscroll = useRef(false);
   const exploreRef = useRef<{ blurSearch: () => void }>(null);
   const libraryTop = useRef(0);
   const exploreTop = useRef(0);
@@ -378,6 +418,18 @@ export default function DeckLibraryScreen() {
       });
     });
   }, []);
+  const showRestorePurchasesNotice = useCallback((notice: RestorePurchasesNotice) => {
+    logHomeScroll('restore-notice-requested', { title: notice.title });
+    setRestorePurchasesNotice(notice);
+  }, []);
+  const dismissRestorePurchasesNotice = useCallback(() => {
+    logHomeScroll('restore-notice-dismiss-requested', {
+      currentY: Math.round(currentScrollOffset.current * 10) / 10,
+      contentHeight: scrollContentHeight.current,
+      viewportHeight: scrollViewportHeight.current,
+    });
+    setRestorePurchasesNotice(null);
+  }, []);
   const scrollToExploreOffset = useCallback((offset: number) => {
     setTimeout(() => {
       scrollViewRef.current?.scrollTo({
@@ -624,8 +676,47 @@ export default function DeckLibraryScreen() {
         ref={scrollViewRef}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
+        onContentSizeChange={(contentWidth, contentHeight) => {
+          scrollContentHeight.current = contentHeight;
+          logHomeScroll('content-size', {
+            contentWidth,
+            contentHeight,
+            mode: homeMode,
+            section: librarySection,
+          });
+        }}
+        onLayout={(event) => {
+          scrollViewportHeight.current = event.nativeEvent.layout.height;
+          logHomeScroll('viewport-layout', {
+            height: event.nativeEvent.layout.height,
+            width: event.nativeEvent.layout.width,
+          });
+        }}
+        onMomentumScrollBegin={(event) => {
+          logHomeScroll('momentum-begin', {
+            drag: scrollDragSequence.current,
+            ...homeScrollMetrics(event),
+          });
+        }}
+        onMomentumScrollEnd={(event) => {
+          logHomeScroll('momentum-end', {
+            drag: scrollDragSequence.current,
+            ...homeScrollMetrics(event),
+          });
+        }}
         onScroll={(e) => {
           currentScrollOffset.current = e.nativeEvent.contentOffset.y;
+
+          if (HOME_SCROLL_DIAGNOSTICS && !loggedBottomOverscroll.current) {
+            const metrics = homeScrollMetrics(e);
+            if (metrics.beyondBottom > 1) {
+              loggedBottomOverscroll.current = true;
+              logHomeScroll('bottom-overscroll', {
+                drag: scrollDragSequence.current,
+                ...metrics,
+              });
+            }
+          }
 
           if (isSortMenuOpen) {
             setIsSortMenuOpen(false);
@@ -639,6 +730,22 @@ export default function DeckLibraryScreen() {
               setIsDeckSearchOpen(false);
             }
           }
+        }}
+        onScrollBeginDrag={(event) => {
+          scrollDragSequence.current += 1;
+          loggedBottomOverscroll.current = false;
+          logHomeScroll('drag-begin', {
+            drag: scrollDragSequence.current,
+            mode: homeMode,
+            section: librarySection,
+            ...homeScrollMetrics(event),
+          });
+        }}
+        onScrollEndDrag={(event) => {
+          logHomeScroll('drag-end', {
+            drag: scrollDragSequence.current,
+            ...homeScrollMetrics(event),
+          });
         }}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
@@ -700,7 +807,7 @@ export default function DeckLibraryScreen() {
               <StorefrontExplore
                 catalog={catalog}
                 onBrowseFocus={scrollToExploreOffset}
-                onRestoreNotice={setRestorePurchasesNotice}
+                onRestoreNotice={showRestorePurchasesNotice}
                 ref={exploreRef}
                 syncStatus={catalogSyncStatus}
               />
@@ -903,8 +1010,10 @@ export default function DeckLibraryScreen() {
         cancelLabel={null}
         confirmLabel="OK"
         message={restorePurchasesNotice?.message ?? ''}
-        onCancel={() => setRestorePurchasesNotice(null)}
-        onConfirm={() => setRestorePurchasesNotice(null)}
+        onCancel={dismissRestorePurchasesNotice}
+        onConfirm={dismissRestorePurchasesNotice}
+        onDismissed={() => logHomeScroll('restore-notice-native-dismissed')}
+        onShown={() => logHomeScroll('restore-notice-native-shown')}
         title={restorePurchasesNotice?.title ?? ''}
         visible={restorePurchasesNotice !== null}
       />

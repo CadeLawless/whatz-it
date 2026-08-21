@@ -18,6 +18,8 @@ type ConfirmationPromptProps = {
   orientation?: PromptOrientation;
   onCancel: () => void;
   onConfirm: () => void;
+  onDismissed?: () => void;
+  onShown?: () => void;
 };
 
 export function ConfirmationPrompt({
@@ -33,6 +35,8 @@ export function ConfirmationPrompt({
   orientation = 'portrait',
   onCancel,
   onConfirm,
+  onDismissed,
+  onShown,
 }: ConfirmationPromptProps) {
   const prompt = (
     <View accessibilityViewIsModal style={[styles.overlay, embedded && styles.embeddedOverlay]}>
@@ -87,7 +91,9 @@ export function ConfirmationPrompt({
   return (
     <Modal
       animationType="fade"
+      onDismiss={onDismissed}
       onRequestClose={onCancel}
+      onShow={onShown}
       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
       transparent
       visible={visible}
