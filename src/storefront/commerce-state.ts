@@ -86,12 +86,12 @@ export function commercePresentation(
           };
     case 'offline':
       return {
-        action: 'none',
+        action: 'retry',
         busy: false,
-        buttonLabel: 'CONNECTION REQUIRED',
+        buttonLabel: 'TRY AGAIN',
         copy: state.lastKnownPrice
-          ? `Reconnect to confirm the current price and purchase this ${item}. Last seen: ${state.lastKnownPrice}.`
-          : `Reconnect to check the current price and purchase this ${item}.`,
+          ? `Reconnect to confirm the current price and purchase this ${item}, then tap Try Again if it doesn’t update automatically. Last seen: ${state.lastKnownPrice}.`
+          : `Reconnect to check the current price and purchase this ${item}, then tap Try Again if it doesn’t update automatically.`,
         title: 'Connect to purchase',
         tone: 'warning',
       };

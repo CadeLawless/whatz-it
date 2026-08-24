@@ -61,6 +61,17 @@ describe('storefront commerce state', () => {
     assert.equal(presentation.busy, false);
   });
 
+  it('lets users retry the commerce service after reconnecting', () => {
+    const presentation = commercePresentation(
+      { status: 'offline', lastKnownPrice: '$1.99' },
+      paidDeck,
+    );
+
+    assert.equal(presentation.action, 'retry');
+    assert.equal(presentation.buttonLabel, 'TRY AGAIN');
+    assert.match(presentation.copy, /\$1\.99/);
+  });
+
   it('maps local installation state without inventing entitlements', () => {
     assert.deepEqual(
       fallbackCommerceState({

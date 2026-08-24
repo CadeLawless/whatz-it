@@ -11,6 +11,7 @@ export type CommerceAdapter = {
   purchase?: (target: CommerceTarget) => void | Promise<void>;
   restorePurchases?: () => void | Promise<void>;
   restoreState?: CommerceRestoreState;
+  refreshCommerceConnection?: () => void | Promise<void>;
   refreshStoreProducts?: () => void | Promise<void>;
   retryPreparation?: (target: CommerceTarget) => void | Promise<void>;
   testing?: CommerceTestingAdapter;
@@ -57,7 +58,9 @@ export function useCommerceProduct(target: CommerceTarget) {
         ? () => adapter.purchase?.(target)
         : undefined,
     retry:
-      state.status === 'retry' && adapter.retryPreparation
+      state.status === 'offline' && adapter.refreshCommerceConnection
+        ? () => adapter.refreshCommerceConnection?.()
+        : state.status === 'retry' && adapter.retryPreparation
         ? () => adapter.retryPreparation?.(target)
         : state.status === 'unavailable'
           && state.reason === 'store_unavailable'

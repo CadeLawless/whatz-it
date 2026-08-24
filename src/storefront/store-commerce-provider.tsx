@@ -1,3 +1,4 @@
+import NetInfo from '@react-native-community/netinfo';
 import type { Purchase } from 'expo-iap';
 import { useIAP } from 'expo-iap';
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -51,6 +52,8 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const failedPurchases = useRef(new Map<string, Purchase>());
   const restoreInFlight = useRef(false);
   const restoreSnapshotPending = useRef(false);
+  const connectionRefreshRef = useRef<Promise<boolean> | null>(null);
+  const storeProductRefreshRef = useRef<Promise<void> | null>(null);
 
   const appleProducts = useMemo(() => {
     const result = new Map<string, { kind: 'deck' | 'bundle'; id: string }>();
@@ -124,6 +127,35 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     await refreshCatalog();
   }, [apiBaseUrl, refreshCatalog]);
 
+  const refreshCommerceConnection = useCallback(() => {
+    if (!apiBaseUrl || Platform.OS !== 'ios') return Promise.resolve(false);
+    if (connectionRefreshRef.current) return connectionRefreshRef.current;
+
+    const request = (async () => {
+      const currentIdentity = await loadOrCreateInstallationIdentity();
+      setIdentity(currentIdentity);
+      await registerInstallation(apiBaseUrl, currentIdentity);
+      const entitlements = await fetchEntitlements(apiBaseUrl, currentIdentity);
+      await persistEntitlements(entitlements);
+      await prepareEntitledDecks(entitlements, currentIdentity);
+      setServerReachable(true);
+      return true;
+    })()
+      .catch((error) => {
+        console.warn('[StoreCommerce] Commerce connection refresh failed', error);
+        setServerReachable(false);
+        return false;
+      })
+      .finally(() => {
+        if (connectionRefreshRef.current === request) {
+          connectionRefreshRef.current = null;
+        }
+      });
+
+    connectionRefreshRef.current = request;
+    return request;
+  }, [apiBaseUrl, persistEntitlements, prepareEntitledDecks]);
+
   const processPurchaseRef = useRef<(purchase: Purchase) => Promise<void>>(async () => {});
   const iap = useIAP({
     onPurchaseSuccess: (purchase) => {
@@ -156,22 +188,32 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     [products],
   );
 
-  const refreshStoreProducts = useCallback(async () => {
-    if (Platform.OS !== 'ios' || appleProducts.size === 0) return;
+  const refreshStoreProducts = useCallback(() => {
+    if (Platform.OS !== 'ios' || appleProducts.size === 0) return Promise.resolve();
+    if (storeProductRefreshRef.current) return storeProductRefreshRef.current;
     setStoreProductRequestState('loading');
 
-    try {
-      const storeConnected = connected || await reconnect();
-      if (!storeConnected) {
-        throw new Error('The App Store connection is unavailable.');
-      }
+    const request = (async () => {
+      try {
+        const storeConnected = connected || await reconnect();
+        if (!storeConnected) {
+          throw new Error('The App Store connection is unavailable.');
+        }
 
-      await fetchProducts({ skus: [...appleProducts.keys()], type: 'in-app' });
-      setStoreProductRequestState('complete');
-    } catch (error) {
-      console.error('[StoreCommerce] Product loading failed', error);
-      setStoreProductRequestState('error');
-    }
+        await fetchProducts({ skus: [...appleProducts.keys()], type: 'in-app' });
+        setStoreProductRequestState('complete');
+      } catch (error) {
+        console.error('[StoreCommerce] Product loading failed', error);
+        setStoreProductRequestState('error');
+      }
+    })().finally(() => {
+      if (storeProductRefreshRef.current === request) {
+        storeProductRefreshRef.current = null;
+      }
+    });
+
+    storeProductRefreshRef.current = request;
+    return request;
   }, [appleProducts, connected, fetchProducts, reconnect]);
 
   const processPurchase = useCallback(async (purchase: Purchase) => {
@@ -229,25 +271,30 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
         'SELECT product_id AS productId, target_type AS kind, target_id AS targetId FROM commerce_entitlements',
       );
       if (!cancelled) setOwnedProducts(local);
-      if (!apiBaseUrl || Platform.OS !== 'ios') return;
-      const currentIdentity = await loadOrCreateInstallationIdentity();
-      if (cancelled) return;
-      setIdentity(currentIdentity);
-      try {
-        await registerInstallation(apiBaseUrl, currentIdentity);
-        const entitlements = await fetchEntitlements(apiBaseUrl, currentIdentity);
-        if (cancelled) return;
-        await persistEntitlements(entitlements);
-        await prepareEntitledDecks(entitlements, currentIdentity);
-        setServerReachable(true);
-      } catch {
-        if (!cancelled) setServerReachable(false);
-      }
+      if (!cancelled) await refreshCommerceConnection();
     })().catch(() => {
       if (!cancelled) setServerReachable(false);
     });
     return () => { cancelled = true; };
-  }, [apiBaseUrl, persistEntitlements, prepareEntitledDecks]);
+  }, [refreshCommerceConnection]);
+
+  useEffect(() => {
+    if (!apiBaseUrl || Platform.OS !== 'ios') return;
+    let wasOnline: boolean | null = null;
+    return NetInfo.addEventListener((network) => {
+      const online = network.isConnected === true
+        && network.isInternetReachable !== false;
+      if (!online) {
+        if (network.isConnected === false || network.isInternetReachable === false) {
+          setServerReachable(false);
+        }
+      } else if (wasOnline !== true) {
+        void refreshCommerceConnection();
+        void refreshStoreProducts();
+      }
+      wasOnline = online;
+    });
+  }, [apiBaseUrl, refreshCommerceConnection, refreshStoreProducts]);
 
   useEffect(() => {
     if (!connected || Platform.OS !== 'ios' || appleProducts.size === 0) return;
@@ -472,6 +519,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const adapter = useMemo<CommerceAdapter>(() => ({
     getProductState,
     purchase,
+    refreshCommerceConnection: () => { void refreshCommerceConnection(); },
     refreshStoreProducts,
     restorePurchases:
       Platform.OS === 'ios' && apiBaseUrl ? restorePurchases : undefined,
@@ -486,6 +534,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     apiBaseUrl,
     getProductState,
     purchase,
+    refreshCommerceConnection,
     refreshStoreProducts,
     resetSandboxOwnership,
     restorePurchases,
