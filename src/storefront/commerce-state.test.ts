@@ -50,6 +50,17 @@ describe('storefront commerce state', () => {
     assert.equal(presentation.buttonLabel, 'COMING SOON');
   });
 
+  it('lets users retry when the App Store product request fails', () => {
+    const presentation = commercePresentation(
+      { status: 'unavailable', reason: 'store_unavailable' },
+      paidDeck,
+    );
+
+    assert.equal(presentation.action, 'retry');
+    assert.equal(presentation.buttonLabel, 'TRY AGAIN');
+    assert.equal(presentation.busy, false);
+  });
+
   it('maps local installation state without inventing entitlements', () => {
     assert.deepEqual(
       fallbackCommerceState({

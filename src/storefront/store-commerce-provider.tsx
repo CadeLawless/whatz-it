@@ -32,6 +32,9 @@ import {
 } from './installation-identity';
 
 type OwnedProduct = CommerceEntitlements['products'][number];
+type StoreProductRequestState = 'waiting' | 'loading' | 'complete' | 'error';
+
+const STORE_CONNECTION_TIMEOUT_MS = 10_000;
 
 export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const { catalog, refreshCatalog } = useCatalog();
@@ -42,6 +45,8 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const [restoreState, setRestoreState] = useState<CommerceRestoreState>({ status: 'idle' });
   const [testingState, setTestingState] = useState<CommerceTestingState>({ status: 'idle' });
   const [serverReachable, setServerReachable] = useState(true);
+  const [storeProductRequestState, setStoreProductRequestState] =
+    useState<StoreProductRequestState>('waiting');
   const processedTransactions = useRef(new Set<string>());
   const failedPurchases = useRef(new Map<string, Purchase>());
   const restoreInFlight = useRef(false);
@@ -130,6 +135,10 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
         if (target) setTargetState(target);
       }
     },
+    onError: (error) => {
+      console.error('[StoreCommerce] App Store request failed', error);
+      setStoreProductRequestState('error');
+    },
   });
 
   const {
@@ -138,6 +147,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     fetchProducts,
     finishTransaction,
     products,
+    reconnect,
     requestPurchase,
     restorePurchases: restoreStorePurchases,
   } = iap;
@@ -145,6 +155,24 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     () => new Map(products.map((product) => [product.id, product.displayPrice])),
     [products],
   );
+
+  const refreshStoreProducts = useCallback(async () => {
+    if (Platform.OS !== 'ios' || appleProducts.size === 0) return;
+    setStoreProductRequestState('loading');
+
+    try {
+      const storeConnected = connected || await reconnect();
+      if (!storeConnected) {
+        throw new Error('The App Store connection is unavailable.');
+      }
+
+      await fetchProducts({ skus: [...appleProducts.keys()], type: 'in-app' });
+      setStoreProductRequestState('complete');
+    } catch (error) {
+      console.error('[StoreCommerce] Product loading failed', error);
+      setStoreProductRequestState('error');
+    }
+  }, [appleProducts, connected, fetchProducts, reconnect]);
 
   const processPurchase = useCallback(async (purchase: Purchase) => {
     if (!apiBaseUrl || !identity || Platform.OS !== 'ios') return;
@@ -223,8 +251,18 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!connected || Platform.OS !== 'ios' || appleProducts.size === 0) return;
-    void fetchProducts({ skus: [...appleProducts.keys()], type: 'in-app' });
-  }, [appleProducts, connected, fetchProducts]);
+    void refreshStoreProducts();
+  }, [appleProducts, connected, refreshStoreProducts]);
+
+  useEffect(() => {
+    if (connected || Platform.OS !== 'ios' || appleProducts.size === 0) return;
+    const timeout = setTimeout(() => {
+      setStoreProductRequestState((current) =>
+        current === 'waiting' ? 'error' : current,
+      );
+    }, STORE_CONNECTION_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, [appleProducts, connected]);
 
   const targetProductId = useCallback((target: CommerceTarget) => {
     const record = target.kind === 'deck'
@@ -251,9 +289,12 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     }
     const price = prices.get(productId);
     if (!serverReachable) return { status: 'offline', ...(price ? { lastKnownPrice: price } : {}) };
-    if (!connected || !price) return { status: 'loading' };
-    return { status: 'available', localizedPrice: price };
-  }, [apiBaseUrl, catalog, connected, operationStates, ownedProducts, prices, serverReachable, targetProductId]);
+    if (price) return { status: 'available', localizedPrice: price };
+    if (storeProductRequestState === 'error' || storeProductRequestState === 'complete') {
+      return { status: 'unavailable', reason: 'store_unavailable' };
+    }
+    return { status: 'loading' };
+  }, [apiBaseUrl, catalog, operationStates, ownedProducts, prices, serverReachable, storeProductRequestState, targetProductId]);
 
   const purchase = useCallback(async (target: CommerceTarget) => {
     const productId = targetProductId(target);
@@ -427,6 +468,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const adapter = useMemo<CommerceAdapter>(() => ({
     getProductState,
     purchase,
+    refreshStoreProducts,
     restorePurchases:
       Platform.OS === 'ios' && apiBaseUrl ? restorePurchases : undefined,
     restoreState,
@@ -440,6 +482,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     apiBaseUrl,
     getProductState,
     purchase,
+    refreshStoreProducts,
     resetSandboxOwnership,
     restorePurchases,
     restoreState,

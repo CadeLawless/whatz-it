@@ -1,19 +1,29 @@
 module.exports = ({ config }) => {
-  const isPreview = process.env.APP_VARIANT === 'preview';
+  const appVariant = process.env.APP_VARIANT;
+  const isPreview = appVariant === 'preview';
+  const isStaging = appVariant === 'staging';
+  const usesTestBranding = isPreview || isStaging;
 
   return {
     ...config,
-    name: isPreview ? 'WHATZ IT? Staging' : config.name,
-    scheme: isPreview ? 'whatzit-staging' : config.scheme,
+    name: isPreview
+      ? 'WHATZ IT? Preview'
+      : isStaging
+        ? 'WHATZ IT? Staging'
+        : config.name,
+    scheme: usesTestBranding ? 'whatzit-staging' : config.scheme,
     ios: {
       ...config.ios,
-      bundleIdentifier: isPreview
+      // App Store Connect products belong to the production app identity.
+      // Purchase-capable previews must use it; the staging identity remains
+      // available for side-by-side, non-IAP testing.
+      bundleIdentifier: isStaging
         ? 'com.cadelawless.whatzit.staging'
         : config.ios?.bundleIdentifier,
     },
     android: {
       ...config.android,
-      package: isPreview
+      package: isStaging
         ? 'com.cadelawless.whatzit.staging'
         : config.android?.package,
     },

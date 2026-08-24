@@ -77,12 +77,12 @@ export function commercePresentation(
             tone: 'muted',
           }
         : {
-            action: 'none',
+            action: 'retry',
             busy: false,
-            buttonLabel: 'UNAVAILABLE',
-            copy: `This ${item} is not currently available for purchase. Please check again later.`,
-            title: 'Purchase unavailable',
-            tone: 'muted',
+            buttonLabel: 'TRY AGAIN',
+            copy: `The App Store didn’t return a price for this ${item}. Check your connection and try again.`,
+            title: 'Couldn’t reach the App Store',
+            tone: 'warning',
           };
     case 'offline':
       return {

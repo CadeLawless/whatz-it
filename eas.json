@@ -28,6 +28,16 @@
         "EXPO_PUBLIC_COMMERCE_TESTING": "enabled"
       }
     },
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "staging",
+        "EXPO_PUBLIC_CATALOG_SOURCE": "sqlite",
+        "EXPO_PUBLIC_CATALOG_MANIFEST_URL": "https://api-staging.playwhatzit.com/api/v1/catalog/manifest",
+        "EXPO_PUBLIC_COMMERCE_API_BASE_URL": "https://api-staging.playwhatzit.com",
+        "EXPO_PUBLIC_COMMERCE_TESTING": "enabled"
+      }
+    },
     "production": {
       "autoIncrement": true
     }
