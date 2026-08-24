@@ -2,6 +2,7 @@ import { fetch } from 'expo/fetch';
 
 import { configuredCatalogManifestUrl } from '@/catalog/catalog-feature';
 
+import { applePurchaseRequiresRestore } from './apple-purchase-verification';
 import type { InstallationIdentity } from './installation-identity';
 
 export type CommerceEntitlements = {
@@ -55,20 +56,18 @@ export function fetchEntitlements(baseUrl: string, identity: InstallationIdentit
   return authenticatedRequest(baseUrl, '/api/v1/entitlements', identity);
 }
 
-export function verifyApplePurchase(
+export async function verifyApplePurchase(
   baseUrl: string,
   identity: InstallationIdentity,
   signedTransaction: string,
   reason: 'purchase' | 'restore',
 ) {
-  return authenticatedRequest(
-    baseUrl,
-    reason === 'purchase'
-      ? '/api/v1/purchases/apple/verify'
-      : '/api/v1/purchases/apple/restore',
-    identity,
-    { method: 'POST', body: JSON.stringify({ signedTransaction }) },
-  );
+  try {
+    return await verifyAppleTransaction(baseUrl, identity, signedTransaction, reason);
+  } catch (error) {
+    if (reason !== 'purchase' || !applePurchaseRequiresRestore(error)) throw error;
+    return verifyAppleTransaction(baseUrl, identity, signedTransaction, 'restore');
+  }
 }
 
 export function resetSandboxPurchases(
@@ -97,6 +96,22 @@ function authenticatedRequest<T = CommerceEntitlements>(
       'X-Whatzit-Installation-Id': identity.installationId,
     },
   });
+}
+
+function verifyAppleTransaction(
+  baseUrl: string,
+  identity: InstallationIdentity,
+  signedTransaction: string,
+  reason: 'purchase' | 'restore',
+) {
+  return authenticatedRequest(
+    baseUrl,
+    reason === 'purchase'
+      ? '/api/v1/purchases/apple/verify'
+      : '/api/v1/purchases/apple/restore',
+    identity,
+    { method: 'POST', body: JSON.stringify({ signedTransaction }) },
+  );
 }
 
 async function apiRequest<T = unknown>(baseUrl: string, path: string, init: RequestInit) {

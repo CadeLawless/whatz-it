@@ -251,7 +251,11 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!connected || Platform.OS !== 'ios' || appleProducts.size === 0) return;
-    void refreshStoreProducts();
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) void refreshStoreProducts();
+    });
+    return () => { cancelled = true; };
   }, [appleProducts, connected, refreshStoreProducts]);
 
   useEffect(() => {
