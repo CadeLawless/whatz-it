@@ -49,5 +49,8 @@
         "WHATZIT_VERIFY_RELEASE_BASELINE": "enabled"
       }
     }
+  },
+  "submit": {
+    "production": {}
   }
 }
