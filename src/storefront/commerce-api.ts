@@ -1,6 +1,9 @@
 import { fetch } from 'expo/fetch';
 
-import { configuredCatalogManifestUrl } from '@/catalog/catalog-feature';
+import {
+  configuredCatalogManifestUrl,
+  configuredDevPreviewEnabled,
+} from '@/catalog/catalog-feature';
 
 import { applePurchaseRequiresRestore } from './apple-purchase-verification';
 import type { InstallationIdentity } from './installation-identity';
@@ -31,7 +34,9 @@ export class CommerceApiError extends Error {
 
 export function configuredCommerceApiBaseUrl(
   explicit = process.env.EXPO_PUBLIC_COMMERCE_API_BASE_URL,
+  developmentPreview = configuredDevPreviewEnabled(),
 ) {
+  if (developmentPreview) return null;
   if (explicit) return validApiBase(explicit);
   const manifest = configuredCatalogManifestUrl();
   if (!manifest) return null;

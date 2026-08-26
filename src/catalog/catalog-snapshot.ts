@@ -6,6 +6,7 @@ export type CatalogDeck = Deck & {
   tags: string[];
   cardCount: number;
   cardContentVersion: number;
+  installedContentVersion?: number;
   coverPath?: string;
   coverUri?: string;
   coverUrl?: string;

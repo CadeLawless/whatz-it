@@ -8,6 +8,7 @@ import type { Card, DeckAccess } from '@/types/deck';
 
 import { configuredCatalogSource } from './catalog-feature';
 import { openCatalogDatabase } from './catalog-database';
+import { INSTALLED_CARD_ROWS_SQL } from './catalog-queries';
 import {
   buildCatalogSnapshot,
   type CatalogDeck,
@@ -32,6 +33,9 @@ export class BundledCatalogRepository implements CatalogRepository {
         tags: [...(metadata?.tags ?? [])],
         cardCount: metadata?.cardCount ?? deck.cards.length,
         cardContentVersion: metadata?.cardContentVersion ?? 1,
+        ...(deck.access === 'free'
+          ? { installedContentVersion: metadata?.cardContentVersion ?? 1 }
+          : {}),
         ...(metadata?.coverImage ? { coverPath: metadata.coverImage } : {}),
         ...(metadata?.storeProducts ? { storeProducts: metadata.storeProducts } : {}),
         installationStatus: deck.access === 'free' ? 'installed' : 'not_owned',
@@ -72,6 +76,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
       await Promise.all([
         this.database.getAllAsync<DeckRow>(
           `SELECT d.*, i.status AS installation_status,
+                  i.installed_content_version,
                   cover_media.local_uri AS cover_uri,
                   thumbnail_media.local_uri AS thumbnail_uri
            FROM decks d
@@ -86,8 +91,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
            ORDER BY d.title COLLATE NOCASE, d.deck_id`,
         ),
         this.database.getAllAsync<CardRow>(
-          `SELECT deck_id, card_content_version, card_id, position, text, byline
-           FROM cards ORDER BY deck_id, card_content_version, position`,
+          INSTALLED_CARD_ROWS_SQL,
         ),
         this.database.getAllAsync<BundleRow>(
           `SELECT * FROM bundles WHERE lifecycle_status = 'active'
@@ -121,13 +125,18 @@ export class SqliteCatalogRepository implements CatalogRepository {
       ...(row.price_minor_units === null
         ? {}
         : { price: row.price_minor_units / 100 }),
-      cards: cardsByDeck.get(`${row.deck_id}:${row.card_content_version}`) ?? [],
+      cards: row.installed_content_version === null
+        ? []
+        : cardsByDeck.get(`${row.deck_id}:${row.installed_content_version}`) ?? [],
       ...(bundledImages.get(row.deck_id)
         ? { coverImage: bundledImages.get(row.deck_id) }
         : {}),
       tags: parseTags(row.tags_json),
       cardCount: row.card_count,
       cardContentVersion: row.card_content_version,
+      ...(row.installed_content_version === null
+        ? {}
+        : { installedContentVersion: row.installed_content_version }),
       ...(row.cover_path ? { coverPath: row.cover_path } : {}),
       ...(row.cover_uri ? { coverUri: row.cover_uri } : {}),
       ...(row.cover_url ? { coverUrl: row.cover_url } : {}),
@@ -236,6 +245,7 @@ type DeckRow = {
   thumbnail_uri: string | null;
   thumbnail_url: string | null;
   installation_status: CatalogDeck['installationStatus'];
+  installed_content_version: number | null;
   apple_product_id: string | null;
 };
 type CardRow = {

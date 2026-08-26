@@ -29,6 +29,12 @@ if (!managedCatalog) throw new Error('Managed bundled catalog was not found.');
 const bundledCatalog = JSON.parse(managedCatalog) as CatalogSeedSource;
 const synchronizedRevision = bundledCatalog.revision + 1;
 
+function synchronizedDeckVersion(deckId: string) {
+  const deck = bundledCatalog.decks.find(({ id }) => id === deckId);
+  if (!deck) throw new Error(`Bundled deck ${deckId} was not found.`);
+  return deck.version + 1;
+}
+
 describe('catalog artifact verification', () => {
   const bytes = new TextEncoder().encode('verified catalog artifact');
   const hash = createHash('sha256').update(bytes).digest('hex');
@@ -112,7 +118,7 @@ describe('catalog synchronization activation', () => {
         ),
         {
           title: 'Synchronized title',
-          deck_version: 8,
+          deck_version: synchronizedDeckVersion('celebrity-shuffle'),
           card_content_version: 2,
         },
       );
@@ -160,9 +166,170 @@ describe('catalog synchronization activation', () => {
       harness.database.close();
     }
   });
+
+  it('keeps an owned paid deck playable while newer protected content is pending', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(synchronizedRevision);
+      await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        downloadRuntime: acceptanceRuntime(fixture, storedFiles),
+      });
+      harness.database.prepare(
+        `INSERT INTO cards (
+          deck_id, card_content_version, card_id, position, text, byline
+        ) VALUES ('accents-and-impressions', 1, 'owned-card', 0, 'Still playable', NULL)`,
+      ).run();
+      harness.database.prepare(
+        `UPDATE deck_installations
+            SET ownership_source = 'purchase', installed_content_version = 1,
+                desired_content_version = 1, status = 'installed',
+                last_verified_at = '2026-08-13T22:00:00Z'
+          WHERE deck_id = 'accents-and-impressions'`,
+      ).run();
+
+      const successor = structuredClone(fixture.manifest);
+      successor.catalogRevision += 1;
+      successor.updatedAt = '2026-08-13T23:00:00Z';
+      successor.decks[1].deckVersion += 1;
+      successor.decks[1].cardContentVersion = 2;
+      successor.decks[1].content.hash = 'e'.repeat(64);
+      const preparedMedia = new Map(
+        successor.decks.flatMap((deck) => [deck.cover, deck.thumbnail]).map(
+          (reference) => [
+            reference.hash,
+            { ...reference, localUri: `file:///catalog-media/${reference.hash}.webp` },
+          ],
+        ),
+      );
+
+      await applyPreparedCatalog(
+        harness.adapter,
+        successor,
+        new Map(),
+        preparedMedia,
+        'paid-successor',
+        successor.updatedAt,
+      );
+
+      assert.deepEqual(
+        plainRow(
+          harness.database.prepare(
+            `SELECT ownership_source, desired_content_version,
+                    installed_content_version, status, last_verified_at
+               FROM deck_installations
+              WHERE deck_id = 'accents-and-impressions'`,
+          ).get(),
+        ),
+        {
+          ownership_source: 'purchase',
+          desired_content_version: 2,
+          installed_content_version: 1,
+          status: 'installed',
+          last_verified_at: '2026-08-13T22:00:00Z',
+        },
+      );
+      assert.equal(
+        harness.database.prepare(
+          `SELECT c.text
+             FROM cards c
+             JOIN deck_installations i
+               ON i.deck_id = c.deck_id
+              AND i.installed_content_version = c.card_content_version
+            WHERE c.deck_id = 'accents-and-impressions'`,
+        ).get()?.text,
+        'Still playable',
+      );
+    } finally {
+      harness.database.close();
+    }
+  });
 });
 
 describe('Phase 3 catalog acceptance', () => {
+  it('installs authenticated paid cards only inside development preview mode', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(synchronizedRevision);
+      const paidArtifact: DeckContentArtifact = {
+        schemaVersion: 1,
+        deckId: 'accents-and-impressions',
+        cardContentVersion: 1,
+        cards: [{ id: 'preview-paid-card', text: 'Preview paid card' }],
+      };
+      const paidBytes = new TextEncoder().encode(JSON.stringify(paidArtifact));
+      fixture.manifest.decks[1].cardCount = 1;
+      fixture.manifest.decks[1].content = {
+        hash: sha256(paidBytes),
+        bytes: paidBytes.byteLength,
+        url: fixture.paidContentUrl,
+        protected: false,
+      };
+      fixture.artifacts.set(fixture.paidContentUrl, paidBytes);
+
+      const result = await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        developmentPreview: true,
+        downloadRuntime: acceptanceRuntime(fixture, storedFiles),
+      });
+
+      assert.equal(result.status, 'updated');
+      assert.equal(result.status === 'updated' ? result.downloadedDecks : 0, 2);
+      assert.deepEqual(
+        plainRow(
+          harness.database.prepare(
+            `SELECT ownership_source, installed_content_version, status
+               FROM deck_installations
+              WHERE deck_id = 'accents-and-impressions'`,
+          ).get(),
+        ),
+        {
+          ownership_source: 'purchase',
+          installed_content_version: 1,
+          status: 'installed',
+        },
+      );
+      assert.equal(
+        harness.database.prepare(
+          "SELECT text FROM cards WHERE deck_id = 'accents-and-impressions'",
+        ).get()?.text,
+        'Preview paid card',
+      );
+    } finally {
+      harness.database.close();
+    }
+  });
+
+  it('keeps the last-known-good catalog when the server requires a newer app', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(synchronizedRevision);
+      fixture.manifest.minimumAppVersion = '2.0.0';
+
+      await assert.rejects(
+        () => synchronizeCatalog(harness.adapter, {
+          manifestUrl: fixture.manifestUrl,
+          appVersion: '1.0.0',
+          downloadRuntime: acceptanceRuntime(fixture, storedFiles),
+        }),
+        (error) =>
+          error instanceof CatalogSyncError
+          && error.code === 'unsupported_app_version',
+      );
+
+      assert.equal(stateRevision(harness.database), bundledCatalog.revision);
+      assert.equal(storedFiles.size, 0);
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('hydrates discovery media when the bundled revision already matches the server', async () => {
     const harness = createDatabaseHarness();
     const storedFiles = new Map<string, Uint8Array>();
@@ -358,6 +525,7 @@ function updateFixture() {
     catalogSchemaVersion: 5,
     catalogRevision: synchronizedRevision,
     updatedAt: '2026-08-13T13:00:00Z',
+    minimumAppVersion: null,
     supportedContentSchemaVersions: [1],
     decks: [
       {
@@ -369,7 +537,7 @@ function updateFixture() {
         access: 'free',
         price: null,
         status: 'active',
-        deckVersion: 8,
+        deckVersion: synchronizedDeckVersion('celebrity-shuffle'),
         cardContentVersion: 2,
         cardCount: 1,
         content: {
@@ -437,6 +605,7 @@ function acceptanceFixture(revision: number) {
     catalogSchemaVersion: 5,
     catalogRevision: revision,
     updatedAt: '2026-08-13T22:00:00Z',
+    minimumAppVersion: null,
     supportedContentSchemaVersions: [1],
     decks: [
       {
@@ -448,7 +617,7 @@ function acceptanceFixture(revision: number) {
         access: 'free',
         price: null,
         status: 'active',
-        deckVersion: 8,
+        deckVersion: synchronizedDeckVersion('celebrity-shuffle'),
         cardContentVersion: 2,
         cardCount: 1,
         content: {
@@ -470,7 +639,7 @@ function acceptanceFixture(revision: number) {
         access: 'paid',
         price: 1.99,
         status: 'active',
-        deckVersion: 2,
+        deckVersion: synchronizedDeckVersion('accents-and-impressions'),
         cardContentVersion: 1,
         cardCount: 86,
         content: {

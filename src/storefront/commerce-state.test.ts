@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   commercePresentation,
+  entitledCommerceState,
   fallbackCommerceState,
   type CommerceTarget,
 } from './commerce-state';
@@ -94,6 +95,21 @@ describe('storefront commerce state', () => {
         installationStatus: 'installed',
       }),
       { status: 'owned', source: 'included' },
+    );
+  });
+
+  it('reconstructs aggregate preparation state from entitled deck installations', () => {
+    assert.deepEqual(
+      entitledCommerceState('purchase', ['installed', 'pending']),
+      { status: 'preparing' },
+    );
+    assert.deepEqual(
+      entitledCommerceState('purchase', ['installed', 'failed']),
+      { status: 'retry' },
+    );
+    assert.deepEqual(
+      entitledCommerceState('bundle', ['installed', 'installed']),
+      { status: 'owned', source: 'bundle' },
     );
   });
 

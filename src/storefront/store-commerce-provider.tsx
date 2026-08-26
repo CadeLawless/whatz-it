@@ -23,8 +23,13 @@ import {
   type CommerceRestoreState,
   type CommerceTestingState,
 } from './commerce-provider';
-import type { CommerceProductState, CommerceTarget } from './commerce-state';
+import {
+  entitledCommerceState,
+  type CommerceProductState,
+  type CommerceTarget,
+} from './commerce-state';
 import { installEntitledDeck } from './entitled-deck-installer';
+import { EntitledDeckPreparationQueue } from './entitled-deck-preparation';
 import { resetLocalPaidOwnership } from './commerce-testing';
 import {
   loadOrCreateInstallationIdentity,
@@ -78,6 +83,26 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     });
   }, []);
 
+  const preparationQueue = useMemo(
+    () => new EntitledDeckPreparationQueue<{
+      database: Awaited<ReturnType<typeof openCatalogDatabase>>;
+      identity: InstallationIdentity;
+    }>(
+      async (deckId, ownershipSource, context) => {
+        if (!apiBaseUrl) return;
+        await installEntitledDeck(
+          context.database,
+          apiBaseUrl,
+          context.identity,
+          deckId,
+          ownershipSource,
+        );
+      },
+      refreshCatalog,
+    ),
+    [apiBaseUrl, refreshCatalog],
+  );
+
   const persistEntitlements = useCallback(async (entitlements: CommerceEntitlements) => {
     const database = await openCatalogDatabase();
     await database.withExclusiveTransactionAsync(async (transaction) => {
@@ -110,22 +135,12 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   ) => {
     if (!apiBaseUrl) return;
     const database = await openCatalogDatabase();
-    const directlyOwnedDecks = new Set(
-      entitlements.products
-        .filter((product) => product.kind === 'deck')
-        .map((product) => product.targetId),
+    await preparationQueue.prepare(
+      currentIdentity.installationId,
+      entitlements,
+      { database, identity: currentIdentity },
     );
-    for (const deckId of entitlements.deckIds) {
-      await installEntitledDeck(
-        database,
-        apiBaseUrl,
-        currentIdentity,
-        deckId,
-        directlyOwnedDecks.has(deckId) ? 'purchase' : 'bundle',
-      );
-    }
-    await refreshCatalog();
-  }, [apiBaseUrl, refreshCatalog]);
+  }, [apiBaseUrl, preparationQueue]);
 
   const refreshCommerceConnection = useCallback(() => {
     if (!apiBaseUrl || Platform.OS !== 'ios') return Promise.resolve(false);
@@ -327,12 +342,23 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     const activeOperation = operationStates.get(`${target.kind}:${target.id}`);
     if (activeOperation) return activeOperation;
     const direct = ownedProducts.some((product) => product.kind === target.kind && product.targetId === target.id);
-    if (direct) return { status: 'owned', source: 'purchase' };
+    if (direct) {
+      if (target.kind === 'deck') {
+        return entitledCommerceState('purchase', [target.installationStatus]);
+      }
+      const bundle = catalog.getBundleById(target.id);
+      return entitledCommerceState(
+        'purchase',
+        bundle?.decks.map((deck) => deck.installationStatus) ?? [],
+      );
+    }
     if (target.kind === 'deck') {
       const viaBundle = ownedProducts.some(
         (product) => product.kind === 'bundle' && catalog.getBundleById(product.targetId)?.deckIds.includes(target.id),
       );
-      if (viaBundle) return { status: 'owned', source: 'bundle' };
+      if (viaBundle) {
+        return entitledCommerceState('bundle', [target.installationStatus]);
+      }
     }
     const productId = targetProductId(target);
     if (!productId || Platform.OS !== 'ios' || !apiBaseUrl) {

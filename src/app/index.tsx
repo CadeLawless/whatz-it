@@ -1,9 +1,13 @@
 import { Image } from 'expo-image';
+import Constants from 'expo-constants';
+import { File, Paths } from 'expo-file-system';
 import * as Linking from 'expo-linking';
+import * as MailComposer from 'expo-mail-composer';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,6 +28,15 @@ import Animated, {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
+import {
+  configuredCatalogManifestUrl,
+  configuredCatalogSource,
+} from '@/catalog/catalog-feature';
+import { catalogRolloutSelectedDetails } from '@/catalog/catalog-rollout-observability';
+import {
+  buildCatalogSupportDiagnosticsText,
+  buildCatalogSupportFallbackEmailUrl,
+} from '@/catalog/catalog-support-diagnostics';
 import {
   DECK_LIBRARY_SORTS,
   DEFAULT_DECK_LIBRARY_SORT,
@@ -63,7 +76,6 @@ import {
 
 const PRIVACY_POLICY_URL = 'https://playwhatzit.com/#privacy';
 const SUPPORT_EMAIL = 'support@playwhatzit.com';
-const SUPPORT_EMAIL_URL = `mailto:${SUPPORT_EMAIL}?subject=WHATZ%20IT%20Support`;
 const HEADER_OVERSCROLL_EXTENSION = 700;
 const SORT_MENU_GAP = 6;
 const SORT_MENU_VIEWPORT_MARGIN = 12;
@@ -120,8 +132,36 @@ export default function DeckLibraryScreen() {
   const reduceMotion = useReducedMotion();
   const catalogState = useCatalog();
   const { catalog } = catalogState;
-  const catalogSyncStatus =
-    catalogState.status === 'ready' ? catalogState.syncStatus : null;
+  const supportDiagnosticsText = useMemo(() => {
+    const manifestUrl = configuredCatalogManifestUrl();
+    const rollout = catalogRolloutSelectedDetails(
+      configuredCatalogSource(),
+      manifestUrl,
+      catalog.revision,
+      catalog.schemaVersion,
+    );
+    const syncStatus = catalogState.status === 'ready'
+      ? catalogState.syncStatus
+      : catalogState.status;
+    const syncError = catalogState.status === 'ready'
+      ? catalogState.syncError
+      : catalogState.status === 'error'
+        ? catalogState.error
+        : undefined;
+    const syncErrorCode = syncError && 'code' in syncError
+      ? String(syncError.code)
+      : syncError
+        ? 'unexpected_error'
+        : undefined;
+    return buildCatalogSupportDiagnosticsText({
+      appVersion: Constants.expoConfig?.version ?? 'unknown',
+      catalog,
+      platform: Platform.OS,
+      rolloutCohort: rollout.cohort,
+      syncStatus,
+      ...(syncErrorCode ? { syncErrorCode } : {}),
+    });
+  }, [catalog, catalogState]);
   const { height: windowHeight, width } = useWindowDimensions();
   const safeAreaInsets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -226,16 +266,45 @@ export default function DeckLibraryScreen() {
     }),
     [myLibraryControlWidth],
   );
+  const [sessionDeckOrder, setSessionDeckOrder] = useState(() =>
+    [...catalog.freeDecks, ...catalog.paidDecks].map((deck) => deck.id),
+  );
+  useEffect(() => {
+    const catalogIds = [...catalog.freeDecks, ...catalog.paidDecks].map(
+      (deck) => deck.id,
+    );
+    const available = new Set(catalogIds);
+    const frame = requestAnimationFrame(() => {
+      setSessionDeckOrder((current) => {
+        const retainedIds = current.filter((deckId) => available.has(deckId));
+        const retained = new Set(retainedIds);
+        const addedIds = catalogIds.filter((deckId) => !retained.has(deckId));
+        const next = [...retainedIds, ...addedIds];
+        return next.length === current.length
+          && next.every((deckId, index) => deckId === current[index])
+          ? current
+          : next;
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [catalog.freeDecks, catalog.paidDecks]);
+  const sessionOrderedDecks = useMemo(() => {
+    const catalogDecks = [...catalog.freeDecks, ...catalog.paidDecks];
+    const decksById = new Map(catalogDecks.map((deck) => [deck.id, deck]));
+    return sessionDeckOrder
+      .map((deckId) => decksById.get(deckId))
+      .filter((deck) => deck !== undefined);
+  }, [catalog.freeDecks, catalog.paidDecks, sessionDeckOrder]);
   const filteredDecks = useMemo(() => {
     const searchLower = deckSearch.trim().toLowerCase();
-    const allInstalledDecks = [...catalog.freeDecks, ...catalog.paidDecks].filter(
+    const allInstalledDecks = sessionOrderedDecks.filter(
       (deck) => deck.installationStatus === 'installed',
     );
     if (!searchLower) return allInstalledDecks;
     return allInstalledDecks.filter((deck) =>
       deck.title.toLowerCase().includes(searchLower),
     );
-  }, [catalog.freeDecks, catalog.paidDecks, deckSearch]);
+  }, [deckSearch, sessionOrderedDecks]);
 
   const visibleDecks = useMemo(
     () => sortLibraryDecks(filteredDecks, deckPlayHistory, deckSort),
@@ -418,6 +487,35 @@ export default function DeckLibraryScreen() {
       });
     });
   }, []);
+  const handleContactSupport = useCallback(() => {
+    void (async () => {
+      try {
+        if (Platform.OS !== 'web' && await MailComposer.isAvailableAsync()) {
+          const diagnosticsFile = new File(
+            Paths.cache,
+            'whatz-it-support-diagnostics.txt',
+          );
+          diagnosticsFile.create({ intermediates: true, overwrite: true });
+          diagnosticsFile.write(supportDiagnosticsText);
+
+          await MailComposer.composeAsync({
+            recipients: [SUPPORT_EMAIL],
+            subject: 'WHATZ IT? Support',
+            body: 'Please describe what happened:\n\n',
+            attachments: [diagnosticsFile.uri],
+          });
+          return;
+        }
+      } catch (error) {
+        console.warn('[Support] Could not attach diagnostics.', error);
+      }
+
+      openExternalLink(
+        buildCatalogSupportFallbackEmailUrl(SUPPORT_EMAIL),
+        `Email us directly at ${SUPPORT_EMAIL}.`,
+      );
+    })();
+  }, [openExternalLink, supportDiagnosticsText]);
   const showRestorePurchasesNotice = useCallback((notice: RestorePurchasesNotice) => {
     logHomeScroll('restore-notice-requested', { title: notice.title });
     setRestorePurchasesNotice(notice);
@@ -812,36 +910,10 @@ export default function DeckLibraryScreen() {
                 onBrowseFocus={scrollToExploreOffset}
                 onRestoreNotice={showRestorePurchasesNotice}
                 ref={exploreRef}
-                syncStatus={catalogSyncStatus}
               />
             </View>
           )}
 
-          {catalog.source === 'sqlite' && (
-            <View
-              accessibilityLiveRegion="polite"
-              style={styles.catalogStatus}
-            >
-              <View
-                style={[
-                  styles.catalogStatusDot,
-                  catalogSyncStatus === 'synced' && styles.catalogStatusDotReady,
-                  catalogSyncStatus === 'failed' && styles.catalogStatusDotFailed,
-                ]}
-              />
-              <Text style={styles.catalogStatusText}>
-                Catalog revision {catalog.revision}
-                {'  ·  '}
-                {catalogSyncStatus === 'synced'
-                  ? 'Offline ready'
-                  : catalogSyncStatus === 'failed'
-                    ? 'Saved catalog active; update failed'
-                    : catalogSyncStatus === 'disabled'
-                      ? 'Sync disabled'
-                      : 'Updating for offline use…'}
-              </Text>
-            </View>
-          )}
         </View>
         <View style={styles.footerLinks}>
           <Pressable
@@ -864,12 +936,7 @@ export default function DeckLibraryScreen() {
             accessibilityHint="Opens your email app to contact WHATZ IT? support"
             accessibilityLabel={`Email WHATZ IT? support at ${SUPPORT_EMAIL}`}
             accessibilityRole="link"
-            onPress={() =>
-              openExternalLink(
-                SUPPORT_EMAIL_URL,
-                `Email us directly at ${SUPPORT_EMAIL}.`,
-              )
-            }
+            onPress={handleContactSupport}
             style={({ pressed }) => [
               styles.footerLink,
               pressed && styles.footerLinkPressed,
@@ -1762,28 +1829,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.4,
-  },
-  catalogStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 36,
-    paddingHorizontal: 4,
-  },
-  catalogStatusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#F59E0B',
-  },
-  catalogStatusDotReady: { backgroundColor: '#16A34A' },
-  catalogStatusDotFailed: { backgroundColor: '#DC2626' },
-  catalogStatusText: {
-    flex: 1,
-    color: '#64748B',
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '700',
   },
   pressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
   disabled: { opacity: 0.55 },

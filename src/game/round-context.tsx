@@ -13,11 +13,12 @@ import {
 import { Platform } from 'react-native';
 
 import { useCatalog } from '@/catalog/catalog-provider';
-import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
+import type { CatalogDeck, CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { getDailyCardPool } from '@/game/daily-card-memory';
 import { initialRoundState, roundReducer } from '@/game/game-reducer';
 import type { CardOutcome, RoundState } from '@/game/game-types';
 import { clampRoundDuration } from '@/game/round-duration';
+import { captureRoundDeck, resolveRoundDeck } from '@/game/round-deck-snapshot';
 import { shuffle } from '@/game/shuffle';
 import {
   loadDailySeenCardIds,
@@ -47,6 +48,7 @@ const CAMERA_CAPTURE_STOP_TIMEOUT_MS = 4_000;
 
 type RoundContextValue = {
   round: RoundState;
+  roundDeck: CatalogDeck | null;
   configureRound: (deckId: string, durationSeconds: number) => Promise<boolean>;
   startRound: () => void;
   answerCard: (outcome: CardOutcome) => void;
@@ -80,6 +82,8 @@ const RoundContext = createContext<RoundContextValue | null>(null);
 export function RoundProvider({ children }: PropsWithChildren) {
   const { catalog } = useCatalog();
   const catalogRef = useRef(catalog);
+  const roundDeckRef = useRef<CatalogDeck | null>(null);
+  const [roundDeck, setRoundDeck] = useState<CatalogDeck | null>(null);
   useEffect(() => {
     catalogRef.current = catalog;
   }, [catalog]);
@@ -88,7 +92,8 @@ export function RoundProvider({ children }: PropsWithChildren) {
   // these callbacks during that sequence can cancel its effect and strand the
   // screen on GET READY even though recording already began.
   const getDeckById = useCallback(
-    (deckId: string | undefined) => catalogRef.current.getDeckById(deckId),
+    (deckId: string | undefined) =>
+      resolveRoundDeck(catalogRef.current, roundDeckRef.current, deckId),
     [],
   );
   const [round, dispatch] = useReducer(roundReducer, initialRoundState);
@@ -646,6 +651,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
   const value = useMemo<RoundContextValue>(
     () => ({
       round,
+      roundDeck,
       currentVideo,
       isRecording,
       isVideoFinalizing,
@@ -660,15 +666,18 @@ export function RoundProvider({ children }: PropsWithChildren) {
       cancelRecording,
       configureRound: async (deckId, durationSeconds) => {
         if (stoppingPromise.current) await stoppingPromise.current;
-        const deck = getDeckById(deckId);
+        const deck = catalogRef.current.getDeckById(deckId);
         if (!deck) return false;
+        const capturedDeck = captureRoundDeck(deck);
         const seenCards = await loadDailySeenCardIds(deckId);
         const pool = getDailyCardPool(
-          deck.cards.map((card) => card.id),
+          capturedDeck.cards.map((card) => card.id),
           seenCards,
         );
         if (pool.cardIds.length === 0) return false;
         if (pool.resetMemory) await resetDailySeenCardIds(deckId);
+        roundDeckRef.current = capturedDeck;
+        setRoundDeck(capturedDeck);
         recordingCancelled.current = false;
         recordingEvents.current = [];
         recordingSegments.current = [];
@@ -758,6 +767,8 @@ export function RoundProvider({ children }: PropsWithChildren) {
         dispatch({ type: 'RESUME', now: Date.now(), replenishedCardOrder });
       },
       resetRound: () => {
+        roundDeckRef.current = null;
+        setRoundDeck(null);
         setIsRecording(false);
         dispatch({ type: 'RESET' });
       },
@@ -777,6 +788,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       resumeRecording,
       retryCurrentVideoExport,
       round,
+      roundDeck,
       startRecording,
       stopRecording,
     ],

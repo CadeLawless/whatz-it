@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const CATALOG_DATABASE_NAME = 'whatz-it-catalog.db';
+export const CATALOG_DEV_PREVIEW_DATABASE_NAME = 'whatz-it-dev-preview-catalog.db';
 export const CATALOG_DATABASE_VERSION = 4;
 
 const CREATE_SCHEMA_SQL = `

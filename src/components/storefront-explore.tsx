@@ -24,7 +24,6 @@ import {
   type CatalogDeckSummary,
   type CatalogDiscoveryRepository,
 } from '@/catalog/catalog-discovery';
-import { catalogLocalCoverSources } from '@/catalog/catalog-media';
 import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { CatalogCoverImage } from '@/components/catalog-cover-image';
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
@@ -46,18 +45,70 @@ function createQueryKey(search: string) {
   return search.trim();
 }
 
+function catalogDeckPage(catalog: CatalogSnapshot) {
+  const decks = catalog.paidDecks
+    .map<CatalogDeckSummary>(({ cards: _cards, order: _order, version, ...deck }) => ({
+      ...deck,
+      deckVersion: version,
+    }))
+    .sort(compareCatalogTitles);
+  const page = decks.slice(0, PAGE_SIZE);
+  const last = page.at(-1);
+  return {
+    decks: page,
+    nextCursor:
+      decks.length > PAGE_SIZE && last
+        ? { title: last.title, deckId: last.id }
+        : null,
+  };
+}
+
+function catalogBundles(catalog: CatalogSnapshot) {
+  return catalog.bundles
+    .filter((bundle) => bundle.access === 'paid')
+    .map<CatalogBundleSummary>((bundle) => ({
+      id: bundle.id,
+      title: bundle.title,
+      description: bundle.description,
+      access: bundle.access,
+      ...(bundle.price === undefined ? {} : { price: bundle.price }),
+      bundleVersion: bundle.version,
+      deckIds: [...bundle.deckIds],
+    }))
+    .sort(compareCatalogTitles)
+    .slice(0, PAGE_SIZE);
+}
+
+function compareCatalogTitles(
+  left: { id: string; title: string },
+  right: { id: string; title: string },
+) {
+  return left.title.localeCompare(right.title, undefined, { sensitivity: 'base' })
+    || left.id.localeCompare(right.id);
+}
+
+function replaceWithoutReordering<T extends { id: string }>(
+  current: readonly T[],
+  next: readonly T[],
+) {
+  const nextById = new Map(next.map((item) => [item.id, item]));
+  const retained = current
+    .map((item) => nextById.get(item.id))
+    .filter((item) => item !== undefined);
+  const retainedIds = new Set(retained.map((item) => item.id));
+  return [...retained, ...next.filter((item) => !retainedIds.has(item.id))];
+}
+
 export const StorefrontExplore = forwardRef<
   { blurSearch: () => void },
   {
     catalog: CatalogSnapshot;
-    syncStatus: 'disabled' | 'syncing' | 'synced' | 'failed' | null;
     onBrowseFocus?: (offset: number) => void;
     onRestoreNotice?: (notice: RestorePurchasesNotice) => void;
   }
 >(function StorefrontExplore(
   {
     catalog,
-    syncStatus,
     onBrowseFocus,
     onRestoreNotice,
   },
@@ -81,20 +132,23 @@ export const StorefrontExplore = forwardRef<
   const [section, setSection] = useState<ExploreSection>('bundles');
   const [search, setSearch] = useState('');
   const [repository, setRepository] = useState<CatalogDiscoveryRepository | null>(null);
-  const [decks, setDecks] = useState<CatalogDeckSummary[]>([]);
-  const [bundles, setBundles] = useState<CatalogBundleSummary[]>([]);
-  const [nextCursor, setNextCursor] = useState<CatalogDeckCursor | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [decks, setDecks] = useState<CatalogDeckSummary[]>(
+    () => catalogDeckPage(catalog).decks,
+  );
+  const [bundles, setBundles] = useState<CatalogBundleSummary[]>(() => catalogBundles(catalog));
+  const [nextCursor, setNextCursor] = useState<CatalogDeckCursor | null>(
+    () => catalogDeckPage(catalog).nextCursor,
+  );
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [searchOffset, setSearchOffset] = useState(0);
-  const [tabsOffset, setTabsOffset] = useState(0);
   const [sectionControlWidth, setSectionControlWidth] = useState(0);
-  const [resultVersion, setResultVersion] = useState(0);
   const loadedQueryKeys = useRef<Record<ExploreSection, string>>({
     bundles: '',
     decks: '',
   });
+  const loadedRepositories = useRef<
+    Record<ExploreSection, CatalogDiscoveryRepository | null>
+  >({ bundles: null, decks: null });
   const reduceMotion = useReducedMotion();
   const activeSectionPosition = useSharedValue(section === 'decks' ? 1 : 0);
 
@@ -142,43 +196,16 @@ export const StorefrontExplore = forwardRef<
       await Promise.resolve();
       if (cancelled) return;
 
-      setLoading(true);
-      setError(null);
-      setRepository(null);
-
       try {
-        const localCoverSources = catalog.paidDecks.map(
-          (deck) => catalogLocalCoverSources(deck, 'cover')[0],
-        );
-        if (localCoverSources.some((source) => source === undefined)) {
-          if (syncStatus === 'failed' || syncStatus === 'disabled') {
-            setError('Storefront covers are not available on this installation.');
-            setLoading(false);
-          }
-          return;
-        }
-
         const nextRepository = await createCatalogDiscoveryRepository(catalog.source);
-        const [deckPage, bundlePage] = await Promise.all([
-          nextRepository.queryDecks({ access: 'paid', limit: PAGE_SIZE }),
-          nextRepository.queryBundles({ access: 'paid', limit: PAGE_SIZE }),
-        ]);
         if (cancelled) return;
-
-        setDecks(deckPage.decks);
-        setNextCursor(deckPage.nextCursor);
-        setBundles(bundlePage.bundles);
-        loadedQueryKeys.current = {
-          bundles: createQueryKey(''),
-          decks: createQueryKey(''),
-        };
-        setResultVersion((current) => current + 1);
         setRepository(nextRepository);
-        setLoading(false);
       } catch (cause: unknown) {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : 'Explore could not be loaded.');
-          setLoading(false);
+          console.warn(
+            '[StorefrontExplore] Cached discovery index could not be opened.',
+            cause instanceof Error ? cause.message : String(cause),
+          );
         }
       }
     };
@@ -187,16 +214,18 @@ export const StorefrontExplore = forwardRef<
     return () => {
       cancelled = true;
     };
-  }, [catalog, syncStatus]);
+  }, [catalog]);
 
   useEffect(() => {
     if (!repository) return;
     let cancelled = false;
     const queryKey = createQueryKey(search);
-    if (loadedQueryKeys.current[section] === queryKey) return;
+    const repositoryChanged = loadedRepositories.current[section] !== repository;
+    if (!repositoryChanged && loadedQueryKeys.current[section] === queryKey) return;
+    const preserveOrder =
+      repositoryChanged && loadedQueryKeys.current[section] === queryKey;
 
     const timer = setTimeout(() => {
-      setError(null);
       const request =
         section === 'decks'
           ? repository.queryDecks({
@@ -205,26 +234,37 @@ export const StorefrontExplore = forwardRef<
               limit: PAGE_SIZE,
             }).then((page) => {
               if (cancelled) return;
-              setDecks(page.decks);
+              setDecks((current) =>
+                preserveOrder
+                  ? replaceWithoutReordering(current, page.decks)
+                  : page.decks,
+              );
               setNextCursor(page.nextCursor);
               loadedQueryKeys.current.decks = queryKey;
-              setResultVersion((current) => current + 1);
+              loadedRepositories.current.decks = repository;
             })
           : repository
               .queryBundles({ access: 'paid', search, limit: PAGE_SIZE })
               .then((page) => {
                 if (cancelled) return;
-                setBundles(page.bundles);
+                setBundles((current) =>
+                  preserveOrder
+                    ? replaceWithoutReordering(current, page.bundles)
+                    : page.bundles,
+                );
                 loadedQueryKeys.current.bundles = queryKey;
-                setResultVersion((current) => current + 1);
+                loadedRepositories.current.bundles = repository;
               });
       void request
         .catch((cause: unknown) => {
           if (!cancelled) {
-            setError(cause instanceof Error ? cause.message : 'Explore could not be loaded.');
+            console.warn(
+              '[StorefrontExplore] Cached search could not be refreshed.',
+              cause instanceof Error ? cause.message : String(cause),
+            );
           }
         });
-    }, 180);
+    }, 75);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -232,13 +272,8 @@ export const StorefrontExplore = forwardRef<
   }, [repository, search, section]);
 
   const selectSection = (nextSection: ExploreSection) => {
-    isScrollingProgrammatically.current = true;
     searchInputRef.current?.blur();
     setSection(nextSection);
-    onBrowseFocus?.(tabsOffset - 18);
-    setTimeout(() => {
-      isScrollingProgrammatically.current = false;
-    }, 500);
   };
 
   const loadMore = async () => {
@@ -254,7 +289,10 @@ export const StorefrontExplore = forwardRef<
       setDecks((current) => [...current, ...page.decks]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'More decks could not be loaded.');
+      console.warn(
+        '[StorefrontExplore] More cached decks could not be loaded.',
+        cause instanceof Error ? cause.message : String(cause),
+      );
     } finally {
       setLoadingMore(false);
     }
@@ -265,7 +303,6 @@ export const StorefrontExplore = forwardRef<
       <View
         accessibilityRole="tablist"
         onLayout={(event) => {
-          setTabsOffset(event.nativeEvent.layout.y);
           setSectionControlWidth(event.nativeEvent.layout.width);
         }}
         style={styles.sectionControl}
@@ -330,22 +367,12 @@ export const StorefrontExplore = forwardRef<
         )}
       </View>
 
-      {loading ? (
-        <View accessibilityRole="progressbar" style={styles.loading}>
-          <ActivityIndicator color="#459EFE" />
-        </View>
-      ) : (
-        <Animated.View
-          entering={reduceMotion ? undefined : FadeInUp.duration(200)}
-          key={`${section}-${resultVersion}`}
-          style={styles.resultSurface}
-        >
-          {error ? (
-            <View accessibilityLiveRegion="polite" style={styles.messageCard}>
-              <Text selectable style={styles.messageTitle}>Explore is unavailable</Text>
-              <Text selectable style={styles.messageBody}>{error}</Text>
-            </View>
-          ) : section === 'bundles' ? (
+      <Animated.View
+        entering={reduceMotion ? undefined : FadeInUp.duration(200)}
+        key={section}
+        style={styles.resultSurface}
+      >
+          {section === 'bundles' ? (
             bundles.length > 0 ? (
               <View style={styles.bundleList}>
                 {bundles.map((bundle, index) => (
@@ -400,8 +427,7 @@ export const StorefrontExplore = forwardRef<
           ) : (
             <EmptyResults search={search} type="decks" />
           )}
-        </Animated.View>
-      )}
+      </Animated.View>
 
       {restore.restorePurchases && (
         <View
@@ -662,7 +688,6 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: '#111827', fontSize: 15, paddingVertical: 14 },
   clearSearch: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#E2E8F0' },
   clearSearchText: { color: '#475569', fontSize: 23, lineHeight: 25, fontWeight: '700', marginTop: -2 },
-  loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: 12 },
   resultSurface: { gap: 14 },
   bundleList: { gap: 16 },
   bundleCard: { minHeight: 190, position: 'relative', justifyContent: 'center', overflow: 'hidden', padding: 22, borderWidth: 1, borderColor: '#DCE8F5', borderRadius: 26, backgroundColor: '#FFFFFF', boxShadow: '0 5px 16px rgba(71, 85, 105, 0.10)' },

@@ -13,6 +13,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_CATALOG_SOURCE": "sqlite",
+        "EXPO_PUBLIC_CATALOG_SYNC": "enabled",
         "EXPO_PUBLIC_CATALOG_MANIFEST_URL": "https://api-staging.playwhatzit.com/api/v1/catalog/manifest",
         "EXPO_PUBLIC_COMMERCE_API_BASE_URL": "https://api-staging.playwhatzit.com",
         "EXPO_PUBLIC_COMMERCE_TESTING": "enabled"
@@ -24,6 +25,7 @@
       "env": {
         "APP_VARIANT": "preview",
         "EXPO_PUBLIC_CATALOG_SOURCE": "sqlite",
+        "EXPO_PUBLIC_CATALOG_SYNC": "enabled",
         "EXPO_PUBLIC_CATALOG_MANIFEST_URL": "https://api-staging.playwhatzit.com/api/v1/catalog/manifest",
         "EXPO_PUBLIC_COMMERCE_API_BASE_URL": "https://api-staging.playwhatzit.com",
         "EXPO_PUBLIC_COMMERCE_TESTING": "enabled"
@@ -34,13 +36,18 @@
       "env": {
         "APP_VARIANT": "staging",
         "EXPO_PUBLIC_CATALOG_SOURCE": "sqlite",
+        "EXPO_PUBLIC_CATALOG_SYNC": "enabled",
         "EXPO_PUBLIC_CATALOG_MANIFEST_URL": "https://api-staging.playwhatzit.com/api/v1/catalog/manifest",
         "EXPO_PUBLIC_COMMERCE_API_BASE_URL": "https://api-staging.playwhatzit.com",
         "EXPO_PUBLIC_COMMERCE_TESTING": "enabled"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "environment": "production",
+      "env": {
+        "WHATZIT_VERIFY_RELEASE_BASELINE": "enabled"
+      }
     }
   }
 }

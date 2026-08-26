@@ -27,8 +27,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 43,
-    "updatedAt": "2026-08-14T22:16:34Z",
+    "revision": 48,
+    "updatedAt": "2026-08-26T16:36:12Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -36,7 +36,7 @@ const bundleCatalog: PortableCatalog =
             "title": "Celebrity Shuffle",
             "description": "Hollywood Legends, famous musicians, sports heroes, and internet superstars.",
             "coverImage": "assets/images/decks/baseline/cf3562120ddb63dc7c96aea4dcfe328bc4128f516c5f1f8a0840e931938dec4d.webp",
-            "version": 7,
+            "version": 9,
             "cardContentVersion": 1,
             "cardCount": 304,
             "tags": [],
@@ -13089,7 +13089,7 @@ const bundleCatalog: PortableCatalog =
             ]
         },
         {
-            "id": "life-your-voice",
+            "id": "lift-your-voice",
             "order": 16,
             "title": "Lift Your Voice",
             "description": "From church classics to today's worship favorites!",
@@ -13119,7 +13119,7 @@ const bundleCatalog: PortableCatalog =
             "title": "Worship Icons",
             "description": "The biggest names in Christian music.",
             "coverImage": "assets/images/decks/baseline/65f159824cd8f2ce8c2c56272f4f487f50b5625dc2135dbce3b725278a119bd8.webp",
-            "version": 2,
+            "version": 4,
             "cardContentVersion": 1,
             "cardCount": 158,
             "tags": [
@@ -13241,10 +13241,10 @@ const bundleCatalog: PortableCatalog =
             "description": "If you grew up Christian, or are one now, this bundle's for you!",
             "access": "paid",
             "price": 9.99,
-            "version": 1,
+            "version": 2,
             "deckIds": [
                 "growing-up-christian",
-                "life-your-voice",
+                "lift-your-voice",
                 "worship-icons",
                 "bible-characters"
             ]
@@ -13271,7 +13271,7 @@ const bundleCatalog: PortableCatalog =
         "paid": [
             "growing-up-christian",
             "worship-icons",
-            "life-your-voice",
+            "lift-your-voice",
             "bible-characters",
             "accents-and-impressions"
         ]

@@ -1,6 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { downloadVerified } from '@/catalog/catalog-sync';
+import {
+  downloadVerified,
+  type CatalogDownloadRuntime,
+} from '@/catalog/catalog-sync';
 import { parseDeckContentArtifact } from '@/catalog/catalog-wire';
 
 import type { InstallationIdentity } from './installation-identity';
@@ -19,6 +22,7 @@ export async function installEntitledDeck(
   identity: InstallationIdentity,
   deckId: string,
   ownershipSource: 'purchase' | 'bundle',
+  downloadRuntime?: CatalogDownloadRuntime,
 ) {
   const row = await database.getFirstAsync<DeckArtifactRow>(
     `SELECT deck_id, card_content_version, card_count, content_hash, content_bytes
@@ -45,10 +49,12 @@ export async function installEntitledDeck(
     return;
   }
 
-  await database.runAsync(
-    "UPDATE deck_installations SET status = 'pending', last_error_code = NULL WHERE deck_id = ?",
-    deckId,
-  );
+  if (installed?.installed_content_version === null || installed === null) {
+    await database.runAsync(
+      "UPDATE deck_installations SET status = 'pending', last_error_code = NULL WHERE deck_id = ?",
+      deckId,
+    );
+  }
   try {
     const url = `${apiBaseUrl}/api/v1/decks/${encodeURIComponent(deckId)}/content/${row.card_content_version}`;
     const bytes = await downloadVerified(
@@ -56,7 +62,7 @@ export async function installEntitledDeck(
       row.content_bytes,
       row.content_hash,
       undefined,
-      undefined,
+      downloadRuntime,
       {
         Authorization: `Bearer ${identity.credential}`,
         'X-Whatzit-Installation-Id': identity.installationId,
@@ -97,7 +103,12 @@ export async function installEntitledDeck(
     });
   } catch (error) {
     await database.runAsync(
-      "UPDATE deck_installations SET status = 'failed', last_error_code = 'preparation_failed' WHERE deck_id = ?",
+      `UPDATE deck_installations
+          SET status = ?, last_error_code = 'preparation_failed'
+        WHERE deck_id = ?`,
+      installed?.installed_content_version === null || installed === null
+        ? 'failed'
+        : 'installed',
       deckId,
     );
     throw error;

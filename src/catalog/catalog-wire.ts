@@ -54,6 +54,7 @@ export type CatalogManifest = {
   catalogSchemaVersion: 5;
   catalogRevision: number;
   updatedAt: string;
+  minimumAppVersion: string | null;
   supportedContentSchemaVersions: number[];
   decks: CatalogManifestDeck[];
   bundles: CatalogManifestBundle[];
@@ -78,12 +79,19 @@ export type LocalBundleVersion = {
   bundle_version: number;
 };
 
-export function parseCatalogManifest(value: unknown): CatalogManifest {
+export function parseCatalogManifest(
+  value: unknown,
+  options: { allowDevelopmentPreview?: boolean } = {},
+): CatalogManifest {
   const root = objectValue(value, 'manifest');
   integer(root.schemaVersion, 'schemaVersion', 1);
   integer(root.catalogSchemaVersion, 'catalogSchemaVersion', 5);
   const catalogRevision = positiveInteger(root.catalogRevision, 'catalogRevision');
   const updatedAt = utcTimestamp(root.updatedAt, 'updatedAt');
+  const minimumAppVersion = nullableAppVersion(
+    root.minimumAppVersion,
+    'minimumAppVersion',
+  );
   const supportedContentSchemaVersions = arrayValue(
     root.supportedContentSchemaVersions,
     'supportedContentSchemaVersions',
@@ -106,8 +114,19 @@ export function parseCatalogManifest(value: unknown): CatalogManifest {
     if (access === 'free' && (protectedContent || contentUrl === null)) {
       throw new Error(`Free deck ${id} must expose unprotected content.`);
     }
-    if (access === 'paid' && (!protectedContent || contentUrl !== null)) {
+    if (
+      access === 'paid'
+      && !options.allowDevelopmentPreview
+      && (!protectedContent || contentUrl !== null)
+    ) {
       throw new Error(`Paid deck ${id} must not expose a public content URL.`);
+    }
+    if (
+      access === 'paid'
+      && options.allowDevelopmentPreview
+      && (protectedContent || contentUrl === null)
+    ) {
+      throw new Error(`Development preview deck ${id} must expose authenticated preview content.`);
     }
     return {
       id,
@@ -199,11 +218,32 @@ export function parseCatalogManifest(value: unknown): CatalogManifest {
     catalogSchemaVersion: 5,
     catalogRevision,
     updatedAt,
+    minimumAppVersion,
     supportedContentSchemaVersions,
     decks,
     bundles,
     deckOrders,
   };
+}
+
+export function assertAppVersionCompatible(
+  manifest: Pick<CatalogManifest, 'minimumAppVersion'>,
+  appVersion: string,
+) {
+  if (manifest.minimumAppVersion === null) return;
+  const current = appVersionParts(appVersion, 'app version');
+  const minimum = appVersionParts(
+    manifest.minimumAppVersion,
+    'minimumAppVersion',
+  );
+  for (let index = 0; index < minimum.length; index += 1) {
+    if (current[index] > minimum[index]) return;
+    if (current[index] < minimum[index]) {
+      throw new Error(
+        `App version ${appVersion} is older than required version ${manifest.minimumAppVersion}.`,
+      );
+    }
+  }
 }
 
 export function parseDeckContentArtifact(
@@ -374,6 +414,17 @@ function nullableProductId(value: unknown, path: string): string | null {
     throw new Error(`${path} is not a valid store product ID.`);
   }
   return result;
+}
+function nullableAppVersion(value: unknown, path: string): string | null {
+  if (value === null || value === undefined) return null;
+  const result = stringValue(value, path);
+  appVersionParts(result, path);
+  return result;
+}
+function appVersionParts(value: string, path: string): [number, number, number] {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value);
+  if (!match) throw new Error(`${path} must use major.minor.patch format.`);
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 function nullableUrl(value: unknown, path: string): string | null {
   if (value === null) return null;

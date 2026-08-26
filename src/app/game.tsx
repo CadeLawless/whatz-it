@@ -17,7 +17,6 @@ import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { RecordingIndicator } from '@/components/recording-indicator';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
-import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import { formatRoundClock } from '@/game/round-duration';
 import { getRemainingSecondsFromMs, useRoundTimer } from '@/hooks/use-round-timer';
@@ -31,7 +30,6 @@ const ROUND_END_SCREEN_MS = 2495;
 const RESULTS_SCREENSHOT_TIMEOUT_MS = 2_000;
 
 export default function GameScreen() {
-  const { catalog } = useCatalog();
   useKeepAwake();
   const { width, height } = useLandscapeDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
@@ -47,6 +45,7 @@ export default function GameScreen() {
   const { beginTransition } = useScreenshotTransition();
   const {
     round,
+    roundDeck,
     answerCard,
     advanceCard,
     finishRound,
@@ -61,7 +60,7 @@ export default function GameScreen() {
   } = useRound();
   const stopRecordingRef = useRef(stopRecording);
   const resumeRecordingRef = useRef(resumeRecording);
-  const deck = catalog.getDeckById(round.deckId ?? undefined);
+  const deck = roundDeck;
   const currentCardId = round.cardOrder[round.currentCardIndex];
   const currentCard = deck?.cards.find((card) => card.id === currentCardId);
   const handleExpire = useCallback(() => finishRound(), [finishRound]);

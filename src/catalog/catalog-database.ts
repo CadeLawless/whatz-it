@@ -3,8 +3,10 @@ import type { SQLiteBindParams, SQLiteDatabase, SQLiteStatement } from 'expo-sql
 import { createCatalogSeed, type CatalogSeed, type CatalogSeedSource } from './catalog-seed';
 import {
   CATALOG_DATABASE_NAME,
+  CATALOG_DEV_PREVIEW_DATABASE_NAME,
   migrateCatalogDatabase,
 } from './catalog-schema';
+import { configuredDevPreviewEnabled } from './catalog-feature';
 
 export function createCatalogDatabaseOpener<Database>(
   initialize: () => Promise<Database>,
@@ -26,7 +28,11 @@ async function initializeCatalogDatabase() {
     import('expo-sqlite'),
     import('@/data/bundles'),
   ]);
-  const database = await SQLite.openDatabaseAsync(CATALOG_DATABASE_NAME);
+  const database = await SQLite.openDatabaseAsync(
+    configuredDevPreviewEnabled()
+      ? CATALOG_DEV_PREVIEW_DATABASE_NAME
+      : CATALOG_DATABASE_NAME,
+  );
   await migrateCatalogDatabase(database);
   await applyBundledCatalogBaseline(database, bundledCatalog);
   return database;

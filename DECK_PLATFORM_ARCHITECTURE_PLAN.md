@@ -992,6 +992,15 @@ the database path with no Git repository write required.
 Exit criterion: the app launches and plays from SQLite, can apply a server
 catalog revision, and remains fully usable with the server unavailable.
 
+Implementation note (2026-08-25): catalog activation is intentionally silent.
+The last verified SQLite snapshot remains visible while the next revision and
+all required media are prepared, and the ready snapshot replaces it without a
+loading surface, revision notice, list entrance animation, scroll reset, or
+session-time reordering of existing library decks. Content-addressed cover
+changes switch directly once their local file is ready. Explore retains its
+intentional section-entry motion, but search-result updates are immediate and
+do not remount or animate the result surface.
+
 ### Phase 3.5: Storefront experience foundation
 
 - Add the **My Decks** and **Explore** home tabs and the **Bundles** / **All
@@ -1056,6 +1065,30 @@ ownership while continuing to deduplicate overlapping decks.
 Exit criterion: once a deck is shown as owned and ready, it plays offline with
 no additional user download action.
 
+Implementation note (2026-08-24): the mobile last-known-good boundary now
+preserves an installed paid card-content version while a newer protected
+version is pending or fails preparation. SQLite exposes cards through the
+installed version rather than prematurely switching to the desired version,
+and an active round captures its selected deck through gameplay and results so
+a concurrent catalog publication cannot change cards mid-round. First-time
+installations still fail closed when no verified playable version exists.
+
+Implementation note (2026-08-25): purchase, restore, and reconnect now share a
+serialized entitlement-preparation queue. Identical in-flight batches are
+deduplicated, different batches cannot overlap SQLite installation writes, and
+one failed bundle member no longer prevents later members from preparing. The
+catalog refreshes after the complete attempt so successful members become
+available immediately, while aggregate bundle state is reconstructed from its
+included deck installations as Preparing, Retry, or Owned after an app restart.
+
+Acceptance note (2026-08-25): automated interruption coverage now verifies
+verified first installation and idempotency, failed download with
+last-known-good preservation, exclusive SQLite commit rollback, exact
+in-flight deduplication, serialization of different batches, and a partial
+bundle restart/retry where only the failed member is downloaded again. Store
+payment, pending, cancellation, and Apple sandbox restoration remain device
+acceptance checks because StoreKit owns those boundaries.
+
 ### Phase 6: Scale, rollout, and cleanup
 
 - Load-test catalogs with at least 1,000 decks, large bundles, and realistic
@@ -1066,6 +1099,147 @@ no additional user download action.
 - Retire TypeScript catalog publishing only after active supported builds use
   the service safely.
 - Remove obsolete GitHub App repository-write secrets and legacy manager code.
+
+Implementation note (2026-08-25): the first scale acceptance fixture exercises
+1,000 active decks, 24,000 locally installed cards at realistic 120-card deck
+sizes, and a 500-deck bundle. SQLite snapshot loading now reads only the card
+content version currently installed for active decks, excluding retained
+historical versions and non-installed paid content from the app's eager memory
+surface. Existing local database indexes cover this query shape; no schema
+migration is required for this slice.
+
+Implementation note (2026-08-25): staging catalog sync now has an explicit
+`EXPO_PUBLIC_CATALOG_SYNC=disabled` build-time kill switch in addition to the
+bundled-repository fallback. The existing on-device flight recorder captures a
+sanitized rollout cohort, cached revision/schema, sync duration/result,
+download counts, error code, and retry schedule without URLs, card content, or
+credentials. Aggregated production telemetry remains a separate service and
+privacy decision; no paid monitoring dependency is enabled implicitly.
+
+Implementation note (2026-08-25): the existing Contact action now attaches a
+sanitized `whatz-it-support-diagnostics.txt` file containing app/platform,
+rollout cohort, local catalog revision/schema/source, sync state and error code,
+pending/failed deck states, and installed-versus-desired content versions. The
+visible email body stays limited to a prompt for the user's description. The
+attachment excludes card IDs/text, receipts, transaction identifiers,
+installation credentials, API URLs, and other secrets. Installed content
+versions are retained in the in-memory catalog snapshot specifically so
+last-known-good diagnostics remain accurate. If the native mail composer is
+unavailable, Contact falls back to a clean email without diagnostics.
+
+Release-baseline decision note (2026-08-25): production starter-deck refreshes
+should run as a release-preparation job that fetches and verifies the active
+production manifest, writes the generated TypeScript catalog and
+content-addressed covers, and commits those changes for review before a build.
+The production build should then run the same command in check-only mode and
+fail if the committed baseline is stale. Updating source only inside an
+ephemeral EAS Build would make the shipped baseline differ from its Git commit
+and weaken audit, parity, and rollback guarantees, so that option is not the
+recommended path. Paid card artifacts remain rejected by the baseline tool.
+
+Implementation note (2026-08-25): the EAS post-install lifecycle hook now
+enforces that check for the production build profile only. It reads the active
+production manifest URL from the EAS production environment and fails early if
+the URL is missing or the committed catalog/covers are stale. Development,
+preview, IAP-development, and staging builds explicitly remain outside this
+gate. This follows the release-baseline decision without allowing a cloud build
+to rewrite source after its Git revision has been selected.
+
+Compatibility decision recorded (2026-08-25): support the current and previous
+production app versions, with every superseded version retained for at least 12
+months. Manifest schema 1, catalog schema 5, and deck-content schema 1 remain
+stable for the initial window. `minimumAppVersion` remains unset until a version
+is outside that window and a reviewed production retirement has usage evidence
+and a rollback plan. The mobile client now validates a future minimum version
+before activation and keeps its last-known-good offline catalog when
+incompatible. Immutable artifacts remain through all active/rollback/supported
+references plus a 90-day safety period; automated deletion remains disabled
+until a joint database/media restore drill and dry-run garbage-collection
+report exist. The complete policy is recorded in
+`CATALOG_COMPATIBILITY_POLICY.md`.
+
+Implementation note (2026-08-25): the server CLI now provides a read-only
+`retention-report` command. It inventories immutable deck, cover, and thumbnail
+artifacts; verifies content-addressed filename hashes; reports missing database
+references; and explains `protected`, `eligible_review`, or `unresolved`
+classification for every file. The active revision, latest ten rollback
+revisions, 12-month compatibility window, and additional 90-day artifact
+safety period are protected. Historical thumbnails lacking stored revision
+metadata are unresolved rather than guessed safe. The command exposes no
+delete operation, and automated garbage collection remains disabled.
+
+Implementation note (2026-08-26): the server CLI now also provides a read-only
+`recovery-readiness` command. Before a coordinated backup is captured, it
+fingerprints the deterministic active database export, compares the active
+database revision with the active manifest hash/revision, checks the immutable
+artifact inventory for missing references and filename/hash mismatches, and
+reports the total files and bytes that must travel with the database snapshot.
+A passing report is only a
+preflight: it deliberately continues to mark the separate disposable
+database-and-media restore drill as required. The paired `recovery-verify`
+command compares a restored database and media root against the source report,
+including a deterministic path/size/SHA-256 fingerprint of every artifact. It
+refuses database or filesystem targets that are not explicitly and consistently
+named as disposable restore, drill, or test targets.
+
+Acceptance note (2026-08-26): the first coordinated production recovery drill
+restored catalog revision 48 from a phpMyAdmin SQL export and a private artifact
+archive into isolated Hostinger database and filesystem targets. The guarded
+verification matched the active revision, manifest hash, deterministic catalog
+hash, artifact file count, byte count, and complete path/size/SHA-256 inventory.
+The drill also established that a new Hostinger restore database must be set to
+`utf8mb4_bin` before importing the SQL export; its default
+`utf8mb4_unicode_ci` changes inherited identifier collations and prevents
+foreign-key restoration. Disposable target names must contain the complete
+word `restore`, `drill`, or `test`, rather than an abbreviation such as `rest`.
+
+Implementation note (2026-08-26): production operations now have a read-only
+`health-report` command and response runbook. The report distinguishes critical
+public-catalog health from advisory authoring/preview/commerce signals; checks
+active database/manifest parity, the deployed migration set, interrupted
+publication preparations, entitlement invariants, development-preview parity,
+recent failed publications, long-pending transactions, and artifact filesystem
+capacity; and emits only sanitized aggregate or operational metadata. It never
+publishes, retries, repairs, grants, revokes, or deletes. Critical findings
+produce a nonzero CLI exit for scheduled-job notification, while advisory
+findings preserve production availability and require manual review.
+
+Acceptance note (2026-08-26): the first live production health report returned
+`healthy` for active catalog revision 48. Database and artifact manifest hashes
+matched, all six deployed migrations matched the applied schema, no publication
+was interrupted or recently failed, development-preview revision 55 matched its
+artifact manifest, commerce invariants were intact, and artifact filesystem
+capacity was readable. The report contained no installation or transaction
+identities and performed no remediation.
+
+Production rollout decision (2026-08-25): app-store/TestFlight production
+build work is deferred while additional decks are authored. The immediate
+rollout slice is a parallel Hostinger production API and database-backed Deck
+Manager, packaged under production-only service/public roots and external
+production-only configuration files so it cannot overwrite staging or the
+legacy manager. Production database initialization must use a reviewed active
+catalog export rather than assuming the mobile bundled baseline is current.
+Before traffic switches, the candidate must pass manifest parity, publish,
+forward rollback, local-admin authentication, commerce, recovery, and backup
+checks while the old path remains recoverable. A development client may point
+catalog sync at the eventual production manifest to observe publications
+without a new binary; commerce is disabled in that local mode so sandbox
+transactions remain isolated to staging. The normal reviewed baseline refresh
+still occurs immediately before the later app-store release.
+
+Development-preview decision (2026-08-26): the permanent database-backed
+manager exposes one deliberate **Update Dev Preview** action. Draft autosave
+remains private and never updates a device automatically. The action writes a
+separately versioned immutable preview snapshot without advancing the active
+production catalog revision. Preview manifests, covers, thumbnails, and card
+artifacts require a shared secret header; the secret is stored only in
+external Hostinger configuration and an ignored local Expo environment file.
+Expo accepts preview content only when `__DEV__` is true, stores it in a
+separate SQLite database, and treats paid preview cards as locally playable
+only in that isolated database. Production publishing, EAS release profiles,
+commerce entitlements, and the normal last-known-good production cache remain
+unchanged. The newest preview replaces the shared authoring preview for the two
+administrators; no QR-code or device-pairing workflow is required.
 
 Exit criterion: production monitoring and recovery drills demonstrate safe
 catalog publishing, automatic updates, purchases, restores, and offline play at

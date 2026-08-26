@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import {
+  assertAppVersionCompatible,
   assertMonotonicVersions,
   parseCatalogManifest,
   parseDeckContentArtifact,
@@ -15,9 +16,11 @@ export type CatalogSyncResult =
 
 export type CatalogSyncOptions = {
   manifestUrl: string;
+  appVersion?: string;
   signal?: AbortSignal;
   now?: () => Date;
   downloadRuntime?: CatalogDownloadRuntime;
+  developmentPreview?: boolean;
 };
 
 export type CatalogDownloadRuntime = {
@@ -34,6 +37,11 @@ export type CatalogStoredMedia = CatalogArtifactReference & { localUri: string }
 
 type CatalogState = { catalog_revision: number; etag: string | null };
 type Installation = { deck_id: string; installed_content_version: number | null };
+type ExistingInstallation = Installation & {
+  ownership_source: 'free' | 'none' | 'purchase' | 'bundle';
+  status: 'installed' | 'not_owned' | 'pending' | 'failed';
+  last_verified_at: string | null;
+};
 type DeckVersionRow = {
   deck_id: string;
   deck_version: number;
@@ -58,6 +66,7 @@ export class CatalogSyncError extends Error {
       | 'network_error'
       | 'invalid_manifest'
       | 'invalid_artifact'
+      | 'unsupported_app_version'
       | 'stale_manifest'
       | 'storage_error',
     message: string,
@@ -93,11 +102,24 @@ export async function synchronizeCatalog(
 
   let manifest: CatalogManifest;
   try {
-    manifest = parseCatalogManifest(await response.json());
+    manifest = parseCatalogManifest(await response.json(), {
+      allowDevelopmentPreview: options.developmentPreview,
+    });
   } catch (error) {
     throw new CatalogSyncError('invalid_manifest', 'The server returned an invalid catalog manifest.', {
       cause: error,
     });
+  }
+  if (options.appVersion) {
+    try {
+      assertAppVersionCompatible(manifest, options.appVersion);
+    } catch (error) {
+      throw new CatalogSyncError(
+        'unsupported_app_version',
+        'This app version cannot safely activate the latest catalog.',
+        { cause: error },
+      );
+    }
   }
   if (manifest.catalogRevision < state.catalog_revision) {
     throw new CatalogSyncError(
@@ -134,10 +156,10 @@ export async function synchronizeCatalog(
   );
   const deckArtifacts = new Map<string, DeckContentArtifact>();
   for (const deck of manifest.decks) {
-    if (deck.status !== 'active' || deck.access !== 'free') continue;
+    if (deck.status !== 'active' || (!options.developmentPreview && deck.access !== 'free')) continue;
     if (installedVersions.get(deck.id) === deck.cardContentVersion) continue;
     if (!deck.content.url) {
-      throw new CatalogSyncError('invalid_manifest', `Free deck ${deck.id} has no content URL.`);
+      throw new CatalogSyncError('invalid_manifest', `Deck ${deck.id} has no content URL.`);
     }
     const bytes = await downloadVerified(
       deck.content.url,
@@ -217,7 +239,15 @@ export async function synchronizeCatalog(
   const syncedAt = (options.now ?? (() => new Date()))().toISOString();
   const etag = response.headers.get('etag');
   try {
-    await applyPreparedCatalog(database, manifest, deckArtifacts, preparedMedia, etag, syncedAt);
+    await applyPreparedCatalog(
+      database,
+      manifest,
+      deckArtifacts,
+      preparedMedia,
+      etag,
+      syncedAt,
+      options.developmentPreview,
+    );
   } catch (error) {
     throw new CatalogSyncError('storage_error', 'The verified catalog could not be activated.', {
       cause: error,
@@ -278,7 +308,17 @@ export async function applyPreparedCatalog(
   media: Map<string, PreparedMedia>,
   etag: string | null,
   syncedAt: string,
+  developmentPreview = false,
 ) {
+  const existingInstallations = new Map(
+    (
+      await database.getAllAsync<ExistingInstallation>(
+        `SELECT deck_id, ownership_source, installed_content_version,
+                status, last_verified_at
+           FROM deck_installations`,
+      )
+    ).map((installation) => [installation.deck_id, installation]),
+  );
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync("UPDATE decks SET lifecycle_status = 'retired'");
     await transaction.runAsync("UPDATE bundles SET lifecycle_status = 'retired'");
@@ -353,11 +393,17 @@ export async function applyPreparedCatalog(
             card.byline ?? null,
           );
         }
-      } else if (deck.access === 'paid') {
-        // A deck that changes from free to paid must not retain playable cards.
-        await transaction.runAsync('DELETE FROM cards WHERE deck_id = ?', deck.id);
       }
       const free = deck.access === 'free';
+      const previewOwned = developmentPreview && deck.status === 'active';
+      const existingInstallation = existingInstallations.get(deck.id);
+      const installedPaidContent =
+        !free &&
+        (existingInstallation?.ownership_source === 'purchase' ||
+          existingInstallation?.ownership_source === 'bundle') &&
+        existingInstallation.installed_content_version !== null
+          ? existingInstallation
+          : undefined;
       await transaction.runAsync(
         `INSERT INTO deck_installations (
           deck_id, ownership_source, desired_content_version,
@@ -371,11 +417,21 @@ export async function applyPreparedCatalog(
           last_verified_at = excluded.last_verified_at,
           last_error_code = NULL`,
         deck.id,
-        free ? 'free' : 'none',
+        free
+          ? 'free'
+          : previewOwned
+            ? 'purchase'
+            : installedPaidContent
+              ? installedPaidContent.ownership_source
+              : 'none',
         deck.cardContentVersion,
-        free ? deck.cardContentVersion : null,
-        free ? 'installed' : 'not_owned',
-        syncedAt,
+        free || previewOwned
+          ? deck.cardContentVersion
+          : installedPaidContent
+            ? installedPaidContent.installed_content_version
+            : null,
+        free || previewOwned || installedPaidContent ? 'installed' : 'not_owned',
+        free || previewOwned ? syncedAt : existingInstallation?.last_verified_at ?? null,
       );
     }
 

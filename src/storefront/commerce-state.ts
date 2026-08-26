@@ -31,6 +31,21 @@ export type CommercePresentation = {
   tone: 'muted' | 'primary' | 'success' | 'warning';
 };
 
+type InstallationStatus = NonNullable<CommerceTarget['installationStatus']>;
+
+export function entitledCommerceState(
+  source: Extract<CommerceProductState, { status: 'owned' }>['source'],
+  installationStatuses: readonly (InstallationStatus | undefined)[],
+): CommerceProductState {
+  if (installationStatuses.some((status) => status === 'failed')) {
+    return { status: 'retry' };
+  }
+  if (installationStatuses.some((status) => status !== 'installed')) {
+    return { status: 'preparing' };
+  }
+  return { status: 'owned', source };
+}
+
 export function fallbackCommerceState(
   target: CommerceTarget,
 ): CommerceProductState {

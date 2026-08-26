@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  assertAppVersionCompatible,
   assertMonotonicVersions,
   parseCatalogManifest,
   parseDeckContentArtifact,
@@ -15,6 +16,7 @@ function manifestFixture() {
     catalogSchemaVersion: 5,
     catalogRevision: 39,
     updatedAt: '2026-08-12T22:00:00Z',
+    minimumAppVersion: null as string | null,
     supportedContentSchemaVersions: [1],
     decks: [
       {
@@ -85,6 +87,7 @@ describe('catalog wire validation', () => {
   it('accepts public free content and protected paid content', () => {
     const manifest = parseCatalogManifest(manifestFixture());
     assert.equal(manifest.catalogRevision, 39);
+    assert.equal(manifest.minimumAppVersion, null);
     assert.equal(manifest.decks[0].content.url?.startsWith('https://'), true);
     assert.equal(manifest.decks[1].content.url, null);
     assert.equal(
@@ -93,10 +96,38 @@ describe('catalog wire validation', () => {
     );
   });
 
+  it('validates and enforces an optional minimum app version', () => {
+    const fixture = manifestFixture();
+    fixture.minimumAppVersion = '1.2.0';
+    const manifest = parseCatalogManifest(fixture);
+
+    assert.doesNotThrow(() => assertAppVersionCompatible(manifest, '1.2.0'));
+    assert.doesNotThrow(() => assertAppVersionCompatible(manifest, '1.3.0'));
+    assert.throws(
+      () => assertAppVersionCompatible(manifest, '1.1.9'),
+      /older than required version 1.2.0/,
+    );
+
+    fixture.minimumAppVersion = 'version-one';
+    assert.throws(
+      () => parseCatalogManifest(fixture),
+      /major\.minor\.patch/,
+    );
+  });
+
   it('rejects a public paid card-content URL', () => {
     const fixture = manifestFixture();
     fixture.decks[1].content.url = 'https://api.example.test/paid-content';
     assert.throws(() => parseCatalogManifest(fixture), /must not expose/);
+  });
+
+  it('accepts authenticated paid content only in explicit development preview mode', () => {
+    const fixture = manifestFixture();
+    fixture.decks[1].content.url = 'https://api.example.test/dev-preview/paid-content';
+    fixture.decks[1].content.protected = false;
+    assert.throws(() => parseCatalogManifest(fixture), /must not expose/);
+    const manifest = parseCatalogManifest(fixture, { allowDevelopmentPreview: true });
+    assert.equal(manifest.decks[1].content.url, fixture.decks[1].content.url);
   });
 
   it('rejects incomplete deck ordering', () => {

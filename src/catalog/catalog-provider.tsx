@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import {
   createContext,
   type PropsWithChildren,
@@ -16,10 +17,18 @@ import {
 import {
   configuredCatalogManifestUrl,
   configuredCatalogSource,
+  configuredDevPreviewEnabled,
+  configuredDevPreviewKey,
 } from './catalog-feature';
 import { openCatalogDatabase } from './catalog-database';
+import {
+  catalogRolloutSelectedDetails,
+  catalogSyncCompletedDetails,
+  catalogSyncFailedDetails,
+} from './catalog-rollout-observability';
 import type { CatalogSnapshot } from './catalog-snapshot';
-import { synchronizeCatalog } from './catalog-sync';
+import { CatalogSyncError, synchronizeCatalog } from './catalog-sync';
+import { recordFlightEvent } from '@/utils/flight-recorder';
 
 const SYNC_FRESHNESS_MS = 5 * 60 * 1000;
 
@@ -85,7 +94,17 @@ export function CatalogProvider({ children }: PropsWithChildren) {
     void bundledSnapshotPromise
       .then(async (fallback) => {
         if (!cancelled) setState({ status: 'loading', catalog: fallback });
-        if (configuredCatalogSource() === 'bundled') {
+        const configuredSource = configuredCatalogSource();
+        if (configuredSource === 'bundled') {
+          recordFlightEvent(
+            'catalog.rollout-selected',
+            catalogRolloutSelectedDetails(
+              configuredSource,
+              null,
+              fallback.revision,
+              fallback.schemaVersion,
+            ),
+          );
           if (!cancelled) {
             setState({
               status: 'ready',
@@ -99,7 +118,28 @@ export function CatalogProvider({ children }: PropsWithChildren) {
         const database = await openCatalogDatabase();
         const repository = new SqliteCatalogRepository(database);
         const catalog = await repository.load();
-        const manifestUrl = configuredCatalogManifestUrl();
+        const developmentPreview = configuredDevPreviewEnabled();
+        const manifestUrl = configuredCatalogManifestUrl(
+          undefined,
+          undefined,
+          developmentPreview,
+        );
+        const developmentPreviewKey = configuredDevPreviewKey();
+        if (developmentPreview && !manifestUrl) {
+          throw new Error('Expo development preview requires a dedicated preview manifest URL.');
+        }
+        if (developmentPreview && !developmentPreviewKey) {
+          throw new Error('Expo development preview requires a valid preview key.');
+        }
+        recordFlightEvent(
+          'catalog.rollout-selected',
+          catalogRolloutSelectedDetails(
+            configuredSource,
+            manifestUrl,
+            catalog.revision,
+            catalog.schemaVersion,
+          ),
+        );
         if (!cancelled) {
           setState({
             status: 'ready',
@@ -119,6 +159,9 @@ export function CatalogProvider({ children }: PropsWithChildren) {
           }
           lastSyncAttempt = now;
           syncRunning = true;
+          const startedAt = Date.now();
+          const attempt = retryAttempt + 1;
+          recordFlightEvent('catalog.sync-started', { attempt, force });
           if (retryTimer) {
             clearTimeout(retryTimer);
             retryTimer = undefined;
@@ -131,9 +174,38 @@ export function CatalogProvider({ children }: PropsWithChildren) {
           try {
             const result = await synchronizeCatalog(database, {
               manifestUrl,
+              appVersion: Constants.expoConfig?.version ?? '0.0.0',
               signal: abortController.signal,
+              developmentPreview,
+              downloadRuntime: developmentPreviewKey
+                ? {
+                    request: async (url, init) => {
+                      const { fetch } = await import('expo/fetch');
+                      const headers = new Headers(init.headers);
+                      headers.set('X-Whatzit-Dev-Preview-Key', developmentPreviewKey);
+                      if (url === manifestUrl) {
+                        headers.set('Cache-Control', 'no-cache');
+                        headers.set('Pragma', 'no-cache');
+                        const previewManifestUrl = new URL(url);
+                        previewManifestUrl.searchParams.set(
+                          'previewRequest',
+                          String(Date.now()),
+                        );
+                        return fetch(previewManifestUrl.toString(), {
+                          ...init,
+                          headers,
+                        });
+                      }
+                      return fetch(url, { ...init, headers });
+                    },
+                  }
+                : undefined,
             });
             if (cancelled) return;
+            recordFlightEvent(
+              'catalog.sync-completed',
+              catalogSyncCompletedDetails(result, Date.now() - startedAt),
+            );
             if (result.status === 'updated') {
               const refreshedCatalog = await repository.load();
               if (!cancelled) {
@@ -158,10 +230,34 @@ export function CatalogProvider({ children }: PropsWithChildren) {
           } catch (cause: unknown) {
             if (!cancelled) {
               const error = cause instanceof Error ? cause : new Error(String(cause));
-              console.warn('[CatalogSync] Catalog preparation will retry.', error.message);
+              console.warn('[CatalogSync] Catalog preparation will retry.', {
+                cause:
+                  error.cause instanceof Error
+                    ? error.cause.message
+                    : error.cause === undefined
+                      ? null
+                      : String(error.cause),
+                code:
+                  error instanceof CatalogSyncError
+                    ? error.code
+                    : 'unexpected_error',
+                developmentPreview,
+                message: error.message,
+                previewKeyConfigured: developmentPreviewKey !== null,
+              });
               reportSyncError(error);
               lastSyncAttempt = 0;
               const retryDelay = Math.min(1_000 * 2 ** retryAttempt, 30_000);
+              recordFlightEvent(
+                'catalog.sync-failed',
+                catalogSyncFailedDetails(
+                  error,
+                  Date.now() - startedAt,
+                  attempt,
+                  retryDelay,
+                ),
+                { level: 'warn' },
+              );
               retryAttempt += 1;
               retryTimer = setTimeout(() => void sync(true), retryDelay);
             }
@@ -177,6 +273,11 @@ export function CatalogProvider({ children }: PropsWithChildren) {
       })
       .catch((cause: unknown) => {
         const error = cause instanceof Error ? cause : new Error(String(cause));
+        recordFlightEvent(
+          'catalog.rollout-initialization-failed',
+          catalogSyncFailedDetails(error, 0, 0, 0),
+          { flush: true, level: 'warn' },
+        );
         void bundledSnapshotPromise.then((fallback) => {
           if (!cancelled) setState({ status: 'error', catalog: fallback, error });
         });

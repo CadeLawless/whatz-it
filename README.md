@@ -87,6 +87,25 @@ Restart Metro after changing these values. A successful sync persists verified
 free cards, covers, and thumbnails for later offline use; an interrupted or
 invalid sync leaves the last activated local revision unchanged.
 
+After the parallel production API is live, a development client can follow
+production catalog publications without creating an app-store build. Copy
+`.env.production-catalog.example` to the ignored `.env.local`, then restart
+Metro. This mode deliberately disables commerce: use the staging environment
+for sandbox purchase and restore testing. Production catalog sync still makes
+new metadata and free starter-deck content available to the development app.
+
+For unpublished authoring review, copy `.env.dev-preview.example` instead and
+add the same 64-character preview key stored in the production API and Deck
+Manager configuration. The manager's deliberate **Update Dev Preview** action
+creates a private snapshot; ordinary draft autosaves do not affect the app.
+Expo development then downloads that snapshot—including paid deck cards for
+authoring review—through secret-authenticated routes. Preview mode is gated by
+`__DEV__`, uses its own SQLite database, and is absent from release/EAS
+profiles, so preview ownership and draft content cannot enter the production
+catalog cache or a store build. It also uses the dedicated
+`EXPO_PUBLIC_DEV_PREVIEW_MANIFEST_URL`; while preview mode is enabled, the app
+will never fall back to the normal staging or production catalog URL.
+
 The preview EAS profile uses that staging endpoint. Production intentionally
 has no catalog URL checked into the repository: configure
 `EXPO_PUBLIC_CATALOG_MANIFEST_URL` with the production HTTPS manifest URL in the
@@ -132,6 +151,16 @@ paid card payloads and paid covers are never added to the app baseline. Commit
 the reviewed generated changes with the release. Normal Deck Manager publishes
 still reach existing installations through catalog sync and do not require an
 app-store release.
+
+Catalog schema evolution, old-build support, artifact retention, and the
+evidence required before legacy cleanup are defined in
+[`CATALOG_COMPATIBILITY_POLICY.md`](./CATALOG_COMPATIBILITY_POLICY.md).
+
+The EAS production profile runs this check automatically after native
+dependencies are installed. Configure `EXPO_PUBLIC_CATALOG_MANIFEST_URL` in the
+EAS `production` environment with the production manifest URL. Production
+builds stop before compilation if that variable is missing or the committed
+baseline is stale; development, preview, and staging profiles skip this gate.
 
 ## Checks
 

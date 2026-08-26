@@ -7,6 +7,8 @@ import { describe, it } from 'node:test';
 import {
   configuredCatalogManifestUrl,
   configuredCatalogSource,
+  configuredDevPreviewEnabled,
+  configuredDevPreviewKey,
 } from './catalog-feature';
 import { createCatalogSeed, type CatalogSeedSource } from './catalog-seed';
 import {
@@ -208,8 +210,49 @@ describe('bundled SQLite catalog seed', () => {
     assert.equal(configuredCatalogManifestUrl(undefined), null);
     assert.equal(configuredCatalogManifestUrl('http://example.test/manifest'), null);
     assert.equal(
-      configuredCatalogManifestUrl('https://api.example.test/manifest'),
+      configuredCatalogManifestUrl(
+        'https://api.example.test/manifest',
+        'disabled',
+      ),
+      null,
+    );
+    assert.equal(
+      configuredCatalogManifestUrl(
+        'https://api.example.test/manifest',
+        'enabled',
+      ),
       'https://api.example.test/manifest',
+    );
+  });
+
+  it('keeps development preview credentials out of release builds and validates the key', () => {
+    const key = 'a'.repeat(64);
+    assert.equal(configuredDevPreviewEnabled('enabled', true), true);
+    assert.equal(configuredDevPreviewEnabled('enabled', false), false);
+    assert.equal(configuredDevPreviewEnabled('disabled', true), false);
+    assert.equal(configuredDevPreviewKey(key, true), key);
+    assert.equal(configuredDevPreviewKey(key, false), null);
+    assert.equal(configuredDevPreviewKey('not-a-key', true), null);
+  });
+
+  it('keeps development preview on its dedicated manifest endpoint', () => {
+    assert.equal(
+      configuredCatalogManifestUrl(
+        'https://api-staging.example.test/api/v1/catalog/manifest',
+        'enabled',
+        true,
+        'https://api.example.test/api/v1/dev-preview/catalog/manifest',
+      ),
+      'https://api.example.test/api/v1/dev-preview/catalog/manifest',
+    );
+    assert.equal(
+      configuredCatalogManifestUrl(
+        'https://api-staging.example.test/api/v1/catalog/manifest',
+        'enabled',
+        true,
+        undefined,
+      ),
+      null,
     );
   });
 });
