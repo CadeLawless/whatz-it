@@ -52,7 +52,7 @@ describe('storefront commerce state', () => {
     assert.match(presentation.copy, /taking longer than usual/i);
   });
 
-  it('keeps the pre-commerce production fallback non-transactional', () => {
+  it('labels disabled commerce as unavailable without implying launch timing', () => {
     const state = fallbackCommerceState(paidDeck);
     const presentation = commercePresentation(state, paidDeck);
 
@@ -61,7 +61,8 @@ describe('storefront commerce state', () => {
       reason: 'not_configured',
     });
     assert.equal(presentation.action, 'none');
-    assert.equal(presentation.buttonLabel, 'COMING SOON');
+    assert.equal(presentation.buttonLabel, 'PURCHASING DISABLED');
+    assert.equal(presentation.title, 'Purchasing disabled');
   });
 
   it('lets users retry when the App Store product request fails', () => {

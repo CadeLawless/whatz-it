@@ -86,9 +86,9 @@ export function commercePresentation(
         ? {
             action: 'none',
             busy: false,
-            buttonLabel: 'COMING SOON',
-            copy: `Secure in-app purchasing for this ${item} will be connected in the next phase.`,
-            title: 'Purchasing is coming soon',
+            buttonLabel: 'PURCHASING DISABLED',
+            copy: `Purchasing for this ${item} is disabled in this build or environment.`,
+            title: 'Purchasing disabled',
             tone: 'muted',
           }
         : {

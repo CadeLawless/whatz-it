@@ -43,6 +43,7 @@ export default function BundlesForDeckSheet() {
             accessibilityLabel="Close bundle list"
             appearance="sheet"
             onPress={() => sheetRef.current?.close()}
+            style={styles.closeButton}
           />
         </View>
 
@@ -105,9 +106,18 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
+    paddingRight: spacing.lg + 52,
     paddingBottom: spacing.md,
+    zIndex: 10,
+    elevation: 10,
+    backgroundColor: colors.surface,
   },
   headerCopy: { flex: 1, gap: 3 },
+  closeButton: {
+    position: 'absolute',
+    top: spacing.lg,
+    right: spacing.lg,
+  },
   title: { color: colors.ink, fontSize: 28, fontWeight: '900' },
   subtitle: { color: colors.muted, fontSize: 14, lineHeight: 19 },
   list: { gap: 12, padding: spacing.lg, paddingTop: spacing.sm },

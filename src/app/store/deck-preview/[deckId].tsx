@@ -23,8 +23,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCatalog } from '@/catalog/catalog-provider';
 import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
 import { CircularCloseButton } from '@/components/circular-close-button';
+import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
-import { colors, radius, spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
+import { useCommerceProduct } from '@/storefront/commerce-provider';
 
 export default function DeckPreviewSheet() {
   const { catalog } = useCatalog();
@@ -52,6 +54,35 @@ export default function DeckPreviewSheet() {
   const canBrowseBundle = bundleDecks.length > 1 && activeIndex >= 0;
   const pageWidth = Math.max(1, width - spacing.lg * 2);
   const pageStride = pageWidth + spacing.md;
+  const deckCommerceTarget = deck
+    ? {
+        access: deck.access,
+        id: deck.id,
+        installationStatus: deck.installationStatus,
+        kind: 'deck' as const,
+        title: deck.title,
+      }
+    : {
+        access: 'paid' as const,
+        id: activeDeckId,
+        kind: 'deck' as const,
+        title: 'Deck',
+      };
+  const bundleCommerceTarget = bundle
+    ? {
+        access: bundle.access,
+        id: bundle.id,
+        kind: 'bundle' as const,
+        title: bundle.title,
+      }
+    : {
+        access: 'paid' as const,
+        id: bundleId ?? 'bundle',
+        kind: 'bundle' as const,
+        title: 'Bundle',
+      };
+  const deckCommerce = useCommerceProduct(deckCommerceTarget);
+  const bundleCommerce = useCommerceProduct(bundleCommerceTarget);
 
   const showDeckAtIndex = useCallback(
     (targetIndex: number) => {
@@ -148,139 +179,137 @@ export default function DeckPreviewSheet() {
       <SafeAreaView edges={['bottom']} style={styles.screen}>
         <Stack.Screen options={{ headerShown: false }} />
         {deck ? (
-          <ScrollView
-            contentContainerStyle={styles.content}
-            contentInsetAdjustmentBehavior="automatic"
-            showsVerticalScrollIndicator={false}
-          >
-          <View style={styles.sheetHeader}>
-            <Text numberOfLines={2} style={styles.sheetTitle}>
-              {bundle?.title ?? 'Deck Preview'}
-            </Text>
-            <CircularCloseButton
-              accessibilityLabel="Close preview"
-              appearance="sheet"
-              onPress={() => sheetRef.current?.close()}
-            />
-          </View>
-          <View style={styles.previewBody}>
-            <GestureDetector gesture={swipeGesture}>
-              <View style={styles.carouselViewport}>
-                <Animated.View
-                  style={[styles.carouselTrack, carouselAnimatedStyle]}
-                >
-                  {carouselDecks.map((carouselDeck, index) => (
-                    <View
-                      accessibilityElementsHidden={
-                        index !== visibleCarouselIndex
-                      }
-                      importantForAccessibility={
-                        index === visibleCarouselIndex
-                          ? 'auto'
-                          : 'no-hide-descendants'
-                      }
-                      key={carouselDeck.id}
-                      style={[styles.carouselPage, { width: pageWidth }]}
+          <>
+            <View style={styles.sheetHeader}>
+              <Text numberOfLines={2} style={styles.sheetTitle}>
+                {bundle?.title ?? 'Deck Preview'}
+              </Text>
+              <CircularCloseButton
+                accessibilityLabel="Close preview"
+                appearance="sheet"
+                onPress={() => sheetRef.current?.close()}
+                style={styles.closeButton}
+              />
+            </View>
+            <ScrollView
+              contentContainerStyle={styles.content}
+              contentInsetAdjustmentBehavior="automatic"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.previewBody}>
+                <GestureDetector gesture={swipeGesture}>
+                  <View style={styles.carouselViewport}>
+                    <Animated.View
+                      style={[styles.carouselTrack, carouselAnimatedStyle]}
                     >
-                      <DeckDetailsHeader
-                        backLabel="Close Preview"
-                        deck={carouselDeck}
-                        onBack={() => router.back()}
-                        showBackButton={false}
-                      />
-                    </View>
-                  ))}
-                </Animated.View>
-              </View>
-            </GestureDetector>
-            {canBrowseBundle && (
-              <View style={styles.deckNavigation}>
-                <Pressable
-                  accessibilityLabel="Previous deck"
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: activeIndex <= 0 }}
-                  disabled={activeIndex <= 0}
-                  hitSlop={8}
-                  onPress={() => showDeckAtIndex(activeIndex - 1)}
-                  style={[
-                    styles.deckNavigationButton,
-                    activeIndex <= 0 && styles.deckNavigationButtonDisabled,
-                  ]}
-                >
-                  <Text
-                    accessibilityElementsHidden
-                    style={styles.deckNavigationArrow}
-                  >
-                    ‹
-                  </Text>
-                </Pressable>
-                <Text
-                  accessibilityLiveRegion="polite"
-                  style={styles.deckNavigationCount}
-                >
-                  {activeIndex + 1} OF {bundleDecks.length}
-                </Text>
-                <Pressable
-                  accessibilityLabel="Next deck"
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    disabled: activeIndex >= bundleDecks.length - 1,
-                  }}
-                  disabled={activeIndex >= bundleDecks.length - 1}
-                  hitSlop={8}
-                  onPress={() => showDeckAtIndex(activeIndex + 1)}
-                  style={[
-                    styles.deckNavigationButton,
-                    activeIndex >= bundleDecks.length - 1 &&
-                      styles.deckNavigationButtonDisabled,
-                  ]}
-                >
-                  <Text
-                    accessibilityElementsHidden
-                    style={styles.deckNavigationArrow}
-                  >
-                    ›
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-            {deck.access === 'paid' && (
-              <View style={styles.purchaseArea}>
-                <View
-                  accessibilityLabel={`Purchase ${deck.title} only, not the full ${bundle?.title ?? 'bundle'}, coming soon`}
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: true }}
-                  style={styles.purchaseButton}
-                >
-                  <Text style={styles.purchaseButtonText}>
-                    PURCHASE THIS DECK ONLY
-                  </Text>
-                  <Text numberOfLines={1} style={styles.purchaseDeckTitle}>
-                    {deck.title}
-                  </Text>
-                </View>
-                {bundle && (
-                  <View
-                    accessibilityLabel={`Purchase the full ${bundle.title}, coming soon`}
-                    accessibilityRole="button"
-                    accessibilityState={{ disabled: true }}
-                    style={styles.bundlePurchaseButton}
-                  >
-                    <Text style={styles.bundlePurchaseButtonText}>
-                      PURCHASE FULL BUNDLE
+                      {carouselDecks.map((carouselDeck, index) => (
+                        <View
+                          accessibilityElementsHidden={
+                            index !== visibleCarouselIndex
+                          }
+                          importantForAccessibility={
+                            index === visibleCarouselIndex
+                              ? 'auto'
+                              : 'no-hide-descendants'
+                          }
+                          key={carouselDeck.id}
+                          style={[styles.carouselPage, { width: pageWidth }]}
+                        >
+                          <DeckDetailsHeader
+                            backLabel="Close Preview"
+                            deck={carouselDeck}
+                            onBack={() => router.back()}
+                            showBackButton={false}
+                          />
+                        </View>
+                      ))}
+                    </Animated.View>
+                  </View>
+                </GestureDetector>
+                {canBrowseBundle && (
+                  <View style={styles.deckNavigation}>
+                    <Pressable
+                      accessibilityLabel="Previous deck"
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: activeIndex <= 0 }}
+                      disabled={activeIndex <= 0}
+                      hitSlop={8}
+                      onPress={() => showDeckAtIndex(activeIndex - 1)}
+                      style={[
+                        styles.deckNavigationButton,
+                        activeIndex <= 0 && styles.deckNavigationButtonDisabled,
+                      ]}
+                    >
+                      <Text
+                        accessibilityElementsHidden
+                        style={styles.deckNavigationArrow}
+                      >
+                        ‹
+                      </Text>
+                    </Pressable>
+                    <Text
+                      accessibilityLiveRegion="polite"
+                      style={styles.deckNavigationCount}
+                    >
+                      {activeIndex + 1} OF {bundleDecks.length}
                     </Text>
-                    <Text numberOfLines={1} style={styles.bundlePurchaseTitle}>
-                      {bundle.title}
-                    </Text>
+                    <Pressable
+                      accessibilityLabel="Next deck"
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        disabled: activeIndex >= bundleDecks.length - 1,
+                      }}
+                      disabled={activeIndex >= bundleDecks.length - 1}
+                      hitSlop={8}
+                      onPress={() => showDeckAtIndex(activeIndex + 1)}
+                      style={[
+                        styles.deckNavigationButton,
+                        activeIndex >= bundleDecks.length - 1 &&
+                          styles.deckNavigationButtonDisabled,
+                      ]}
+                    >
+                      <Text
+                        accessibilityElementsHidden
+                        style={styles.deckNavigationArrow}
+                      >
+                        ›
+                      </Text>
+                    </Pressable>
                   </View>
                 )}
-                <Text style={styles.purchaseNote}>
-                  Secure in-app purchasing is coming soon.
-                </Text>
+                {deck.access === 'paid' && (
+                  <View style={styles.purchaseArea}>
+                    <CommercePurchaseCard
+                      onOwned={() =>
+                        router.push({
+                          pathname: '/deck/[deckId]',
+                          params: { deckId: deck.id, transition: 'apple-slide' },
+                        })
+                      }
+                      onPurchase={deckCommerce.purchase}
+                      onRetry={deckCommerce.retry}
+                      state={deckCommerce.state}
+                      target={deckCommerceTarget}
+                    />
+                    {bundle && (
+                      <CommercePurchaseCard
+                        onOwned={() =>
+                          router.replace({
+                            pathname: '/store/bundle/[bundleId]',
+                            params: { bundleId: bundle.id },
+                          })
+                        }
+                        onPurchase={bundleCommerce.purchase}
+                        onRetry={bundleCommerce.retry}
+                        state={bundleCommerce.state}
+                        target={bundleCommerceTarget}
+                      />
+                    )}
+                  </View>
+                )}
               </View>
-            )}
-          </View>
-          </ScrollView>
+            </ScrollView>
+          </>
         ) : (
           <View style={styles.notFound}>
             <Text style={styles.notFoundTitle}>Deck not found</Text>
@@ -305,6 +334,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.lg,
+    zIndex: 10,
+    elevation: 10,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingRight: spacing.lg + 52,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.surface,
   },
   sheetTitle: {
     flex: 1,
@@ -312,6 +348,11 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 26,
     fontWeight: '900',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: spacing.lg,
+    right: spacing.lg,
   },
   previewBody: { gap: spacing.xl },
   carouselViewport: { overflow: 'hidden' },
@@ -350,54 +391,6 @@ const styles = StyleSheet.create({
   },
   description: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   purchaseArea: { gap: spacing.sm },
-  purchaseButton: {
-    minHeight: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-    backgroundColor: colors.surface,
-  },
-  purchaseButtonText: {
-    color: '#64748B',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-  },
-  purchaseDeckTitle: {
-    color: '#64748B',
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '600',
-  },
-  bundlePurchaseButton: {
-    minHeight: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    borderRadius: radius.pill,
-    backgroundColor: '#CBD5E1',
-  },
-  bundlePurchaseButtonText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-  },
-  bundlePurchaseTitle: {
-    color: colors.white,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '600',
-  },
-  purchaseNote: {
-    color: colors.muted,
-    textAlign: 'center',
-    fontSize: 12,
-    lineHeight: 17,
-  },
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   notFoundTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
 });
