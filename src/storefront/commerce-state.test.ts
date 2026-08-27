@@ -24,6 +24,7 @@ describe('storefront commerce state', () => {
       'offline',
       'available',
       'purchasing',
+      'waitingForStore',
       'pending',
       'verifying',
       'preparing',
@@ -37,6 +38,18 @@ describe('storefront commerce state', () => {
       assert.ok(presentation.copy.length > 0);
       assert.ok(presentation.buttonLabel.length > 0);
     }
+  });
+
+  it('explains a delayed App Store prompt without enabling a duplicate purchase', () => {
+    const presentation = commercePresentation(
+      commerceStateFixtures.waitingForStore,
+      paidDeck,
+    );
+
+    assert.equal(presentation.action, 'none');
+    assert.equal(presentation.busy, true);
+    assert.equal(presentation.buttonLabel, 'WAITING FOR APP STORE…');
+    assert.match(presentation.copy, /taking longer than usual/i);
   });
 
   it('keeps the pre-commerce production fallback non-transactional', () => {

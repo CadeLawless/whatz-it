@@ -31,6 +31,7 @@ import {
 import { installEntitledDeck } from './entitled-deck-installer';
 import { EntitledDeckPreparationQueue } from './entitled-deck-preparation';
 import { resetLocalPaidOwnership } from './commerce-testing';
+import { describeCommerceError, logCommerceDiagnostic } from './commerce-diagnostics';
 import {
   loadOrCreateInstallationIdentity,
   resetInstallationIdentity,
@@ -41,6 +42,14 @@ type OwnedProduct = CommerceEntitlements['products'][number];
 type StoreProductRequestState = 'waiting' | 'loading' | 'complete' | 'error';
 
 const STORE_CONNECTION_TIMEOUT_MS = 10_000;
+const STORE_PROMPT_DELAY_NOTICE_MS = 8_000;
+
+type ActivePurchase = {
+  operationId: string;
+  productId: string;
+  startedAt: number;
+  target: { kind: 'deck' | 'bundle'; id: string };
+};
 
 export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const { catalog, refreshCatalog } = useCatalog();
@@ -59,6 +68,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const restoreSnapshotPending = useRef(false);
   const connectionRefreshRef = useRef<Promise<boolean> | null>(null);
   const storeProductRefreshRef = useRef<Promise<void> | null>(null);
+  const activePurchaseRef = useRef<ActivePurchase | null>(null);
 
   const appleProducts = useMemo(() => {
     const result = new Map<string, { kind: 'deck' | 'bundle'; id: string }>();
@@ -146,6 +156,8 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     if (!apiBaseUrl || Platform.OS !== 'ios') return Promise.resolve(false);
     if (connectionRefreshRef.current) return connectionRefreshRef.current;
 
+    const startedAt = Date.now();
+    logCommerceDiagnostic('server-refresh-started');
     const request = (async () => {
       const currentIdentity = await loadOrCreateInstallationIdentity();
       setIdentity(currentIdentity);
@@ -154,9 +166,17 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       await persistEntitlements(entitlements);
       await prepareEntitledDecks(entitlements, currentIdentity);
       setServerReachable(true);
+      logCommerceDiagnostic('server-refresh-completed', {
+        durationMs: Date.now() - startedAt,
+        productCount: entitlements.products.length,
+      });
       return true;
     })()
       .catch((error) => {
+        logCommerceDiagnostic('server-refresh-failed', {
+          durationMs: Date.now() - startedAt,
+          error: describeCommerceError(error),
+        }, 'warn');
         console.warn('[StoreCommerce] Commerce connection refresh failed', error);
         setServerReachable(false);
         return false;
@@ -174,15 +194,40 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const processPurchaseRef = useRef<(purchase: Purchase) => Promise<void>>(async () => {});
   const iap = useIAP({
     onPurchaseSuccess: (purchase) => {
+      const currentActive = activePurchaseRef.current;
+      const active = currentActive?.productId === purchase.productId
+        ? currentActive
+        : null;
+      logCommerceDiagnostic('store.purchase-success-callback', {
+        elapsedMs: active ? Date.now() - active.startedAt : null,
+        operationId: active?.operationId ?? null,
+        productId: purchase.productId,
+        purchaseState: purchase.purchaseState,
+        tokenPresent: Boolean(purchase.purchaseToken),
+      });
       void processPurchaseRef.current(purchase);
     },
     onPurchaseError: (error) => {
-      if (error.productId) {
-        const target = appleProducts.get(error.productId);
-        if (target) setTargetState(target);
+      const active = activePurchaseRef.current;
+      const target = error.productId
+        ? appleProducts.get(error.productId)
+          ?? (active?.productId === error.productId ? active.target : undefined)
+        : active?.target;
+      logCommerceDiagnostic('store.purchase-error-callback', {
+        elapsedMs: active ? Date.now() - active.startedAt : null,
+        error: describeCommerceError(error),
+        operationId: active?.operationId ?? null,
+        productId: error.productId ?? active?.productId ?? null,
+      }, 'warn');
+      if (target) setTargetState(target);
+      if (!error.productId || active?.productId === error.productId) {
+        activePurchaseRef.current = null;
       }
     },
     onError: (error) => {
+      logCommerceDiagnostic('store.general-error', {
+        error: describeCommerceError(error),
+      }, 'warn');
       console.error('[StoreCommerce] App Store request failed', error);
       setStoreProductRequestState('error');
     },
@@ -203,10 +248,22 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     [products],
   );
 
+  useEffect(() => {
+    logCommerceDiagnostic('store.connection-state', {
+      connected,
+      loadedProductCount: products.length,
+    });
+  }, [connected, products.length]);
+
   const refreshStoreProducts = useCallback(() => {
     if (Platform.OS !== 'ios' || appleProducts.size === 0) return Promise.resolve();
     if (storeProductRefreshRef.current) return storeProductRefreshRef.current;
     setStoreProductRequestState('loading');
+    const startedAt = Date.now();
+    logCommerceDiagnostic('store.products-requested', {
+      connected,
+      productCount: appleProducts.size,
+    });
 
     const request = (async () => {
       try {
@@ -217,7 +274,16 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
 
         await fetchProducts({ skus: [...appleProducts.keys()], type: 'in-app' });
         setStoreProductRequestState('complete');
+        logCommerceDiagnostic('store.products-request-returned', {
+          durationMs: Date.now() - startedAt,
+          requestedProductCount: appleProducts.size,
+        });
       } catch (error) {
+        logCommerceDiagnostic('store.products-request-failed', {
+          durationMs: Date.now() - startedAt,
+          error: describeCommerceError(error),
+          requestedProductCount: appleProducts.size,
+        }, 'warn');
         console.error('[StoreCommerce] Product loading failed', error);
         setStoreProductRequestState('error');
       }
@@ -232,18 +298,78 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   }, [appleProducts, connected, fetchProducts, reconnect]);
 
   const processPurchase = useCallback(async (purchase: Purchase) => {
-    if (!apiBaseUrl || !identity || Platform.OS !== 'ios') return;
-    const transactionKey = purchase.transactionId ?? purchase.id;
-    if (processedTransactions.current.has(transactionKey)) return;
-    if (purchase.purchaseState === 'pending') {
-      const target = appleProducts.get(purchase.productId);
-      if (target) setTargetState(target, { status: 'pending' });
+    const currentActive = activePurchaseRef.current;
+    const active = currentActive?.productId === purchase.productId
+      ? currentActive
+      : null;
+    const target = appleProducts.get(purchase.productId) ?? active?.target;
+    if (!apiBaseUrl || !identity || Platform.OS !== 'ios') {
+      logCommerceDiagnostic('purchase-processing-missing-prerequisite', {
+        apiConfigured: Boolean(apiBaseUrl),
+        identityReady: Boolean(identity),
+        operationId: active?.operationId ?? null,
+        platform: Platform.OS,
+        productId: purchase.productId,
+      }, 'warn');
+      if (target) {
+        setTargetState(target, {
+          status: 'retry',
+          message: 'Your transaction is safe, but purchase verification could not start. Please retry.',
+        });
+      }
+      if (activePurchaseRef.current?.operationId === active?.operationId) {
+        activePurchaseRef.current = null;
+      }
       return;
     }
-    if (purchase.purchaseState !== 'purchased' || !purchase.purchaseToken) return;
+    const transactionKey = purchase.transactionId ?? purchase.id;
+    if (processedTransactions.current.has(transactionKey)) {
+      logCommerceDiagnostic('purchase-processing-duplicate', {
+        operationId: active?.operationId ?? null,
+        productId: purchase.productId,
+      });
+      if (target) setTargetState(target);
+      if (activePurchaseRef.current?.operationId === active?.operationId) {
+        activePurchaseRef.current = null;
+      }
+      return;
+    }
+    if (purchase.purchaseState === 'pending') {
+      if (target) setTargetState(target, { status: 'pending' });
+      logCommerceDiagnostic('purchase-pending', {
+        operationId: active?.operationId ?? null,
+        productId: purchase.productId,
+      });
+      if (activePurchaseRef.current?.operationId === active?.operationId) {
+        activePurchaseRef.current = null;
+      }
+      return;
+    }
+    if (purchase.purchaseState !== 'purchased' || !purchase.purchaseToken) {
+      logCommerceDiagnostic('purchase-invalid-callback', {
+        operationId: active?.operationId ?? null,
+        productId: purchase.productId,
+        purchaseState: purchase.purchaseState,
+        tokenPresent: Boolean(purchase.purchaseToken),
+      }, 'warn');
+      if (target) {
+        setTargetState(target, {
+          status: 'retry',
+          message: 'The App Store responded, but purchase verification could not start. Please retry.',
+        });
+      }
+      if (activePurchaseRef.current?.operationId === active?.operationId) {
+        activePurchaseRef.current = null;
+      }
+      return;
+    }
     processedTransactions.current.add(transactionKey);
-    const target = appleProducts.get(purchase.productId);
     if (target) setTargetState(target, { status: 'verifying' });
+    logCommerceDiagnostic('verification-started', {
+      elapsedMs: active ? Date.now() - active.startedAt : null,
+      operationId: active?.operationId ?? null,
+      productId: purchase.productId,
+    });
     try {
       const entitlements = await verifyApplePurchase(
         apiBaseUrl,
@@ -251,15 +377,43 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
         purchase.purchaseToken,
         'purchase',
       );
+      logCommerceDiagnostic('verification-completed', {
+        elapsedMs: active ? Date.now() - active.startedAt : null,
+        operationId: active?.operationId ?? null,
+        productCount: entitlements.products.length,
+        productId: purchase.productId,
+      });
       await persistEntitlements(entitlements);
       await finishTransaction({ purchase, isConsumable: false });
+      logCommerceDiagnostic('store-transaction-finished', {
+        elapsedMs: active ? Date.now() - active.startedAt : null,
+        operationId: active?.operationId ?? null,
+        productId: purchase.productId,
+      });
       if (target) setTargetState(target, { status: 'preparing' });
       await prepareEntitledDecks(entitlements, identity);
       if (target) failedPurchases.current.delete(`${target.kind}:${target.id}`);
       if (target) setTargetState(target);
       setServerReachable(true);
+      if (activePurchaseRef.current?.operationId === active?.operationId) {
+        activePurchaseRef.current = null;
+      }
+      logCommerceDiagnostic('purchase-completed', {
+        elapsedMs: active ? Date.now() - active.startedAt : null,
+        operationId: active?.operationId ?? null,
+        productId: purchase.productId,
+      });
     } catch (error) {
       processedTransactions.current.delete(transactionKey);
+      if (activePurchaseRef.current?.operationId === active?.operationId) {
+        activePurchaseRef.current = null;
+      }
+      logCommerceDiagnostic('purchase-processing-failed', {
+        elapsedMs: active ? Date.now() - active.startedAt : null,
+        error: describeCommerceError(error),
+        operationId: active?.operationId ?? null,
+        productId: purchase.productId,
+      }, 'warn');
       console.error('[StoreCommerce] Purchase verification or preparation failed', {
         error,
         productId: purchase.productId,
@@ -375,17 +529,75 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
 
   const purchase = useCallback(async (target: CommerceTarget) => {
     const productId = targetProductId(target);
-    if (!productId || !identity || Platform.OS !== 'ios') return;
+    if (!productId || !identity || Platform.OS !== 'ios') {
+      logCommerceDiagnostic('store.request-skipped', {
+        identityReady: Boolean(identity),
+        platform: Platform.OS,
+        productId: productId ?? null,
+        targetId: target.id,
+        targetKind: target.kind,
+      }, 'warn');
+      return;
+    }
+    if (activePurchaseRef.current) {
+      logCommerceDiagnostic('store.request-ignored-while-active', {
+        activeOperationId: activePurchaseRef.current.operationId,
+        activeProductId: activePurchaseRef.current.productId,
+        productId,
+      }, 'warn');
+      return;
+    }
+    const operation: ActivePurchase = {
+      operationId: createCommerceOperationId(),
+      productId,
+      startedAt: Date.now(),
+      target: { kind: target.kind, id: target.id },
+    };
+    activePurchaseRef.current = operation;
+    logCommerceDiagnostic('store.request-started', {
+      connected,
+      operationId: operation.operationId,
+      productId,
+      targetId: target.id,
+      targetKind: target.kind,
+    });
     setTargetState(target, { status: 'purchasing', localizedPrice: prices.get(productId) ?? '' });
+    setTimeout(() => {
+      if (activePurchaseRef.current?.operationId !== operation.operationId) return;
+      setTargetState(target, {
+        status: 'purchasing',
+        localizedPrice: prices.get(productId) ?? '',
+        waitingForStore: true,
+      });
+      logCommerceDiagnostic('store.prompt-delayed', {
+        elapsedMs: Date.now() - operation.startedAt,
+        operationId: operation.operationId,
+        productId,
+      }, 'warn');
+    }, STORE_PROMPT_DELAY_NOTICE_MS);
     try {
       await requestPurchase({
         request: { apple: { sku: productId, appAccountToken: identity.appAccountToken } },
         type: 'in-app',
       });
-    } catch {
+      logCommerceDiagnostic('store.request-returned', {
+        elapsedMs: Date.now() - operation.startedAt,
+        operationId: operation.operationId,
+        productId,
+      });
+    } catch (error) {
+      logCommerceDiagnostic('store.request-rejected', {
+        elapsedMs: Date.now() - operation.startedAt,
+        error: describeCommerceError(error),
+        operationId: operation.operationId,
+        productId,
+      }, 'warn');
+      if (activePurchaseRef.current?.operationId === operation.operationId) {
+        activePurchaseRef.current = null;
+      }
       setTargetState(target);
     }
-  }, [identity, prices, requestPurchase, setTargetState, targetProductId]);
+  }, [connected, identity, prices, requestPurchase, setTargetState, targetProductId]);
 
   const restorePurchases = useCallback(async () => {
     if (restoreInFlight.current) return;
@@ -572,6 +784,10 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   ]);
 
   return <CommerceProvider adapter={adapter}>{children}</CommerceProvider>;
+}
+
+function createCommerceOperationId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function purchaseFailureMessage(error: unknown) {

@@ -13,7 +13,7 @@ export type CommerceProductState =
   | { status: 'unavailable'; reason: 'not_configured' | 'store_unavailable' }
   | { status: 'offline'; lastKnownPrice?: string }
   | { status: 'available'; localizedPrice: string }
-  | { status: 'purchasing'; localizedPrice: string }
+  | { status: 'purchasing'; localizedPrice: string; waitingForStore?: boolean }
   | { status: 'pending' }
   | { status: 'verifying' }
   | { status: 'preparing'; progress?: number }
@@ -123,9 +123,11 @@ export function commercePresentation(
       return {
         action: 'none',
         busy: true,
-        buttonLabel: 'PURCHASING…',
-        copy: 'Finish or cancel the purchase in the App Store prompt.',
-        title: 'Purchase in progress',
+        buttonLabel: state.waitingForStore ? 'WAITING FOR APP STORE…' : 'PURCHASING…',
+        copy: state.waitingForStore
+          ? 'The App Store is taking longer than usual. Keep this screen open; the purchase prompt may still appear.'
+          : 'Finish or cancel the purchase in the App Store prompt.',
+        title: state.waitingForStore ? 'Waiting for the App Store' : 'Purchase in progress',
         tone: 'primary',
       };
     case 'pending':

@@ -6,6 +6,11 @@ export const commerceStateFixtures = {
   offline: { status: 'offline', lastKnownPrice: '$2.99' },
   available: { status: 'available', localizedPrice: '$2.99' },
   purchasing: { status: 'purchasing', localizedPrice: '$2.99' },
+  waitingForStore: {
+    status: 'purchasing',
+    localizedPrice: '$2.99',
+    waitingForStore: true,
+  },
   pending: { status: 'pending' },
   verifying: { status: 'verifying' },
   preparing: { status: 'preparing', progress: 0.42 },

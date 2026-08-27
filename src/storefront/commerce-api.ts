@@ -6,7 +6,10 @@ import {
 } from '@/catalog/catalog-feature';
 
 import { applePurchaseRequiresRestore } from './apple-purchase-verification';
+import { describeCommerceError, logCommerceDiagnostic } from './commerce-diagnostics';
 import type { InstallationIdentity } from './installation-identity';
+
+const COMMERCE_REQUEST_TIMEOUT_MS = 45_000;
 
 export type CommerceEntitlements = {
   installationId: string;
@@ -120,15 +123,52 @@ function verifyAppleTransaction(
 }
 
 async function apiRequest<T = unknown>(baseUrl: string, path: string, init: RequestInit) {
+  const requestId = createRequestId();
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), COMMERCE_REQUEST_TIMEOUT_MS);
+  logCommerceDiagnostic('api.request-started', {
+    method: init.method ?? 'GET',
+    path,
+    requestId,
+  });
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
       ...init,
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...objectHeaders(init.headers) },
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Whatzit-Request-Id': requestId,
+        ...objectHeaders(init.headers),
+      },
+      signal: controller.signal,
     });
-  } catch {
-    throw new CommerceApiError('network_error', 0, 'The purchase server could not be reached.');
+  } catch (error) {
+    const timedOut = controller.signal.aborted;
+    logCommerceDiagnostic('api.request-failed', {
+      durationMs: Date.now() - startedAt,
+      error: describeCommerceError(error),
+      path,
+      requestId,
+      timedOut,
+    }, 'warn');
+    throw new CommerceApiError(
+      timedOut ? 'request_timeout' : 'network_error',
+      0,
+      timedOut
+        ? 'The purchase server took too long to respond.'
+        : 'The purchase server could not be reached.',
+    );
+  } finally {
+    clearTimeout(timeout);
   }
+  logCommerceDiagnostic('api.response-received', {
+    durationMs: Date.now() - startedAt,
+    path,
+    requestId,
+    status: response.status,
+  }, response.ok ? 'info' : 'warn');
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const error = body && typeof body === 'object' ? (body as { error?: { code?: unknown; message?: unknown } }).error : undefined;
@@ -140,6 +180,10 @@ async function apiRequest<T = unknown>(baseUrl: string, path: string, init: Requ
   }
   const data = body && typeof body === 'object' ? (body as { data?: unknown }).data : undefined;
   return data as T;
+}
+
+function createRequestId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function validApiBase(value: string) {

@@ -37,6 +37,7 @@ import {
   buildCatalogSupportDiagnosticsText,
   buildCatalogSupportFallbackEmailUrl,
 } from '@/catalog/catalog-support-diagnostics';
+import { buildFlightRecorderTraceText } from '@/utils/flight-recorder';
 import {
   DECK_LIBRARY_SORTS,
   DEFAULT_DECK_LIBRARY_SORT,
@@ -496,7 +497,15 @@ export default function DeckLibraryScreen() {
             'whatz-it-support-diagnostics.txt',
           );
           diagnosticsFile.create({ intermediates: true, overwrite: true });
-          diagnosticsFile.write(supportDiagnosticsText);
+          diagnosticsFile.write([
+            supportDiagnosticsText,
+            '',
+            'Recent commerce timeline (no credentials or signed transactions)',
+            buildFlightRecorderTraceText('commerce.'),
+            '',
+            'Recent app lifecycle timeline',
+            buildFlightRecorderTraceText('lifecycle.', 20),
+          ].join('\n'));
 
           await MailComposer.composeAsync({
             recipients: [SUPPORT_EMAIL],

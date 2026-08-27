@@ -128,6 +128,23 @@ export function flushFlightRecorder() {
   persistState();
 }
 
+export function buildFlightRecorderTraceText(stagePrefix: string, limit = 60) {
+  ensureInitialized();
+  const currentEntries = recorderState?.entries ?? [];
+  const previousEntries = recorderState?.lastUnexpectedExit?.entries ?? [];
+  const entries = [...previousEntries, ...currentEntries]
+    .filter((entry) => entry.stage.startsWith(stagePrefix))
+    .slice(-Math.max(0, limit));
+
+  if (entries.length === 0) return 'No recent commerce events recorded.';
+  return entries.map((entry) => {
+    const details = entry.details && Object.keys(entry.details).length > 0
+      ? ` ${JSON.stringify(entry.details)}`
+      : '';
+    return `${entry.at} ${entry.level.toUpperCase()} ${entry.stage}${details}`;
+  }).join('\n');
+}
+
 function ensureInitialized() {
   if (initialized) return;
   initialized = true;
