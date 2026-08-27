@@ -117,6 +117,11 @@ private final class LiveVideoWriter {
     writer.cancelWriting()
   }
 
+  func flushPixelBufferPool() {
+    guard let pool = adaptor.pixelBufferPool else { return }
+    CVPixelBufferPoolFlush(pool, .excessBuffers)
+  }
+
   private static func makeError(_ message: String) -> Error {
     NSError(
       domain: "WhatzItLiveOverlay",
@@ -480,6 +485,13 @@ final class HybridLiveOverlayOutput: HybridCameraOutputSpec, NativeCameraOutput 
         try? FileManager.default.removeItem(at: brandedVideoWriter.url)
       }
     }
+    // The camera output intentionally remains mounted while inactive to avoid
+    // tearing down VisionCamera's session during AVFoundation output cleanup.
+    // Explicitly discard the two writer pools and Core Image caches here so
+    // results playback does not overlap with a round's retained GPU buffers.
+    cleanVideoWriter?.flushPixelBufferPool()
+    brandedVideoWriter?.flushPixelBufferPool()
+    ciContext.clearCaches()
     cleanVideoWriter = nil
     brandedVideoWriter = nil
     renderer = nil
