@@ -67,6 +67,7 @@ export class EntitledDeckPreparationQueue<Context> {
     entitlements: PreparationEntitlements,
     context: Context,
   ) {
+    const entitledDeckIds = [...new Set(entitlements.deckIds)];
     const directlyOwnedDecks = new Set(
       entitlements.products
         .filter((product) => product.kind === 'deck')
@@ -74,7 +75,7 @@ export class EntitledDeckPreparationQueue<Context> {
     );
     const failures: EntitledDeckPreparationFailure[] = [];
 
-    for (const deckId of new Set(entitlements.deckIds)) {
+    for (const deckId of entitledDeckIds) {
       try {
         await this.install(
           deckId,
@@ -86,7 +87,7 @@ export class EntitledDeckPreparationQueue<Context> {
       }
     }
 
-    await this.refreshCatalog();
+    if (entitledDeckIds.length > 0) await this.refreshCatalog();
     if (failures.length > 0) throw new EntitledDeckPreparationError(failures);
   }
 }

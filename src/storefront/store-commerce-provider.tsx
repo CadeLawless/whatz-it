@@ -33,6 +33,10 @@ import { EntitledDeckPreparationQueue } from './entitled-deck-preparation';
 import { resetLocalPaidOwnership } from './commerce-testing';
 import { describeCommerceError, logCommerceDiagnostic } from './commerce-diagnostics';
 import {
+  commerceProductFingerprint,
+  commerceProductIndexFromFingerprint,
+} from './commerce-product-index';
+import {
   loadOrCreateInstallationIdentity,
   resetInstallationIdentity,
   type InstallationIdentity,
@@ -70,18 +74,11 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const storeProductRefreshRef = useRef<Promise<void> | null>(null);
   const activePurchaseRef = useRef<ActivePurchase | null>(null);
 
-  const appleProducts = useMemo(() => {
-    const result = new Map<string, { kind: 'deck' | 'bundle'; id: string }>();
-    for (const deck of catalog.decks) {
-      const id = deck.storeProducts?.apple?.productId;
-      if (id) result.set(id, { kind: 'deck', id: deck.id });
-    }
-    for (const bundle of catalog.bundles) {
-      const id = bundle.storeProducts?.apple?.productId;
-      if (id) result.set(id, { kind: 'bundle', id: bundle.id });
-    }
-    return result;
-  }, [catalog]);
+  const appleProductFingerprint = commerceProductFingerprint(catalog);
+  const appleProducts = useMemo(
+    () => commerceProductIndexFromFingerprint(appleProductFingerprint),
+    [appleProductFingerprint],
+  );
 
   const setTargetState = useCallback((target: { kind: string; id: string }, state?: CommerceProductState) => {
     const key = `${target.kind}:${target.id}`;

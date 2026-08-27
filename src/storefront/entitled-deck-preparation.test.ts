@@ -8,6 +8,19 @@ import {
 } from './entitled-deck-preparation';
 
 describe('entitled deck preparation queue', () => {
+  it('does not reload the catalog for an empty entitlement set', async () => {
+    let refreshes = 0;
+    const queue = new EntitledDeckPreparationQueue(
+      async () => undefined,
+      async () => {
+        refreshes += 1;
+      },
+    );
+
+    await queue.prepare('installation-1', fixtureEntitlements([]), undefined);
+    assert.equal(refreshes, 0);
+  });
+
   it('deduplicates an identical entitlement batch already in flight', async () => {
     const calls: string[] = [];
     let releaseFirst!: () => void;
