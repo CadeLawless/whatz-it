@@ -28,7 +28,10 @@ import {
   type CommerceTarget,
 } from './commerce-state';
 import { installEntitledDeck } from './entitled-deck-installer';
-import { EntitledDeckPreparationQueue } from './entitled-deck-preparation';
+import {
+  EntitledDeckPreparationError,
+  EntitledDeckPreparationQueue,
+} from './entitled-deck-preparation';
 import { resetLocalPaidOwnership } from './commerce-testing';
 import { describeCommerceError, logCommerceDiagnostic } from './commerce-diagnostics';
 import {
@@ -55,7 +58,11 @@ type ActivePurchase = {
 };
 
 export function StoreCommerceProvider({ children }: PropsWithChildren) {
-  const { catalog, refreshCatalog } = useCatalog();
+  const catalogState = useCatalog();
+  const { catalog, refreshCatalog } = catalogState;
+  const catalogSyncStatus = catalogState.status === 'ready'
+    ? catalogState.syncStatus
+    : null;
   const apiBaseUrl = configuredCommerceApiBaseUrl();
   const [identity, setIdentity] = useState<InstallationIdentity | null>(null);
   const [ownedProducts, setOwnedProducts] = useState<OwnedProduct[]>([]);
@@ -140,15 +147,31 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   ) => {
     if (!apiBaseUrl) return;
     const database = await openCatalogDatabase();
-    await preparationQueue.prepare(
-      currentIdentity.installationId,
-      entitlements,
-      { database, identity: currentIdentity },
-    );
+    try {
+      await preparationQueue.prepare(
+        currentIdentity.installationId,
+        entitlements,
+        { database, identity: currentIdentity },
+      );
+    } catch (error) {
+      if (error instanceof EntitledDeckPreparationError) {
+        logCommerceDiagnostic('entitled-deck-preparation-failed', {
+          failures: error.failures.map((failure) => ({
+            deckId: failure.deckId,
+            error: describeCommerceError(failure.error),
+          })),
+        }, 'warn');
+      }
+      throw error;
+    }
   }, [apiBaseUrl, preparationQueue]);
 
   const refreshCommerceConnection = useCallback(() => {
     if (!apiBaseUrl || Platform.OS !== 'ios') return Promise.resolve(false);
+    if (catalogSyncStatus === 'syncing') {
+      logCommerceDiagnostic('server-refresh-deferred-for-catalog-sync');
+      return Promise.resolve(false);
+    }
     if (connectionRefreshRef.current) return connectionRefreshRef.current;
 
     const startedAt = Date.now();
@@ -184,7 +207,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
 
     connectionRefreshRef.current = request;
     return request;
-  }, [apiBaseUrl, persistEntitlements, prepareEntitledDecks]);
+  }, [apiBaseUrl, catalogSyncStatus, persistEntitlements, prepareEntitledDecks]);
 
   const processPurchaseRef = useRef<(purchase: Purchase) => Promise<void>>(async () => {});
   const iap = useIAP({
@@ -617,18 +640,25 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     });
     setRestoreState({ status: 'restoring' });
     try {
-      await restoreStorePurchases({ alsoPublishToEventListenerIOS: false });
-      logCommerceDiagnostic('restore.store-sync-completed', {
-        elapsedMs: Date.now() - startedAt,
-      });
-      const purchases = await getAvailablePurchases({
-        alsoPublishToEventListenerIOS: false,
-        onlyIncludeActiveItemsIOS: true,
-      });
-      logCommerceDiagnostic('restore.purchase-snapshot-received', {
-        elapsedMs: Date.now() - startedAt,
-        purchaseCount: purchases.length,
-      });
+      let purchases: Purchase[] = [];
+      if (ownedBeforeRestore.size > 0) {
+        logCommerceDiagnostic('restore.known-entitlements-repair-started', {
+          productCount: ownedBeforeRestore.size,
+        });
+      } else {
+        await restoreStorePurchases({ alsoPublishToEventListenerIOS: false });
+        logCommerceDiagnostic('restore.store-sync-completed', {
+          elapsedMs: Date.now() - startedAt,
+        });
+        purchases = await getAvailablePurchases({
+          alsoPublishToEventListenerIOS: false,
+          onlyIncludeActiveItemsIOS: true,
+        });
+        logCommerceDiagnostic('restore.purchase-snapshot-received', {
+          elapsedMs: Date.now() - startedAt,
+          purchaseCount: purchases.length,
+        });
+      }
       const result = await reconcileApplePurchases({
         purchases,
         knownProductIds: new Set(appleProducts.keys()),
@@ -661,6 +691,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       logCommerceDiagnostic('restore.completed', {
         elapsedMs: Date.now() - startedAt,
         finishFailureCount: result.finishFailureCount,
+        repairedKnownEntitlements: ownedBeforeRestore.size > 0,
         newlyRestoredProductCount,
         restoredProductCount: result.entitlements.products.length,
         verifiedTransactionCount: result.verifiedTransactionCount,
