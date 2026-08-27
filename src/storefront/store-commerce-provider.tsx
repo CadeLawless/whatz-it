@@ -1,6 +1,5 @@
 import NetInfo from '@react-native-community/netinfo';
-import type { Purchase } from 'expo-iap';
-import { useIAP } from 'expo-iap';
+import { getAvailablePurchases, type Purchase, useIAP } from 'expo-iap';
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 
@@ -69,7 +68,6 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const processedTransactions = useRef(new Set<string>());
   const failedPurchases = useRef(new Map<string, Purchase>());
   const restoreInFlight = useRef(false);
-  const restoreSnapshotPending = useRef(false);
   const connectionRefreshRef = useRef<Promise<boolean> | null>(null);
   const storeProductRefreshRef = useRef<Promise<void> | null>(null);
   const activePurchaseRef = useRef<ActivePurchase | null>(null);
@@ -202,6 +200,12 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
         purchaseState: purchase.purchaseState,
         tokenPresent: Boolean(purchase.purchaseToken),
       });
+      if (restoreInFlight.current) {
+        logCommerceDiagnostic('restore.purchase-callback-deferred', {
+          productId: purchase.productId,
+        });
+        return;
+      }
       void processPurchaseRef.current(purchase);
     },
     onPurchaseError: (error) => {
@@ -231,7 +235,6 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   });
 
   const {
-    availablePurchases,
     connected,
     fetchProducts,
     finishTransaction,
@@ -607,67 +610,83 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     }
 
     restoreInFlight.current = true;
-    restoreSnapshotPending.current = true;
+    const ownedBeforeRestore = new Set(ownedProducts.map((product) => product.productId));
+    const startedAt = Date.now();
+    logCommerceDiagnostic('restore.started', {
+      ownedProductCount: ownedBeforeRestore.size,
+    });
     setRestoreState({ status: 'restoring' });
     try {
       await restoreStorePurchases({ alsoPublishToEventListenerIOS: false });
-    } catch {
-      restoreInFlight.current = false;
-      restoreSnapshotPending.current = false;
+      logCommerceDiagnostic('restore.store-sync-completed', {
+        elapsedMs: Date.now() - startedAt,
+      });
+      const purchases = await getAvailablePurchases({
+        alsoPublishToEventListenerIOS: false,
+        onlyIncludeActiveItemsIOS: true,
+      });
+      logCommerceDiagnostic('restore.purchase-snapshot-received', {
+        elapsedMs: Date.now() - startedAt,
+        purchaseCount: purchases.length,
+      });
+      const result = await reconcileApplePurchases({
+        purchases,
+        knownProductIds: new Set(appleProducts.keys()),
+        verify: (signedTransaction) =>
+          verifyApplePurchase(apiBaseUrl, identity, signedTransaction, 'restore'),
+        finish: (purchase) => finishTransaction({ purchase, isConsumable: false }),
+        fetchEntitlements: () => fetchEntitlements(apiBaseUrl, identity),
+        persistEntitlements,
+        prepareEntitledDecks: (entitlements) =>
+          prepareEntitledDecks(entitlements, identity),
+      });
+      for (const purchase of purchases) {
+        if (
+          purchase.purchaseState === 'purchased'
+          && purchase.purchaseToken
+          && appleProducts.has(purchase.productId)
+        ) {
+          processedTransactions.current.add(purchase.transactionId ?? purchase.id);
+        }
+      }
+      const newlyRestoredProductCount = result.entitlements.products.filter(
+        (product) => !ownedBeforeRestore.has(product.productId),
+      ).length;
+      setServerReachable(true);
+      setRestoreState({
+        status: 'success',
+        newlyRestoredProductCount,
+        restoredProductCount: result.entitlements.products.length,
+      });
+      logCommerceDiagnostic('restore.completed', {
+        elapsedMs: Date.now() - startedAt,
+        finishFailureCount: result.finishFailureCount,
+        newlyRestoredProductCount,
+        restoredProductCount: result.entitlements.products.length,
+        verifiedTransactionCount: result.verifiedTransactionCount,
+      });
+    } catch (error) {
+      logCommerceDiagnostic('restore.failed', {
+        elapsedMs: Date.now() - startedAt,
+        error: describeCommerceError(error),
+      }, 'warn');
       setRestoreState({
         status: 'error',
-        message: 'Purchases could not be restored. Check your connection and try again.',
+        message: 'Your purchases are safe, but restoration could not finish. Please try again.',
       });
+    } finally {
+      restoreInFlight.current = false;
     }
-  }, [apiBaseUrl, connected, identity, restoreStorePurchases]);
-
-  useEffect(() => {
-    if (!restoreSnapshotPending.current || !identity || !apiBaseUrl) return;
-    restoreSnapshotPending.current = false;
-
-    void reconcileApplePurchases({
-      purchases: availablePurchases,
-      knownProductIds: new Set(appleProducts.keys()),
-      verify: (signedTransaction) =>
-        verifyApplePurchase(apiBaseUrl, identity, signedTransaction, 'restore'),
-      finish: (purchase) => finishTransaction({ purchase, isConsumable: false }),
-      fetchEntitlements: () => fetchEntitlements(apiBaseUrl, identity),
-      persistEntitlements,
-      prepareEntitledDecks: (entitlements) =>
-        prepareEntitledDecks(entitlements, identity),
-    })
-      .then((result) => {
-        for (const purchase of availablePurchases) {
-          if (
-            purchase.purchaseState === 'purchased'
-            && purchase.purchaseToken
-            && appleProducts.has(purchase.productId)
-          ) {
-            processedTransactions.current.add(purchase.transactionId ?? purchase.id);
-          }
-        }
-        restoreInFlight.current = false;
-        setServerReachable(true);
-        setRestoreState({
-          status: 'success',
-          restoredProductCount: result.entitlements.products.length,
-        });
-      })
-      .catch(() => {
-        restoreInFlight.current = false;
-        setRestoreState({
-          status: 'error',
-          message: 'Your purchases are safe, but restoration could not finish. Please try again.',
-        });
-      });
   }, [
     apiBaseUrl,
     appleProducts,
-    availablePurchases,
+    connected,
     finishTransaction,
     identity,
+    ownedProducts,
     persistEntitlements,
     prepareEntitledDecks,
+    restoreStorePurchases,
   ]);
 
   const retryPreparation = useCallback(async (target: CommerceTarget) => {

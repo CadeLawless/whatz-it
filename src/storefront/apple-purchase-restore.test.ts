@@ -66,6 +66,7 @@ describe('Apple purchase restoration', () => {
     });
 
     assert.equal(result.verifiedTransactionCount, 1);
+    assert.equal(result.finishFailureCount, 0);
     assert.equal(result.entitlements, entitlements);
     assert.deepEqual(calls, [
       'verify:signed-transaction-1',
@@ -97,6 +98,32 @@ describe('Apple purchase restoration', () => {
     });
 
     assert.equal(result.verifiedTransactionCount, 0);
+    assert.equal(result.finishFailureCount, 0);
+    assert.deepEqual(calls, ['persist-entitlements', 'prepare-decks']);
+  });
+
+  it('keeps verified restoration successful when StoreKit acknowledgement is already complete', async () => {
+    const calls: string[] = [];
+    const result = await reconcileApplePurchases({
+      purchases: [purchase()],
+      knownProductIds: new Set([
+        'com.cadelawless.whatzit.deck.worship_icons',
+      ]),
+      verify: async () => entitlements,
+      finish: async () => {
+        throw new Error('Transaction already finished.');
+      },
+      fetchEntitlements: async () => entitlements,
+      persistEntitlements: async () => {
+        calls.push('persist-entitlements');
+      },
+      prepareEntitledDecks: async () => {
+        calls.push('prepare-decks');
+      },
+    });
+
+    assert.equal(result.verifiedTransactionCount, 1);
+    assert.equal(result.finishFailureCount, 1);
     assert.deepEqual(calls, ['persist-entitlements', 'prepare-decks']);
   });
 });

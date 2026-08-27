@@ -31,6 +31,7 @@ import {
   useCommerceTesting,
   useRestorePurchases,
 } from '@/storefront/commerce-provider';
+import { successfulRestoreNotice } from '@/storefront/restore-purchases-notice';
 
 const PAGE_SIZE = 24;
 
@@ -157,14 +158,7 @@ export const StorefrontExplore = forwardRef<
 
     if (restore.state.status === 'success') {
       restoreNoticePending.current = false;
-      onRestoreNotice?.({
-        title: restore.state.restoredProductCount > 0
-          ? 'Purchases restored'
-          : 'No purchases found',
-        message: restore.state.restoredProductCount > 0
-          ? 'Your purchases are restored and available decks are ready offline.'
-          : 'No previous purchases were found for this Apple Account.',
-      });
+      onRestoreNotice?.(successfulRestoreNotice(restore.state));
     } else if (restore.state.status === 'error') {
       restoreNoticePending.current = false;
       onRestoreNotice?.({

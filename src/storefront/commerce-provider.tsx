@@ -32,7 +32,11 @@ export type CommerceTestingAdapter = {
 export type CommerceRestoreState =
   | { status: 'idle' }
   | { status: 'restoring' }
-  | { status: 'success'; restoredProductCount: number }
+  | {
+      status: 'success';
+      newlyRestoredProductCount: number;
+      restoredProductCount: number;
+    }
   | { status: 'error'; message: string };
 
 const fallbackAdapter: CommerceAdapter = {

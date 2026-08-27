@@ -4,6 +4,7 @@ import type { CommerceEntitlements } from './commerce-api';
 
 export type AppleRestoreResult = {
   entitlements: CommerceEntitlements;
+  finishFailureCount: number;
   verifiedTransactionCount: number;
 };
 
@@ -25,6 +26,7 @@ export async function reconcileApplePurchases({
   prepareEntitledDecks: (entitlements: CommerceEntitlements) => Promise<void>;
 }): Promise<AppleRestoreResult> {
   const processedTransactions = new Set<string>();
+  let finishFailureCount = 0;
   let verifiedTransactionCount = 0;
 
   for (const purchase of purchases) {
@@ -40,7 +42,13 @@ export async function reconcileApplePurchases({
 
     processedTransactions.add(transactionKey);
     await verify(purchase.purchaseToken);
-    await finish(purchase);
+    try {
+      await finish(purchase);
+    } catch {
+      // Ownership has already been verified. A future app session can retry
+      // acknowledgement without turning a valid restore into failure.
+      finishFailureCount += 1;
+    }
     verifiedTransactionCount += 1;
   }
 
@@ -48,5 +56,5 @@ export async function reconcileApplePurchases({
   await persistEntitlements(entitlements);
   await prepareEntitledDecks(entitlements);
 
-  return { entitlements, verifiedTransactionCount };
+  return { entitlements, finishFailureCount, verifiedTransactionCount };
 }
