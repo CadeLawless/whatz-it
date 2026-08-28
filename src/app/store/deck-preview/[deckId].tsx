@@ -291,6 +291,7 @@ export default function DeckPreviewSheet() {
                     }
                     onPurchase={deckCommerce.purchase}
                     onRetry={deckCommerce.retry}
+                    purchaseLabel="BUY DECK"
                     showTargetTitle
                     state={deckCommerce.state}
                     target={deckCommerceTarget}
@@ -305,6 +306,7 @@ export default function DeckPreviewSheet() {
                       }
                       onPurchase={bundleCommerce.purchase}
                       onRetry={bundleCommerce.retry}
+                      purchaseLabel="BUY BUNDLE"
                       showTargetTitle
                       state={bundleCommerce.state}
                       target={bundleCommerceTarget}

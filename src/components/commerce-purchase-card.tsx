@@ -18,6 +18,7 @@ type CommercePurchaseCardProps = {
   onOwned?: () => void;
   onPurchase?: () => void;
   onRetry?: () => void;
+  purchaseLabel?: string;
   state: CommerceProductState;
   showTargetTitle?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -28,6 +29,7 @@ export function CommercePurchaseCard({
   onOwned,
   onPurchase,
   onRetry,
+  purchaseLabel,
   state,
   showTargetTitle = false,
   style,
@@ -48,6 +50,8 @@ export function CommercePurchaseCard({
       ? target.kind === 'deck'
         ? 'PLAY DECK'
         : 'VIEW BUNDLE'
+      : presentation.action === 'purchase' && purchaseLabel
+        ? purchaseLabel
       : presentation.buttonLabel;
   const accessibilityLabel = showTargetTitle
     ? `${buttonLabel}, ${target.title}`
@@ -102,14 +106,15 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.72 },
   buttonText: {
     color: colors.white,
-    fontSize: 12,
+    fontSize: 15,
+    lineHeight: 18,
     fontWeight: '900',
     letterSpacing: 0.8,
   },
   targetTitle: {
     maxWidth: '90%',
     color: colors.white,
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 16,
     fontWeight: '600',
   },
