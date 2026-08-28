@@ -281,7 +281,7 @@ export default function DeckPreviewSheet() {
                   <View style={styles.purchaseArea}>
                     <CommercePurchaseCard
                       onOwned={() =>
-                        router.push({
+                        router.dismissTo({
                           pathname: '/deck/[deckId]',
                           params: { deckId: deck.id, transition: 'apple-slide' },
                         })
@@ -291,7 +291,7 @@ export default function DeckPreviewSheet() {
                       state={deckCommerce.state}
                       target={deckCommerceTarget}
                     />
-                    {bundle && (
+                    {bundle && bundleCommerce.state.status !== 'owned' && (
                       <CommercePurchaseCard
                         onOwned={() =>
                           router.replace({
