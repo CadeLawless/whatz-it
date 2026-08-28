@@ -1,6 +1,6 @@
-import { Image } from 'expo-image';
 import Constants from 'expo-constants';
 import { File, Paths } from 'expo-file-system';
+import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
 import * as MailComposer from 'expo-mail-composer';
 import { useFocusEffect } from 'expo-router';
@@ -13,10 +13,10 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
   useWindowDimensions,
-  View
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent
 } from 'react-native';
 import Animated, {
   Easing,
@@ -27,17 +27,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useCatalog } from '@/catalog/catalog-provider';
 import {
   configuredCatalogManifestUrl,
   configuredCatalogSource,
 } from '@/catalog/catalog-feature';
+import { useCatalog } from '@/catalog/catalog-provider';
 import { catalogRolloutSelectedDetails } from '@/catalog/catalog-rollout-observability';
 import {
   buildCatalogSupportDiagnosticsText,
   buildCatalogSupportFallbackEmailUrl,
 } from '@/catalog/catalog-support-diagnostics';
-import { buildFlightRecorderTraceText } from '@/utils/flight-recorder';
 import {
   DECK_LIBRARY_SORTS,
   DEFAULT_DECK_LIBRARY_SORT,
@@ -60,6 +59,7 @@ import {
   loadDeckPlayHistory,
   saveDeckLibrarySort,
 } from '@/storage/deck-library-preferences';
+import { buildFlightRecorderTraceText } from '@/utils/flight-recorder';
 import {
   getLoadedHomeBranding,
   HOME_BRANDING_SOURCES,
@@ -1389,7 +1389,7 @@ function HomeModeControl({
       />
       <HomeModeTab
         active={mode === 'my-decks'}
-        label="MY DECKS"
+        label="PLAY"
         onPress={() => onChange('my-decks')}
       />
       <HomeModeTab

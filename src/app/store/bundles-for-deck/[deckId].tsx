@@ -106,7 +106,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-    paddingRight: spacing.lg + 52,
     paddingBottom: spacing.md,
     zIndex: 10,
     elevation: 10,
@@ -114,9 +113,7 @@ const styles = StyleSheet.create({
   },
   headerCopy: { flex: 1, gap: 3 },
   closeButton: {
-    position: 'absolute',
-    top: spacing.lg,
-    right: spacing.lg,
+    position: 'relative',
   },
   title: { color: colors.ink, fontSize: 28, fontWeight: '900' },
   subtitle: { color: colors.muted, fontSize: 14, lineHeight: 19 },
