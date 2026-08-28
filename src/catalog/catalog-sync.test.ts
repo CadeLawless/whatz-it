@@ -375,6 +375,48 @@ describe('Phase 3 catalog acceptance', () => {
     }
   });
 
+  it('allows a newer preview snapshot to replace higher local draft versions', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(synchronizedRevision);
+      fixture.manifest.decks = [fixture.manifest.decks[0]];
+      fixture.manifest.deckOrders.paid = [];
+      const runtime = acceptanceRuntime(fixture, storedFiles);
+
+      await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        developmentPreview: true,
+        downloadRuntime: runtime,
+      });
+
+      const previousDeckVersion = fixture.manifest.decks[0].deckVersion;
+      harness.database.prepare(
+        "UPDATE decks SET deck_version = ? WHERE deck_id = 'celebrity-shuffle'",
+      ).run(previousDeckVersion + 1);
+      fixture.manifest.catalogRevision += 1;
+      fixture.manifest.updatedAt = '2026-08-13T22:05:00Z';
+
+      const result = await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        developmentPreview: true,
+        downloadRuntime: runtime,
+      });
+
+      assert.equal(result.status, 'updated');
+      assert.equal(
+        harness.database.prepare(
+          "SELECT deck_version FROM decks WHERE deck_id = 'celebrity-shuffle'",
+        ).get()?.deck_version,
+        previousDeckVersion,
+      );
+      assert.equal(stateRevision(harness.database), synchronizedRevision + 1);
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('keeps the last-known-good catalog when the server requires a newer app', async () => {
     const harness = createDatabaseHarness();
     const storedFiles = new Map<string, Uint8Array>();

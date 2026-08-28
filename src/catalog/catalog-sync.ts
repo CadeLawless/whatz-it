@@ -140,12 +140,14 @@ export async function synchronizeCatalog(
       'SELECT bundle_id, bundle_version FROM bundles',
     ),
   ]);
-  try {
-    assertMonotonicVersions(manifest, localDecks, localBundles);
-  } catch (error) {
-    throw new CatalogSyncError('stale_manifest', 'The manifest regresses a published version.', {
-      cause: error,
-    });
+  if (!options.developmentPreview) {
+    try {
+      assertMonotonicVersions(manifest, localDecks, localBundles);
+    } catch (error) {
+      throw new CatalogSyncError('stale_manifest', 'The manifest regresses a published version.', {
+        cause: error,
+      });
+    }
   }
 
   const installations = await database.getAllAsync<Installation>(

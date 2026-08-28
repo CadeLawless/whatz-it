@@ -61,7 +61,7 @@ export function CatalogProvider({ children }: PropsWithChildren) {
   );
   const reportSyncError = useCallback((error: Error) => {
     setState((current) =>
-      current && current.status !== 'loading'
+      current
         ? {
             status: 'ready',
             catalog: current.catalog,
@@ -141,11 +141,13 @@ export function CatalogProvider({ children }: PropsWithChildren) {
           ),
         );
         if (!cancelled) {
-          setState({
-            status: 'ready',
-            catalog,
-            syncStatus: manifestUrl ? 'syncing' : 'disabled',
-          });
+          setState(developmentPreview && manifestUrl
+            ? { status: 'loading', catalog }
+            : {
+                status: 'ready',
+                catalog,
+                syncStatus: manifestUrl ? 'syncing' : 'disabled',
+              });
         }
         if (!manifestUrl) return;
         const sync = async (force = false) => {
@@ -178,27 +180,10 @@ export function CatalogProvider({ children }: PropsWithChildren) {
               signal: abortController.signal,
               developmentPreview,
               downloadRuntime: developmentPreviewKey
-                ? {
-                    request: async (url, init) => {
-                      const { fetch } = await import('expo/fetch');
-                      const headers = new Headers(init.headers);
-                      headers.set('X-Whatzit-Dev-Preview-Key', developmentPreviewKey);
-                      if (url === manifestUrl) {
-                        headers.set('Cache-Control', 'no-cache');
-                        headers.set('Pragma', 'no-cache');
-                        const previewManifestUrl = new URL(url);
-                        previewManifestUrl.searchParams.set(
-                          'previewRequest',
-                          String(Date.now()),
-                        );
-                        return fetch(previewManifestUrl.toString(), {
-                          ...init,
-                          headers,
-                        });
-                      }
-                      return fetch(url, { ...init, headers });
-                    },
-                  }
+                ? developmentPreviewDownloadRuntime(
+                    manifestUrl,
+                    developmentPreviewKey,
+                  )
                 : undefined,
             });
             if (cancelled) return;
@@ -269,7 +254,11 @@ export function CatalogProvider({ children }: PropsWithChildren) {
         appStateSubscription = AppState.addEventListener('change', (nextState) => {
           if (nextState === 'active') void sync();
         });
-        void sync(true);
+        // Preview is an authoring tool: a reload must not render a known-stale
+        // snapshot and hope that a detached background task replaces it later.
+        // Wait for the cache-busted manifest check before exposing the catalog.
+        if (developmentPreview) await sync(true);
+        else void sync(true);
       })
       .catch((cause: unknown) => {
         const error = cause instanceof Error ? cause : new Error(String(cause));
@@ -296,6 +285,33 @@ export function CatalogProvider({ children }: PropsWithChildren) {
   );
   if (!value) return null;
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;
+}
+
+function developmentPreviewDownloadRuntime(
+  manifestUrl: string,
+  developmentPreviewKey: string,
+) {
+  return {
+    request: async (url: string, init: RequestInit) => {
+      const { fetch } = await import('expo/fetch');
+      const headers = new Headers(init.headers);
+      headers.set('X-Whatzit-Dev-Preview-Key', developmentPreviewKey);
+      if (url === manifestUrl) {
+        headers.set('Cache-Control', 'no-cache');
+        headers.set('Pragma', 'no-cache');
+        const previewManifestUrl = new URL(url);
+        previewManifestUrl.searchParams.set(
+          'previewRequest',
+          String(Date.now()),
+        );
+        return fetch(previewManifestUrl.toString(), {
+          ...init,
+          headers,
+        });
+      }
+      return fetch(url, { ...init, headers });
+    },
+  };
 }
 
 export function useCatalog() {
