@@ -19,7 +19,13 @@ const CARD_GAP = 12;
 const PIXELS_PER_SECOND = 34;
 const MINIMUM_FEATURED_CARDS = 3;
 
-export function FeaturedCardsCarousel({ cards }: { cards: Card[] | undefined }) {
+export function FeaturedCardsCarousel({
+  cards,
+  isBundleDeck,
+}: {
+  cards: Card[] | undefined;
+  isBundleDeck: boolean;
+}) {
   const featuredCards = cards ?? [];
   const reduceMotion = useReducedMotion();
   const offset = useSharedValue(0);
@@ -51,7 +57,7 @@ export function FeaturedCardsCarousel({ cards }: { cards: Card[] | undefined }) 
   if (featuredCards.length < MINIMUM_FEATURED_CARDS) return null;
 
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, isBundleDeck && styles.bundleSection]}>
       <Text accessibilityRole="header" style={styles.label}>A PEEK INSIDE</Text>
       {reduceMotion ? (
         <ScrollView
@@ -109,6 +115,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     marginHorizontal: -spacing.lg,
   },
+  bundleSection: {marginHorizontal: 0},
   label: {
     paddingHorizontal: spacing.lg,
     color: colors.play,

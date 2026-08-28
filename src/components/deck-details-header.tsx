@@ -9,19 +9,23 @@ import {
 } from 'react-native';
 
 import type { CatalogDeck } from '@/catalog/catalog-snapshot';
-import { colors, radius, spacing } from '@/theme';
 import { FeaturedCardsCarousel } from '@/components/featured-cards-carousel';
+import { colors, radius, spacing } from '@/theme';
 
 export function DeckDetailsHeader({
   backLabel,
   deck,
   onBack,
   showBackButton = true,
+  showCarousel = true,
+  isBundleDeck = false,
 }: {
   backLabel: string;
   deck: CatalogDeck;
   onBack: () => void;
   showBackButton?: boolean;
+  showCarousel?: boolean;
+  isBundleDeck?: boolean;
 }) {
   const { width } = useWindowDimensions();
   const posterWidth = Math.min(156, Math.max(126, width * 0.36));
@@ -92,7 +96,7 @@ export function DeckDetailsHeader({
           </View>
         </View>
       </View>
-      <FeaturedCardsCarousel cards={deck.featuredCards} />
+      {showCarousel && <FeaturedCardsCarousel cards={deck.featuredCards} isBundleDeck={isBundleDeck} />}
     </>
   );
 }

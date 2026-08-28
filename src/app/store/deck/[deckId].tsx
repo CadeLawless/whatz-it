@@ -13,8 +13,8 @@ import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
-import { colors, radius, spacing, typography } from '@/theme';
 import { useCommerceProduct } from '@/storefront/commerce-provider';
+import { colors, radius, spacing, typography } from '@/theme';
 
 export default function StoreDeckDetailsScreen() {
   const { catalog } = useCatalog();

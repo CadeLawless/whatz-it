@@ -19,11 +19,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import type { PermissionStatus } from 'react-native-vision-camera';
 
-import { PortraitTransition } from '@/components/orientation-transition';
+import { useCatalog } from '@/catalog/catalog-provider';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
+import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { TimerPicker } from '@/components/timer-picker';
-import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import {
   clampRoundDuration,
@@ -257,6 +257,7 @@ export default function DeckDetailsScreen() {
             backLabel="Back to Decks"
             deck={deck}
             onBack={handleBack}
+            showCarousel={false}
           />
 
           <Text style={styles.sectionLabel}>ROUND LENGTH</Text>

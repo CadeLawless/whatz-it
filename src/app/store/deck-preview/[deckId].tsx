@@ -25,8 +25,8 @@ import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
 import { CircularCloseButton } from '@/components/circular-close-button';
 import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
-import { colors, spacing } from '@/theme';
 import { useCommerceProduct } from '@/storefront/commerce-provider';
+import { colors, spacing } from '@/theme';
 
 export default function DeckPreviewSheet() {
   const { catalog } = useCatalog();
@@ -220,6 +220,7 @@ export default function DeckPreviewSheet() {
                             deck={carouselDeck}
                             onBack={() => router.back()}
                             showBackButton={false}
+                            isBundleDeck={true}
                           />
                         </View>
                       ))}
@@ -332,33 +333,29 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     gap: spacing.xl,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
   },
   sheetHeader: {
     minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.lg,
     zIndex: 10,
     elevation: 10,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingRight: spacing.lg + 52,
-    paddingBottom: spacing.md,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
   },
   sheetTitle: {
-    flex: 1,
     color: colors.ink,
     fontSize: 22,
     lineHeight: 26,
     fontWeight: '900',
   },
   closeButton: {
-    position: 'absolute',
-    top: spacing.lg,
-    right: spacing.lg,
+    position: 'relative',
   },
   previewBody: { gap: spacing.xl },
   carouselViewport: { overflow: 'hidden' },
@@ -398,8 +395,8 @@ const styles = StyleSheet.create({
   description: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   purchaseFooter: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
     backgroundColor: colors.surface,
   },
   purchaseArea: { gap: spacing.sm },
