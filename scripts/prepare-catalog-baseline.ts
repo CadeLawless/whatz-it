@@ -32,6 +32,7 @@ type BaselineDeck = {
   version: number;
   cardContentVersion: number;
   cardCount: number;
+  featuredCards: DeckContentArtifact['cards'];
   tags: string[];
   access: 'free' | 'paid';
   price?: number;
@@ -138,6 +139,7 @@ export function buildBaselineCatalog(
         version: deck.deckVersion,
         cardContentVersion: deck.cardContentVersion,
         cardCount: deck.cardCount,
+        featuredCards: (deck.featuredCards ?? []).map((card) => ({ ...card })),
         tags: [...deck.tags],
         access: deck.access,
         ...(deck.price === null ? {} : { price: deck.price }),

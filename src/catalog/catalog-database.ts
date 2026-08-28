@@ -91,9 +91,9 @@ async function insertSeed(database: SQLiteDatabase, seed: CatalogSeed) {
     database.prepareAsync(
       `INSERT INTO decks (
         deck_id, deck_version, card_content_version, title, description,
-        access, price_minor_units, tags_json, card_count, cover_path,
+        access, price_minor_units, tags_json, card_count, featured_cards_json, cover_path,
         apple_product_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     database.prepareAsync(
       `INSERT INTO bundles (
@@ -132,6 +132,7 @@ async function insertSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         deck.priceMinorUnits,
         deck.tagsJson,
         deck.cardCount,
+        deck.featuredCardsJson,
         deck.coverPath,
         deck.appleProductId,
       ]);
@@ -202,11 +203,11 @@ async function mergeSeed(database: SQLiteDatabase, seed: CatalogSeed) {
     database.prepareAsync(
       `INSERT INTO decks (
         deck_id, deck_version, card_content_version, title, description,
-        access, price_minor_units, tags_json, card_count, cover_path,
+        access, price_minor_units, tags_json, card_count, featured_cards_json, cover_path,
         content_hash, content_bytes, content_url, cover_hash, cover_bytes,
         cover_url, thumbnail_hash, thumbnail_bytes, thumbnail_url,
         apple_product_id, lifecycle_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL,
                 NULL, NULL, NULL, NULL, NULL, ?, 'active')
       ON CONFLICT(deck_id) DO UPDATE SET
         deck_version = excluded.deck_version,
@@ -217,6 +218,7 @@ async function mergeSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         price_minor_units = excluded.price_minor_units,
         tags_json = excluded.tags_json,
         card_count = excluded.card_count,
+        featured_cards_json = excluded.featured_cards_json,
         cover_path = excluded.cover_path,
         content_hash = NULL,
         content_bytes = NULL,
@@ -270,6 +272,7 @@ async function mergeSeed(database: SQLiteDatabase, seed: CatalogSeed) {
         deck.priceMinorUnits,
         deck.tagsJson,
         deck.cardCount,
+        deck.featuredCardsJson,
         deck.coverPath,
         deck.appleProductId,
       ]);

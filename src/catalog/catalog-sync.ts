@@ -329,12 +329,12 @@ export async function applyPreparedCatalog(
       await transaction.runAsync(
         `INSERT INTO decks (
           deck_id, deck_version, card_content_version, title, description,
-          access, price_minor_units, tags_json, card_count,
+          access, price_minor_units, tags_json, card_count, featured_cards_json,
           content_hash, content_bytes, content_url,
           cover_hash, cover_bytes, cover_url,
           thumbnail_hash, thumbnail_bytes, thumbnail_url, apple_product_id,
           lifecycle_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(deck_id) DO UPDATE SET
           deck_version = excluded.deck_version,
           card_content_version = excluded.card_content_version,
@@ -344,6 +344,7 @@ export async function applyPreparedCatalog(
           price_minor_units = excluded.price_minor_units,
           tags_json = excluded.tags_json,
           card_count = excluded.card_count,
+          featured_cards_json = excluded.featured_cards_json,
           content_hash = excluded.content_hash,
           content_bytes = excluded.content_bytes,
           content_url = excluded.content_url,
@@ -364,6 +365,7 @@ export async function applyPreparedCatalog(
         toMinorUnits(deck.price),
         JSON.stringify(deck.tags),
         deck.cardCount,
+        JSON.stringify(deck.featuredCards ?? []),
         deck.content.hash,
         deck.content.bytes,
         deck.content.url,

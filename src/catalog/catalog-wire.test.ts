@@ -61,6 +61,11 @@ function manifestFixture() {
         deckVersion: 1,
         cardContentVersion: 1,
         cardCount: 100,
+        featuredCards: [
+          { id: 'paid-preview-1', text: 'First preview' },
+          { id: 'paid-preview-2', text: 'Second preview', byline: 'Example' },
+          { id: 'paid-preview-3', text: 'Third preview' },
+        ],
         content: { hash, bytes: 1234, url: null, protected: true },
         cover: {
           hash,
@@ -90,6 +95,7 @@ describe('catalog wire validation', () => {
     assert.equal(manifest.minimumAppVersion, null);
     assert.equal(manifest.decks[0].content.url?.startsWith('https://'), true);
     assert.equal(manifest.decks[1].content.url, null);
+    assert.equal(manifest.decks[1].featuredCards?.[1].byline, 'Example');
     assert.equal(
       manifest.decks[1].productIds.apple,
       'com.cadelawless.whatzit.deck.paid_deck',

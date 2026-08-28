@@ -36,6 +36,11 @@ describe('release catalog baseline preparation', () => {
     assert.equal(catalog.decks[1].access, 'paid');
     assert.equal(catalog.decks[1].cardCount, 100);
     assert.deepEqual(catalog.decks[1].cards, []);
+    assert.deepEqual(catalog.decks[1].featuredCards, [
+      { id: 'paid-preview-1', text: 'First preview' },
+      { id: 'paid-preview-2', text: 'Second preview' },
+      { id: 'paid-preview-3', text: 'Third preview' },
+    ]);
     assert.equal(
       catalog.decks[1].coverImage,
       `assets/images/decks/baseline/${placeholderHash}.webp`,
@@ -243,6 +248,11 @@ function manifestFixture() {
         deckVersion: 9,
         cardContentVersion: 8,
         cardCount: 100,
+        featuredCards: [
+          { id: 'paid-preview-1', text: 'First preview' },
+          { id: 'paid-preview-2', text: 'Second preview' },
+          { id: 'paid-preview-3', text: 'Third preview' },
+        ],
         content: {
           hash: placeholderHash,
           bytes: 1234,

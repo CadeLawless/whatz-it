@@ -131,6 +131,12 @@ describe('catalog synchronization activation', () => {
           .get()?.text,
         'Synchronized card',
       );
+      assert.deepEqual(
+        JSON.parse(String(harness.database
+          .prepare("SELECT featured_cards_json FROM decks WHERE deck_id = 'celebrity-shuffle'")
+          .get()?.featured_cards_json)),
+        manifest.decks[0].featuredCards,
+      );
       assert.equal(
         harness.database.prepare("SELECT COUNT(*) AS count FROM media_files WHERE status = 'ready'").get()?.count,
         2,
@@ -540,6 +546,11 @@ function updateFixture() {
         deckVersion: synchronizedDeckVersion('celebrity-shuffle'),
         cardContentVersion: 2,
         cardCount: 1,
+        featuredCards: [
+          { id: 'preview-one', text: 'First offline preview' },
+          { id: 'preview-two', text: 'Second offline preview' },
+          { id: 'preview-three', text: 'Third offline preview' },
+        ],
         content: {
           hash: contentHash,
           bytes: 100,

@@ -30,6 +30,7 @@ export class BundledCatalogRepository implements CatalogRepository {
       const metadata = metadataById.get(deck.id);
       return {
         ...deck,
+        featuredCards: [...(metadata?.featuredCards ?? deck.featuredCards ?? [])],
         tags: [...(metadata?.tags ?? [])],
         cardCount: metadata?.cardCount ?? deck.cards.length,
         cardContentVersion: metadata?.cardContentVersion ?? 1,
@@ -133,6 +134,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
         : {}),
       tags: parseTags(row.tags_json),
       cardCount: row.card_count,
+      featuredCards: parseFeaturedCards(row.featured_cards_json),
       cardContentVersion: row.card_content_version,
       ...(row.installed_content_version === null
         ? {}
@@ -239,6 +241,7 @@ type DeckRow = {
   price_minor_units: number | null;
   tags_json: string;
   card_count: number;
+  featured_cards_json: string;
   cover_path: string | null;
   cover_uri: string | null;
   cover_url: string | null;
@@ -248,6 +251,21 @@ type DeckRow = {
   installed_content_version: number | null;
   apple_product_id: string | null;
 };
+
+function parseFeaturedCards(value: string): Card[] {
+  try {
+    const cards = JSON.parse(value) as unknown;
+    if (!Array.isArray(cards)) return [];
+    return cards.filter((card): card is Card =>
+      Boolean(card)
+      && typeof card === 'object'
+      && typeof (card as Card).id === 'string'
+      && typeof (card as Card).text === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
 type CardRow = {
   deck_id: string;
   card_content_version: number;

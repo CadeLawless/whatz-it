@@ -30,6 +30,7 @@ export type CatalogManifestDeck = {
   deckVersion: number;
   cardContentVersion: number;
   cardCount: number;
+  featuredCards?: Card[];
   content: CatalogContentReference;
   cover: CatalogArtifactReference;
   thumbnail: CatalogArtifactReference;
@@ -143,6 +144,7 @@ export function parseCatalogManifest(
         `${path}.cardContentVersion`,
       ),
       cardCount: nonNegativeInteger(deck.cardCount, `${path}.cardCount`),
+      featuredCards: cardArray(deck.featuredCards ?? [], `${path}.featuredCards`),
       content: contentReference(
         contentObject,
         `${path}.content`,
@@ -351,6 +353,24 @@ function nonEmptyString(value: unknown, path: string): string {
 }
 function stringArray(value: unknown, path: string): string[] {
   return arrayValue(value, path).map((item, index) => stringValue(item, `${path}[${index}]`));
+}
+function cardArray(value: unknown, path: string): Card[] {
+  const ids = new Set<string>();
+  return arrayValue(value, path).map((item, index) => {
+    const cardPath = `${path}[${index}]`;
+    const card = objectValue(item, cardPath);
+    const id = identifier(card.id, `${cardPath}.id`);
+    if (ids.has(id)) throw new Error(`${path} contains duplicate card ID ${id}.`);
+    ids.add(id);
+    const byline = card.byline === undefined
+      ? undefined
+      : stringValue(card.byline, `${cardPath}.byline`);
+    return {
+      id,
+      text: nonEmptyString(card.text, `${cardPath}.text`),
+      ...(byline ? { byline } : {}),
+    };
+  });
 }
 function identifier(value: unknown, path: string): string {
   const result = stringValue(value, path);

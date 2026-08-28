@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const CATALOG_DATABASE_NAME = 'whatz-it-catalog.db';
 export const CATALOG_DEV_PREVIEW_DATABASE_NAME = 'whatz-it-dev-preview-catalog.db';
-export const CATALOG_DATABASE_VERSION = 4;
+export const CATALOG_DATABASE_VERSION = 5;
 
 const CREATE_SCHEMA_SQL = `
 CREATE TABLE catalog_state (
@@ -27,6 +27,7 @@ CREATE TABLE decks (
   price_minor_units INTEGER,
   tags_json TEXT NOT NULL,
   card_count INTEGER NOT NULL,
+  featured_cards_json TEXT NOT NULL DEFAULT '[]',
   content_hash TEXT,
   content_bytes INTEGER,
   content_url TEXT,
@@ -201,6 +202,14 @@ export async function migrateCatalogDatabase(database: SQLiteDatabase) {
         DROP TABLE deck_installations;
         ALTER TABLE deck_installations_v4 RENAME TO deck_installations;
         PRAGMA user_version = 4;
+      `);
+    });
+  }
+  if (currentVersion <= 4 && currentVersion !== 0) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(`
+        ALTER TABLE decks ADD COLUMN featured_cards_json TEXT NOT NULL DEFAULT '[]';
+        PRAGMA user_version = 5;
       `);
     });
   }

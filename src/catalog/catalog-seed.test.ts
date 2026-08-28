@@ -30,7 +30,7 @@ describe('bundled SQLite catalog seed', () => {
   it('preserves the complete discoverable catalog and ordering', () => {
     const seed = createCatalogSeed(catalog);
 
-    assert.equal(seed.state.localSchemaVersion, 3);
+    assert.equal(seed.state.localSchemaVersion, 5);
     assert.equal(seed.state.catalogSchemaVersion, 5);
     assert.equal(seed.state.catalogRevision, catalog.revision);
     assert.equal(seed.decks.length, 20);
@@ -185,7 +185,7 @@ describe('bundled SQLite catalog seed', () => {
         adapter as unknown as Parameters<typeof migrateCatalogDatabase>[0],
       );
 
-      assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 4);
+      assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 5);
       assert.equal(
         database.prepare('SELECT deck_id FROM decks').get()?.deck_id,
         'kept-deck',
@@ -196,6 +196,7 @@ describe('bundled SQLite catalog seed', () => {
         .map((row) => String(row.name));
       assert.equal(columns.includes('content_hash'), true);
       assert.equal(columns.includes('thumbnail_url'), true);
+      assert.equal(columns.includes('featured_cards_json'), true);
     } finally {
       database.close();
     }

@@ -18,6 +18,7 @@ export type CatalogSeedSource = {
     price?: number;
     storeProducts?: StoreProductMappings;
     cards: Card[];
+    featuredCards?: Card[];
   }[];
   bundles: {
     id: string;
@@ -52,6 +53,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
       priceMinorUnits: toMinorUnits(deck.price),
       tagsJson: JSON.stringify(deck.tags),
       cardCount: deck.cardCount ?? deck.cards.length,
+      featuredCardsJson: JSON.stringify(deck.featuredCards ?? []),
       coverPath: deck.coverImage || null,
       appleProductId: deck.storeProducts?.apple?.status === 'available'
         ? deck.storeProducts.apple.productId
@@ -117,7 +119,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
 
   return {
     state: {
-      localSchemaVersion: 3,
+      localSchemaVersion: 5,
       catalogSchemaVersion: catalog.schemaVersion,
       catalogRevision: catalog.revision,
       source: 'bundled' as const,

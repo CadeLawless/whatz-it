@@ -10,6 +10,7 @@ import {
 
 import type { CatalogDeck } from '@/catalog/catalog-snapshot';
 import { colors, radius, spacing } from '@/theme';
+import { FeaturedCardsCarousel } from '@/components/featured-cards-carousel';
 
 export function DeckDetailsHeader({
   backLabel,
@@ -91,6 +92,7 @@ export function DeckDetailsHeader({
           </View>
         </View>
       </View>
+      <FeaturedCardsCarousel cards={deck.featuredCards} />
     </>
   );
 }

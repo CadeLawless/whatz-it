@@ -2,6 +2,7 @@ export type Card = {
   id: string;
   text: string;
   byline?: string;
+  featuredOrder?: number;
 };
 
 export type DeckAccess = 'free' | 'paid';
@@ -29,6 +30,7 @@ export type Deck = {
   price?: number;
   storeProducts?: StoreProductMappings;
   cards: Card[];
+  featuredCards?: Card[];
 };
 
 export type Bundle = {
