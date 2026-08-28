@@ -16,7 +16,7 @@ import type { Card } from '@/types/deck';
 const CARD_WIDTH = 172;
 const CARD_HEIGHT = 90;
 const CARD_GAP = 12;
-const PIXELS_PER_SECOND = 34;
+const PIXELS_PER_SECOND = 50;
 const MINIMUM_FEATURED_CARDS = 3;
 
 export function FeaturedCardsCarousel({
