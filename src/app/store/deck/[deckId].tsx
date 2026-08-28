@@ -100,7 +100,9 @@ export default function StoreDeckDetailsScreen() {
             )}
 
           </View>
+        </ScrollView>
 
+        <View style={styles.purchaseFooter}>
           <CommercePurchaseCard
             onOwned={() =>
               router.push({
@@ -111,10 +113,9 @@ export default function StoreDeckDetailsScreen() {
             onPurchase={commerce.purchase}
             onRetry={commerce.retry}
             state={commerce.state}
-            style={styles.purchaseCardSpacing}
             target={resolvedCommerceTarget}
           />
-        </ScrollView>
+        </View>
       </SafeAreaView>
     </>
   );
@@ -150,7 +151,12 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontWeight: '500',
   },
-  purchaseCardSpacing: { marginTop: spacing.xl },
+  purchaseFooter: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    backgroundColor: colors.surface,
+  },
   centered: {
     flex: 1,
     alignItems: 'center',

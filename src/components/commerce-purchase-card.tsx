@@ -19,6 +19,7 @@ type CommercePurchaseCardProps = {
   onPurchase?: () => void;
   onRetry?: () => void;
   state: CommerceProductState;
+  showTargetTitle?: boolean;
   style?: StyleProp<ViewStyle>;
   target: CommerceTarget;
 };
@@ -28,6 +29,7 @@ export function CommercePurchaseCard({
   onPurchase,
   onRetry,
   state,
+  showTargetTitle = false,
   style,
   target,
 }: CommercePurchaseCardProps) {
@@ -47,52 +49,51 @@ export function CommercePurchaseCard({
         ? 'PLAY DECK'
         : 'VIEW BUNDLE'
       : presentation.buttonLabel;
+  const accessibilityLabel = showTargetTitle
+    ? `${buttonLabel}, ${target.title}`
+    : buttonLabel;
 
   return (
     <View
       accessibilityLiveRegion="polite"
-      style={[styles.card, styles[`${presentation.tone}Card`], style]}
+      style={style}
     >
-      <Text style={styles.title}>{presentation.title}</Text>
-      <Text style={styles.copy}>{presentation.copy}</Text>
       <Pressable
-        accessibilityLabel={buttonLabel}
+        accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ busy: presentation.busy, disabled }}
         disabled={disabled}
         onPress={onPress}
         style={({ pressed }) => [
           styles.button,
+          showTargetTitle && styles.buttonWithTargetTitle,
           styles[`${presentation.tone}Button`],
           disabled && styles.disabledButton,
           pressed && !disabled && styles.pressed,
         ]}
       >
         <Text style={styles.buttonText}>{buttonLabel}</Text>
+        {showTargetTitle && (
+          <Text numberOfLines={1} style={styles.targetTitle}>
+            {target.title}
+          </Text>
+        )}
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    gap: 10,
-    padding: spacing.lg,
-    borderRadius: radius.xl,
-    backgroundColor: colors.background,
-  },
-  mutedCard: {},
-  primaryCard: { backgroundColor: '#EEF4FF' },
-  successCard: { backgroundColor: '#EFF9E4' },
-  warningCard: { backgroundColor: '#FFF4E8' },
-  title: { color: colors.ink, fontSize: 18, fontWeight: '900' },
-  copy: { color: colors.muted, fontSize: 14, lineHeight: 20 },
   button: {
     minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
+  },
+  buttonWithTargetTitle: {
+    minHeight: 58,
+    gap: 2,
   },
   mutedButton: { backgroundColor: '#CBD5E1' },
   primaryButton: { backgroundColor: colors.play },
@@ -104,6 +105,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.8,
+  },
+  targetTitle: {
+    maxWidth: '90%',
+    color: colors.white,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   pressed: { opacity: 0.76, transform: [{ scale: 0.99 }] },
 });

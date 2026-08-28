@@ -91,14 +91,16 @@ export default function BundleDetailsScreen() {
               })
             }
           />
+        </ScrollView>
 
+        <View style={styles.purchaseFooter}>
           <CommercePurchaseCard
             onPurchase={commerce.purchase}
             onRetry={commerce.retry}
             state={commerce.state}
             target={resolvedCommerceTarget}
           />
-        </ScrollView>
+        </View>
       </SafeAreaView>
     </>
   );
@@ -152,6 +154,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   description: { color: colors.white, fontSize: 15, lineHeight: 21 },
+  purchaseFooter: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    backgroundColor: colors.surface,
+  },
   centered: {
     flex: 1,
     alignItems: 'center',

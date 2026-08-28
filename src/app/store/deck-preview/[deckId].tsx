@@ -277,38 +277,42 @@ export default function DeckPreviewSheet() {
                     </Pressable>
                   </View>
                 )}
-                {deck.access === 'paid' && (
-                  <View style={styles.purchaseArea}>
-                    <CommercePurchaseCard
-                      onOwned={() =>
-                        router.dismissTo({
-                          pathname: '/deck/[deckId]',
-                          params: { deckId: deck.id, transition: 'apple-slide' },
-                        })
-                      }
-                      onPurchase={deckCommerce.purchase}
-                      onRetry={deckCommerce.retry}
-                      state={deckCommerce.state}
-                      target={deckCommerceTarget}
-                    />
-                    {bundle && bundleCommerce.state.status !== 'owned' && (
-                      <CommercePurchaseCard
-                        onOwned={() =>
-                          router.replace({
-                            pathname: '/store/bundle/[bundleId]',
-                            params: { bundleId: bundle.id },
-                          })
-                        }
-                        onPurchase={bundleCommerce.purchase}
-                        onRetry={bundleCommerce.retry}
-                        state={bundleCommerce.state}
-                        target={bundleCommerceTarget}
-                      />
-                    )}
-                  </View>
-                )}
               </View>
             </ScrollView>
+            {deck.access === 'paid' && (
+              <View style={styles.purchaseFooter}>
+                <View style={styles.purchaseArea}>
+                  <CommercePurchaseCard
+                    onOwned={() =>
+                      router.dismissTo({
+                        pathname: '/deck/[deckId]',
+                        params: { deckId: deck.id, transition: 'apple-slide' },
+                      })
+                    }
+                    onPurchase={deckCommerce.purchase}
+                    onRetry={deckCommerce.retry}
+                    showTargetTitle
+                    state={deckCommerce.state}
+                    target={deckCommerceTarget}
+                  />
+                  {bundle && bundleCommerce.state.status !== 'owned' && (
+                    <CommercePurchaseCard
+                      onOwned={() =>
+                        router.replace({
+                          pathname: '/store/bundle/[bundleId]',
+                          params: { bundleId: bundle.id },
+                        })
+                      }
+                      onPurchase={bundleCommerce.purchase}
+                      onRetry={bundleCommerce.retry}
+                      showTargetTitle
+                      state={bundleCommerce.state}
+                      target={bundleCommerceTarget}
+                    />
+                  )}
+                </View>
+              </View>
+            )}
           </>
         ) : (
           <View style={styles.notFound}>
@@ -390,6 +394,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   description: { color: colors.muted, fontSize: 15, lineHeight: 22 },
+  purchaseFooter: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    backgroundColor: colors.surface,
+  },
   purchaseArea: { gap: spacing.sm },
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   notFoundTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
