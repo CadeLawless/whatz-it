@@ -300,24 +300,26 @@ export default function DeckDetailsScreen() {
                 )}
               </View>
             )}
-
-            <Pressable
-              accessibilityRole="button"
-              disabled={isStarting}
-              onPress={handleStart}
-              style={({ pressed }) => [
-                styles.startButton,
-                pressed && styles.startButtonPressed,
-              ]}
-            >
-              <Text style={styles.startButtonText}>
-                LET&apos;S PLAY
-              </Text>
-
-              <Text style={styles.startArrow}>→</Text>
-            </Pressable>
           </View>
         </ScrollView>
+
+        <View style={styles.startFooter}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={isStarting}
+            onPress={handleStart}
+            style={({ pressed }) => [
+              styles.startButton,
+              pressed && styles.startButtonPressed,
+            ]}
+          >
+            <Text style={styles.startButtonText}>
+              LET&apos;S PLAY
+            </Text>
+
+            <Text style={styles.startArrow}>→</Text>
+          </Pressable>
+        </View>
       </SafeAreaView>
     </>
   );
@@ -434,6 +436,13 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     marginBottom: 0,
     gap: spacing.md,
+  },
+
+  startFooter: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    backgroundColor: colors.surface,
   },
 
   roundSetupCard: {
