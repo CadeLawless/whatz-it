@@ -14,7 +14,7 @@ import { colors, radius, spacing } from '@/theme';
 import type { Card } from '@/types/deck';
 
 const CARD_WIDTH = 172;
-const CARD_HEIGHT = 112;
+const CARD_HEIGHT = 90;
 const CARD_GAP = 12;
 const PIXELS_PER_SECOND = 34;
 const MINIMUM_FEATURED_CARDS = 3;
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   },
   cardText: {
     color: colors.white,
-    fontSize: 17,
+    fontSize: 15,
     lineHeight: 20,
     fontWeight: '900',
     textAlign: 'center',
