@@ -90,7 +90,7 @@ export async function synchronizeCatalog(
     ? await activeCatalogMediaIsReady(database, options.downloadRuntime)
     : true;
   const response = await request(options.manifestUrl, {
-    headers: state.etag && localMediaReady
+    headers: state.etag && localMediaReady && !options.developmentPreview
       ? { 'If-None-Match': state.etag }
       : undefined,
     signal: options.signal,

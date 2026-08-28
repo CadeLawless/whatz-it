@@ -310,6 +310,71 @@ describe('Phase 3 catalog acceptance', () => {
     }
   });
 
+  it('reapplies preview metadata on reload instead of trusting a stale local ETag', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(synchronizedRevision);
+      fixture.manifest.decks[0].featuredCards = [
+        { id: 'preview-one', text: 'First preview' },
+        { id: 'preview-two', text: 'Second preview' },
+        { id: 'preview-three', text: 'Third preview' },
+      ];
+      const paidArtifact: DeckContentArtifact = {
+        schemaVersion: 1,
+        deckId: 'accents-and-impressions',
+        cardContentVersion: 1,
+        cards: [{ id: 'preview-paid-card', text: 'Preview paid card' }],
+      };
+      const paidBytes = new TextEncoder().encode(JSON.stringify(paidArtifact));
+      fixture.manifest.decks[1].cardCount = 1;
+      fixture.manifest.decks[1].content = {
+        hash: sha256(paidBytes),
+        bytes: paidBytes.byteLength,
+        url: fixture.paidContentUrl,
+        protected: false,
+      };
+      fixture.artifacts.set(fixture.paidContentUrl, paidBytes);
+      const runtime = acceptanceRuntime(fixture, storedFiles);
+
+      await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        developmentPreview: true,
+        downloadRuntime: runtime,
+      });
+      harness.database.exec(
+        "UPDATE decks SET featured_cards_json = '[]' WHERE deck_id = 'celebrity-shuffle'",
+      );
+
+      let conditionalEtag: string | null = 'not-requested';
+      const result = await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        developmentPreview: true,
+        downloadRuntime: {
+          ...runtime,
+          request: async (url, init) => {
+            if (url === fixture.manifestUrl) {
+              conditionalEtag = new Headers(init.headers).get('if-none-match');
+            }
+            return runtime.request(url);
+          },
+        },
+      });
+
+      assert.equal(conditionalEtag, null);
+      assert.equal(result.status, 'updated');
+      assert.deepEqual(
+        JSON.parse(String(harness.database.prepare(
+          "SELECT featured_cards_json FROM decks WHERE deck_id = 'celebrity-shuffle'",
+        ).get()?.featured_cards_json)),
+        fixture.manifest.decks[0].featuredCards,
+      );
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('keeps the last-known-good catalog when the server requires a newer app', async () => {
     const harness = createDatabaseHarness();
     const storedFiles = new Map<string, Uint8Array>();
