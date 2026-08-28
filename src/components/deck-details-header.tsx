@@ -10,6 +10,7 @@ import {
 
 import type { CatalogDeck } from '@/catalog/catalog-snapshot';
 import { FeaturedCardsCarousel } from '@/components/featured-cards-carousel';
+import { FeaturedCardsDeckStack } from '@/components/featured-cards-deck-stack';
 import { colors, radius, spacing } from '@/theme';
 
 export function DeckDetailsHeader({
@@ -64,8 +65,10 @@ export function DeckDetailsHeader({
           </View>
 
           <View
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
+            accessibilityElementsHidden={showCarousel}
+            importantForAccessibility={
+              showCarousel ? 'no-hide-descendants' : 'auto'
+            }
             style={[
               styles.posterPositioner,
               {
@@ -73,26 +76,30 @@ export function DeckDetailsHeader({
               },
             ]}
           >
-            <View
-              style={[
-                styles.poster,
-                {
-                  width: posterWidth,
-                },
-              ]}
-            >
-              {deck.coverUri || deck.coverImage ? (
-                <Image
-                  contentFit="cover"
-                  source={deck.coverUri || deck.coverImage}
-                  style={styles.posterImage}
-                />
-              ) : (
-                <View style={styles.posterFallback}>
-                  <Text style={styles.posterFallbackText}>{deck.title}</Text>
-                </View>
-              )}
-            </View>
+            {showCarousel ? (
+              <View
+                style={[
+                  styles.poster,
+                  {
+                    width: posterWidth,
+                  },
+                ]}
+              >
+                {deck.coverUri || deck.coverImage ? (
+                  <Image
+                    contentFit="cover"
+                    source={deck.coverUri || deck.coverImage}
+                    style={styles.posterImage}
+                  />
+                ) : (
+                  <View style={styles.posterFallback}>
+                    <Text style={styles.posterFallbackText}>{deck.title}</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <FeaturedCardsDeckStack deck={deck} width={posterWidth} />
+            )}
           </View>
         </View>
       </View>
