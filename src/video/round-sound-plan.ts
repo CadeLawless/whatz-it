@@ -12,7 +12,9 @@ export type RoundSoundId =
 
 export type RoundSoundPlayerKey =
   | 'get-ready'
-  | 'countdown'
+  | 'count-3'
+  | 'count-2'
+  | 'count-1'
   | 'round-start'
   | 'final-tick-a'
   | 'final-tick-b'
@@ -36,8 +38,5 @@ export const GAMEPLAY_ROUND_SOUNDS = [
 ] as const satisfies readonly RoundSoundId[];
 
 export function playerKeyForRoundSound(sound: RoundSoundId): RoundSoundPlayerKey {
-  if (sound === 'count-1' || sound === 'count-2' || sound === 'count-3') {
-    return 'countdown';
-  }
   return sound === 'final-tick' ? 'final-tick-a' : sound;
 }

@@ -40,22 +40,26 @@ export const typography = {
   hero: {
     fontSize: 42,
     lineHeight: 45,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: -1.4,
   },
   title: {
     fontSize: 28,
     lineHeight: 34,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: -0.6,
   },
   body: {
     fontSize: 17,
     lineHeight: 25,
+    fontFamily: 'Inter_500Medium',
     fontWeight: '500',
   },
   deckTitle: {
     color: colors.white,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     textAlign: 'left',
     textTransform: 'uppercase',
@@ -63,6 +67,7 @@ export const typography = {
   deckName: {
     color: colors.ink,
     fontSize: 15,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
   },
 } satisfies Record<string, TextStyle>;

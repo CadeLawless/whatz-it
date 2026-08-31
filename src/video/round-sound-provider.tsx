@@ -44,7 +44,12 @@ const RoundSoundContext = createContext<RoundSoundContextValue | null>(null);
 
 export function RoundSoundProvider({ children }: PropsWithChildren) {
   const getReady = useAudioPlayer(getRoundSoundSource('get-ready'), PLAYER_OPTIONS);
-  const countdown = useAudioPlayer(getRoundSoundSource('count-3'), PLAYER_OPTIONS);
+  // Keep the three identical countdown cues on separate native players. Android
+  // can race a seek/play replay on one completed player, causing the cues to
+  // bunch together before the visual countdown instead of firing once per second.
+  const count3 = useAudioPlayer(getRoundSoundSource('count-3'), PLAYER_OPTIONS);
+  const count2 = useAudioPlayer(getRoundSoundSource('count-2'), PLAYER_OPTIONS);
+  const count1 = useAudioPlayer(getRoundSoundSource('count-1'), PLAYER_OPTIONS);
   const roundStart = useAudioPlayer(getRoundSoundSource('round-start'), PLAYER_OPTIONS);
   const correct = useAudioPlayer(getRoundSoundSource('correct'), PLAYER_OPTIONS);
   const pass = useAudioPlayer(getRoundSoundSource('pass'), PLAYER_OPTIONS);
@@ -57,7 +62,9 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   const tick2 = useAudioPlayer(getRoundSoundSource('final-tick'), PLAYER_OPTIONS);
 
   const getReadyStatus = useAudioPlayerStatus(getReady);
-  const countdownStatus = useAudioPlayerStatus(countdown);
+  const count3Status = useAudioPlayerStatus(count3);
+  const count2Status = useAudioPlayerStatus(count2);
+  const count1Status = useAudioPlayerStatus(count1);
   const roundStartStatus = useAudioPlayerStatus(roundStart);
   const correctStatus = useAudioPlayerStatus(correct);
   const passStatus = useAudioPlayerStatus(pass);
@@ -68,7 +75,9 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   const namedStatuses = useMemo(
     () => [
       ['get-ready', getReadyStatus],
-      ['countdown', countdownStatus],
+      ['count-3', count3Status],
+      ['count-2', count2Status],
+      ['count-1', count1Status],
       ['round-start', roundStartStatus],
       ['correct', correctStatus],
       ['pass', passStatus],
@@ -79,7 +88,9 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     ] as const,
     [
       correctStatus,
-      countdownStatus,
+      count1Status,
+      count2Status,
+      count3Status,
       flipStatus,
       getReadyStatus,
       passStatus,
@@ -92,25 +103,27 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   const criticalStatuses = useMemo(
     () => [
       ['get-ready', getReadyStatus],
-      ['countdown', countdownStatus],
+      ['count-3', count3Status],
+      ['count-2', count2Status],
+      ['count-1', count1Status],
       ['round-start', roundStartStatus],
     ] as const,
-    [countdownStatus, getReadyStatus, roundStartStatus],
+    [count1Status, count2Status, count3Status, getReadyStatus, roundStartStatus],
   );
 
   const regularPlayers = useMemo<Record<Exclude<RoundSoundId, 'final-tick'>, AudioPlayer>>(
     () => ({
       'get-ready': getReady,
-      'count-3': countdown,
-      'count-2': countdown,
-      'count-1': countdown,
+      'count-3': count3,
+      'count-2': count2,
+      'count-1': count1,
       'round-start': roundStart,
       correct,
       pass,
       flip,
       'round-end': roundEnd,
     }),
-    [correct, countdown, flip, getReady, pass, roundEnd, roundStart],
+    [correct, count1, count2, count3, flip, getReady, pass, roundEnd, roundStart],
   );
   const tickPlayers = useMemo(
     () => [tick1, tick2],
@@ -132,7 +145,9 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   const playerEntries = useMemo<[string, RoundSoundId, AudioPlayer, 'critical' | 'gameplay'][]>(
     () => [
       ['get-ready', 'get-ready', getReady, 'critical'],
-      ['countdown', 'count-3', countdown, 'critical'],
+      ['count-3', 'count-3', count3, 'critical'],
+      ['count-2', 'count-2', count2, 'critical'],
+      ['count-1', 'count-1', count1, 'critical'],
       ['round-start', 'round-start', roundStart, 'critical'],
       ['correct', 'correct', correct, 'gameplay'],
       ['pass', 'pass', pass, 'gameplay'],
@@ -141,7 +156,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
       ['final-tick-a', 'final-tick', tick1, 'gameplay'],
       ['final-tick-b', 'final-tick', tick2, 'gameplay'],
     ],
-    [correct, countdown, flip, getReady, pass, roundEnd, roundStart, tick1, tick2],
+    [correct, count1, count2, count3, flip, getReady, pass, roundEnd, roundStart, tick1, tick2],
   );
   const getLoadSnapshot = useCallback(() => {
     const players = playerEntries.map(([name, , player]) => [name, player] as const);
@@ -348,7 +363,9 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
       tickIndex.current = 0;
       const players: [string, AudioPlayer][] = [
         ['get-ready', getReady],
-        ['countdown', countdown],
+        ['count-3', count3],
+        ['count-2', count2],
+        ['count-1', count1],
         ['round-start', roundStart],
       ];
       const results = await Promise.all(
@@ -371,7 +388,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
       warnRoundDiagnostic('round audio preparation failed', error);
       return false;
     }
-  }, [configureAudioSession, countdown, getLoadSnapshot, getReady, isReady, roundStart]);
+  }, [configureAudioSession, count1, count2, count3, getLoadSnapshot, getReady, isReady, roundStart]);
 
   const recoverAudio = useCallback(async (reloadAll = false) => {
     logRoundDiagnostic('audio recovery requested', { reloadAll });

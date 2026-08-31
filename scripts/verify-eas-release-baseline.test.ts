@@ -15,6 +15,25 @@ describe('EAS production release baseline verification', () => {
     assert.equal(called, false);
   });
 
+  it('keeps the Android production release on its frozen free catalog', async () => {
+    let called = false;
+    const result = await verifyEasReleaseBaseline(
+      {
+        EAS_BUILD_PLATFORM: 'android',
+        WHATZIT_VERIFY_RELEASE_BASELINE: 'enabled',
+        EXPO_PUBLIC_CATALOG_MANIFEST_URL: 'https://api.example.test/manifest',
+      },
+      '/repository',
+      async () => {
+        called = true;
+        return { current: false, revision: 67 };
+      },
+    );
+
+    assert.deepEqual(result, { status: 'skipped' });
+    assert.equal(called, false);
+  });
+
   it('requires the production manifest when the gate is enabled', async () => {
     await assert.rejects(
       verifyEasReleaseBaseline(

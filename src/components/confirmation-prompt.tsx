@@ -156,8 +156,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.play,
   },
   destructiveButton: { backgroundColor: colors.pass },
-  cancelText: { color: colors.ink, fontSize: 10, fontWeight: '900', letterSpacing: 0.9 },
-  confirmText: { color: colors.white, fontSize: 10, fontWeight: '900', letterSpacing: 0.9 },
+  cancelText: { color: colors.ink, fontSize: 10, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.9 },
+  confirmText: { color: colors.white, fontSize: 10, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.9 },
   pressed: { opacity: 0.75, transform: [{ scale: 0.99 }] },
   disabled: { opacity: 0.58 },
 });

@@ -7,6 +7,7 @@ import {
 } from './prepare-catalog-baseline';
 
 const ENABLED = 'enabled';
+const ANDROID = 'android';
 
 type BuildEnvironment = Record<string, string | undefined>;
 
@@ -24,6 +25,14 @@ export async function verifyEasReleaseBaseline(
   repositoryRoot: string,
   verify: BaselineVerifier = verifyBaseline,
 ): Promise<EasReleaseBaselineResult> {
+  // Android's first Play release is intentionally frozen to the committed
+  // free-only catalog. A newer production manifest must not pull new decks or
+  // storefront metadata into that binary; iOS production builds still enforce
+  // the normal catalog freshness gate.
+  if (environment.EAS_BUILD_PLATFORM === ANDROID) {
+    return { status: 'skipped' };
+  }
+
   if (environment.WHATZIT_VERIFY_RELEASE_BASELINE !== ENABLED) {
     return { status: 'skipped' };
   }
@@ -60,7 +69,11 @@ async function run() {
   const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const result = await verifyEasReleaseBaseline(process.env, repositoryRoot);
   if (result.status === 'skipped') {
-    console.log('SKIP: release baseline verification is not enabled for this build profile.');
+    console.log(
+      process.env.EAS_BUILD_PLATFORM === ANDROID
+        ? 'SKIP: Android release is pinned to the committed free-only catalog.'
+        : 'SKIP: release baseline verification is not enabled for this build profile.',
+    );
     return;
   }
   console.log(`PASS: production baseline matches active revision ${result.revision}.`);

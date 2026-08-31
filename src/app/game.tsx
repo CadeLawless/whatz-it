@@ -1,5 +1,6 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { type Href, useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -401,7 +402,13 @@ export default function GameScreen() {
                       pressed && styles.controlPressed,
                     ]}
                   >
-                    <Text style={styles.controlIcon}>✓</Text>
+                    <SymbolView
+                      accessibilityElementsHidden
+                      name={{ android: 'check', ios: 'checkmark', web: 'check' }}
+                      size={26}
+                      style={styles.controlCheckIcon}
+                      tintColor="#000000"
+                    />
                     <Text
                       style={[styles.controlText, { fontSize: manualControlFontSize }]}
                     >
@@ -422,15 +429,25 @@ export default function GameScreen() {
 
           {round.status === 'feedback' && (
             <View style={[styles.feedback, { backgroundColor: feedbackColor }]}>
-              <Text
-                style={[
-                  styles.feedbackIcon,
-                  round.latestOutcome === 'passed' && styles.passFeedbackText,
-                  { color: round.latestOutcome === 'correct' ? colors.correctText : colors.passText },
-                ]}
-              >
-                {round.latestOutcome === 'correct' ? '✓' : '×'}
-              </Text>
+              {round.latestOutcome === 'correct' ? (
+                <SymbolView
+                  accessibilityElementsHidden
+                  name={{ android: 'check', ios: 'checkmark', web: 'check' }}
+                  size={112}
+                  style={styles.feedbackCheckIcon}
+                  tintColor={colors.correctText}
+                />
+              ) : (
+                <Text
+                  style={[
+                    styles.feedbackIcon,
+                    styles.passFeedbackText,
+                    { color: colors.passText },
+                  ]}
+                >
+                  ×
+                </Text>
+              )}
               <Text
                 style={[
                   styles.feedbackText,
@@ -551,12 +568,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.72)',
   },
   finishButtonPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
-  finishButtonText: { color: colors.ink, fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
+  finishButtonText: { color: colors.ink, fontSize: 10, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.1 },
   deckName: {
     position: 'absolute',
     top: 23,
     right: 28,
     fontSize: 18,
+    fontFamily: 'Inter_400Regular',
     fontWeight: '400',
     textTransform: 'uppercase',
     color: '#000000',
@@ -576,11 +594,12 @@ const styles = StyleSheet.create({
     right: 0,
     color: colors.play,
     fontSize: 25,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     textAlign: 'center',
   },
-  timerLabel: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
-  progress: { color: colors.ink, fontSize: 13, fontWeight: '900', opacity: 0.65 },
+  timerLabel: { color: colors.muted, fontSize: 9, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.2 },
+  progress: { color: colors.ink, fontSize: 13, fontFamily: 'Inter_900Black', fontWeight: '900', opacity: 0.65 },
   sensorRow: {
     position: 'absolute',
     top: spacing.lg + 15,
@@ -593,7 +612,7 @@ const styles = StyleSheet.create({
   },
   sensorDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted },
   sensorDotReady: { backgroundColor: colors.correct },
-  sensorText: { color: colors.ink, fontSize: 9, fontWeight: '900', letterSpacing: 1.2, opacity: 0.62 },
+  sensorText: { color: colors.ink, fontSize: 9, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.2, opacity: 0.62 },
   cardArea: {
     flex: 1,
     minHeight: 0,
@@ -609,9 +628,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  cardLabel: { color: colors.white, fontSize: 11, fontWeight: '900', letterSpacing: 2, opacity: 0.72 },
+  cardLabel: { color: colors.white, fontSize: 11, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 2, opacity: 0.72 },
   cardText: {
     color: colors.play,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: -1.6,
     textAlign: 'center',
@@ -622,6 +642,7 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     flexShrink: 1,
     color: colors.play,
+    fontFamily: 'Inter_600SemiBold',
     fontWeight: '600',
     letterSpacing: 0.2,
     textAlign: 'center',
@@ -651,16 +672,18 @@ const styles = StyleSheet.create({
   passButton: { backgroundColor: colors.pass, borderColor: colors.passBorder },
   correctButton: { backgroundColor: colors.correct, borderColor: colors.correctBorder },
   controlPressed: { transform: [{ scale: 0.98 }], opacity: 0.86 },
-  controlIcon: { color: '#000000', fontSize: 26, fontWeight: '900', lineHeight: 28 },
-  controlText: { color: '#000000', fontWeight: '900', letterSpacing: 1.1 },
+  controlIcon: { color: '#000000', fontSize: 26, fontFamily: 'Inter_900Black', fontWeight: '900', lineHeight: 28 },
+  controlCheckIcon: { width: 26, height: 26 },
+  controlText: { color: '#000000', fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.1 },
   feedback: {
     ...StyleSheet.absoluteFill,
     zIndex: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  feedbackIcon: { color: '#000000', fontSize: 124, fontWeight: '700', lineHeight: 130 },
-  feedbackText: { color: '#000000', fontSize: 42, fontWeight: '500', letterSpacing: 0.5 },
+  feedbackIcon: { color: '#000000', fontSize: 124, fontFamily: 'Inter_700Bold', fontWeight: '700', lineHeight: 130 },
+  feedbackCheckIcon: { width: 112, height: 112 },
+  feedbackText: { color: '#000000', fontSize: 42, fontFamily: 'Inter_500Medium', fontWeight: '500', letterSpacing: 0.5 },
   passFeedbackText: { color: colors.white },
   transitionOverlay: {
     ...StyleSheet.absoluteFill,
@@ -668,8 +691,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  finishKicker: { color: colors.white, fontSize: 12, fontWeight: '900', letterSpacing: 2.2, opacity: 0.72 },
-  finishTitle: { color: '#FFFFFF', fontSize: 60, lineHeight: 68, fontWeight: '900' },
+  finishKicker: { color: colors.white, fontSize: 12, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 2.2, opacity: 0.72 },
+  finishTitle: { color: '#FFFFFF', fontSize: 60, lineHeight: 68, fontFamily: 'Inter_900Black', fontWeight: '900' },
   promptOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 100,
@@ -711,6 +734,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.pass,
   },
   promptPressed: { opacity: 0.75, transform: [{ scale: 0.99 }] },
-  promptCancelText: { color: colors.ink, fontSize: 10, fontWeight: '900', letterSpacing: 0.9 },
-  promptFinishText: { color: colors.ink, fontSize: 10, fontWeight: '900', letterSpacing: 0.9 },
+  promptCancelText: { color: colors.ink, fontSize: 10, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.9 },
+  promptFinishText: { color: colors.ink, fontSize: 10, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.9 },
 });

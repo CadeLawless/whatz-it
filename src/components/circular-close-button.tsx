@@ -59,6 +59,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 42,
     lineHeight: 42,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
   },
   sheetButton: {
@@ -72,6 +73,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 32,
     lineHeight: 32,
+    fontFamily: 'Inter_600SemiBold',
     fontWeight: '600',
   },
   pressed: { opacity: 0.7, transform: [{ scale: 0.96 }] },

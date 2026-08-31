@@ -1,8 +1,16 @@
+import { Inter_300Light } from '@expo-google-fonts/inter/300Light';
+import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
+import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
+import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
+import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
+import { Inter_800ExtraBold } from '@expo-google-fonts/inter/800ExtraBold';
+import { Inter_900Black } from '@expo-google-fonts/inter/900Black';
+import { useFonts } from 'expo-font';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet } from 'react-native';
+import { AppState, Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -19,6 +27,7 @@ import {
 import { initializeRoundVideoStorage } from '@/video/round-videos';
 import { loadHomeBranding } from '@/utils/home-branding';
 import { getSettingsPermissionSnapshot } from '@/utils/settings-permission-snapshot';
+import { platformReleaseCapabilities } from '@/release/platform-release';
 import {
   initializeFlightRecorder,
   markFlightRecorderExpectedExit,
@@ -29,12 +38,27 @@ import {
 
 void SplashScreen.preventAutoHideAsync();
 
+const releaseCapabilities = platformReleaseCapabilities(Platform.OS);
+
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_300Light,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
+    Inter_900Black,
+  });
+  if (!fontsLoaded && !fontError) return null;
+
+  const content = <RootLayoutContent />;
+
   return (
     <CatalogProvider>
-      <StoreCommerceProvider>
-        <RootLayoutContent />
-      </StoreCommerceProvider>
+      {releaseCapabilities.nativeStoreCommerce ? (
+        <StoreCommerceProvider>{content}</StoreCommerceProvider>
+      ) : content}
     </CatalogProvider>
   );
 }
@@ -144,7 +168,7 @@ function RootLayoutContent() {
           headerShadowVisible: false,
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.ink,
-          headerTitleStyle: { fontWeight: '800' },
+          headerTitleStyle: { fontFamily: 'Inter_800ExtraBold', fontWeight: '800' },
         }}
       >
         <Stack.Screen
@@ -178,44 +202,46 @@ function RootLayoutContent() {
             headerBackTitle: 'Back to Decks',
           })}
         />
-        <Stack.Screen
-          name="store/deck/[deckId]"
-          options={{
-            headerShown: false,
-            orientation: 'portrait',
-            title: 'Deck details',
-          }}
-        />
-        <Stack.Screen
-          name="store/bundles-for-deck/[deckId]"
-          options={{
-            animation: 'none',
-            contentStyle: { backgroundColor: 'transparent' },
-            gestureEnabled: false,
-            headerShown: false,
-            presentation: 'transparentModal',
-            title: 'Bundles',
-          }}
-        />
-        <Stack.Screen
-          name="store/bundle/[bundleId]"
-          options={{
-            headerShown: false,
-            orientation: 'portrait',
-            title: 'Bundle details',
-          }}
-        />
-        <Stack.Screen
-          name="store/deck-preview/[deckId]"
-          options={{
-            animation: 'none',
-            contentStyle: { backgroundColor: 'transparent' },
-            gestureEnabled: false,
-            headerShown: false,
-            presentation: 'transparentModal',
-            title: 'Deck preview',
-          }}
-        />
+        <Stack.Protected guard={releaseCapabilities.storefront}>
+          <Stack.Screen
+            name="store/deck/[deckId]"
+            options={{
+              headerShown: false,
+              orientation: 'portrait',
+              title: 'Deck details',
+            }}
+          />
+          <Stack.Screen
+            name="store/bundles-for-deck/[deckId]"
+            options={{
+              animation: 'none',
+              contentStyle: { backgroundColor: 'transparent' },
+              gestureEnabled: false,
+              headerShown: false,
+              presentation: 'transparentModal',
+              title: 'Bundles',
+            }}
+          />
+          <Stack.Screen
+            name="store/bundle/[bundleId]"
+            options={{
+              headerShown: false,
+              orientation: 'portrait',
+              title: 'Bundle details',
+            }}
+          />
+          <Stack.Screen
+            name="store/deck-preview/[deckId]"
+            options={{
+              animation: 'none',
+              contentStyle: { backgroundColor: 'transparent' },
+              gestureEnabled: false,
+              headerShown: false,
+              presentation: 'transparentModal',
+              title: 'Deck preview',
+            }}
+          />
+        </Stack.Protected>
         <Stack.Screen
           name="ready"
           options={{

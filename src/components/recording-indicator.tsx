@@ -82,6 +82,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     lineHeight: 16,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 1.1,
   },

@@ -1,6 +1,8 @@
 import * as Linking from 'expo-linking';
+import { SymbolView } from 'expo-symbols';
 import {
   type Href,
+  Redirect,
   Stack,
   useFocusEffect,
   useLocalSearchParams,
@@ -9,6 +11,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,6 +33,7 @@ import {
   DEFAULT_ROUND_DURATION,
 } from '@/game/round-duration';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
+import { platformReleaseCapabilities } from '@/release/platform-release';
 import {
   loadRoundDuration,
   saveRoundDuration,
@@ -51,6 +55,8 @@ type RoundSetupNotice = {
   showSettings: boolean;
   title: string;
 };
+
+const releaseCapabilities = platformReleaseCapabilities(Platform.OS);
 
 export default function DeckDetailsScreen() {
   const { catalog } = useCatalog();
@@ -167,6 +173,10 @@ export default function DeckDetailsScreen() {
         </Text>
       </SafeAreaView>
     );
+  }
+
+  if (!releaseCapabilities.storefront && deck.access !== 'free') {
+    return <Redirect href="/" />;
   }
 
   const handleStart = async () => {
@@ -318,7 +328,17 @@ export default function DeckDetailsScreen() {
               LET&apos;S PLAY
             </Text>
 
-            <Text style={styles.startArrow}>→</Text>
+            <SymbolView
+              accessibilityElementsHidden
+              name={{
+                android: 'arrow_forward',
+                ios: 'arrow.right',
+                web: 'arrow_forward',
+              }}
+              size={29}
+              style={styles.startArrow}
+              tintColor={colors.white}
+            />
           </Pressable>
         </View>
       </SafeAreaView>
@@ -427,7 +447,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: colors.play,
     fontSize: 18,
-    fontWeight: '900',
+    fontFamily: 'Inter_900Black',
     letterSpacing: 0.2,
     marginTop: spacing.xl,
     marginBottom: spacing.md,
@@ -469,8 +489,8 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.play,
     fontSize: 14,
-    lineHeight: 16,
-    fontWeight: '900',
+    lineHeight: 15,
+    fontFamily: 'Inter_900Black',
     letterSpacing: 0.8,
   },
 
@@ -496,8 +516,8 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.muted,
     fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '500',
+    lineHeight: 16,
+    fontFamily: 'Inter_700Bold',
   },
 
   settingsLink: {
@@ -515,8 +535,8 @@ const styles = StyleSheet.create({
   settingsLinkText: {
     color: colors.white,
     fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '900',
+    lineHeight: 15,
+    fontFamily: 'Inter_900Black',
     letterSpacing: 0.7,
     textAlign: 'center',
   },
@@ -527,6 +547,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.md,
     borderRadius: radius.xl,
     backgroundColor: colors.pass,
     shadowColor: '#64748B',
@@ -547,13 +568,12 @@ const styles = StyleSheet.create({
   startButtonText: {
     color: colors.white,
     fontSize: 27,
-    fontWeight: '900',
+    lineHeight: 30,
+    fontFamily: 'Inter_900Black',
   },
 
   startArrow: {
-    color: colors.white,
-    fontSize: 44,
-    lineHeight: 48,
-    fontWeight: '300',
+    width: 29,
+    height: 29,
   },
 });

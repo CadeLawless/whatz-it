@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo/ui": "~57.0.14",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "12.0.1",
@@ -69,7 +70,7 @@
     "eas-build-post-install": "tsx scripts/verify-eas-release-baseline.ts",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/game/*.test.ts src/catalog/*.test.ts src/storefront/*.test.ts src/video/*.test.ts scripts/*.test.ts"
+    "test": "tsx --test src/game/*.test.ts src/catalog/*.test.ts src/release/*.test.ts src/storefront/*.test.ts src/video/*.test.ts scripts/*.test.ts"
   },
   "expo": {
     "doctor": {

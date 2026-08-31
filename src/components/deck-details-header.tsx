@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import {
   Pressable,
@@ -47,7 +48,17 @@ export function DeckDetailsHeader({
             pressed && styles.backButtonPressed,
           ]}
         >
-          <Text style={styles.backChevron}>‹</Text>
+          <SymbolView
+            accessibilityElementsHidden
+            name={{
+              android: 'arrow_back_ios_new',
+              ios: 'chevron.left',
+              web: 'arrow_back_ios_new',
+            }}
+            size={18}
+            style={styles.backIcon}
+            tintColor="#000000"
+          />
           <Text style={styles.backText}>{backLabel}</Text>
         </Pressable>
       )}
@@ -109,7 +120,7 @@ export function DeckDetailsHeader({
 }
 
 const MAXIMUM_TITLE_FONT_SIZE = 32;
-const TITLE_LINE_HEIGHT_RATIO = 1.125;
+const TITLE_LINE_HEIGHT_RATIO = 1.06;
 const TITLE_FIT_SAFETY = 0.94;
 
 function AutoFitDeckTitle({
@@ -222,6 +233,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     paddingLeft: spacing.md,
     paddingRight: spacing.lg,
     borderRadius: radius.pill,
@@ -239,17 +251,15 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     transform: [{ scale: 0.98 }],
   },
-  backChevron: {
-    color: '#000000',
-    fontSize: 35,
-    lineHeight: 38,
-    fontWeight: '300',
+  backIcon: {
+    width: 18,
+    height: 18,
   },
   backText: {
     color: '#000000',
     fontSize: 17,
-    fontWeight: '500',
-    marginLeft: 2,
+    lineHeight: 20,
+    fontFamily: 'Inter_700Bold',
   },
   heroShadow: {
     borderRadius: radius.xl,
@@ -286,7 +296,7 @@ const styles = StyleSheet.create({
   deckTitleLine: {
     width: '100%',
     color: colors.white,
-    fontWeight: '900',
+    fontFamily: 'Inter_900Black',
     textAlign: 'left',
     textTransform: 'uppercase',
   },
@@ -305,14 +315,14 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: MAXIMUM_TITLE_FONT_SIZE,
     lineHeight: MAXIMUM_TITLE_FONT_SIZE * TITLE_LINE_HEIGHT_RATIO,
-    fontWeight: '900',
+    fontFamily: 'Inter_900Black',
     textTransform: 'uppercase',
   },
   deckDescription: {
     color: colors.white,
     fontSize: 17,
-    lineHeight: 24,
-    fontWeight: '400',
+    lineHeight: 21,
+    fontFamily: 'Inter_700Bold',
     textAlign: 'left',
     marginTop: spacing.md,
   },
@@ -352,7 +362,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 16,
     lineHeight: 20,
-    fontWeight: '900',
+    fontFamily: 'Inter_900Black',
     textAlign: 'center',
     textTransform: 'uppercase',
   },

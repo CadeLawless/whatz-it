@@ -9,10 +9,10 @@ import {
 } from './round-sound-plan';
 
 describe('round sound loading plan', () => {
-  it('uses one native player for the identical countdown cues', () => {
-    assert.equal(playerKeyForRoundSound('count-3'), 'countdown');
-    assert.equal(playerKeyForRoundSound('count-2'), 'countdown');
-    assert.equal(playerKeyForRoundSound('count-1'), 'countdown');
+  it('uses independent native players for countdown cues', () => {
+    assert.equal(playerKeyForRoundSound('count-3'), 'count-3');
+    assert.equal(playerKeyForRoundSound('count-2'), 'count-2');
+    assert.equal(playerKeyForRoundSound('count-1'), 'count-1');
   });
 
   it('identifies the intro cues that receive eager module-scope preloading', () => {
@@ -30,7 +30,7 @@ describe('round sound loading plan', () => {
     ]);
   });
 
-  it('needs nine players including the overlapping final-tick pair', () => {
+  it('needs eleven players including isolated intro and overlapping final-tick cues', () => {
     const sounds: RoundSoundId[] = [
       'get-ready',
       'count-3',
@@ -45,6 +45,6 @@ describe('round sound loading plan', () => {
     const playerKeys = new Set(sounds.map(playerKeyForRoundSound));
     playerKeys.add('final-tick-a');
     playerKeys.add('final-tick-b');
-    assert.equal(playerKeys.size, 9);
+    assert.equal(playerKeys.size, 11);
   });
 });

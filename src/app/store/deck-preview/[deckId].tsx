@@ -352,6 +352,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 22,
     lineHeight: 26,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
   },
   closeButton: {
@@ -382,12 +383,14 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 35,
     lineHeight: 38,
+    fontFamily: 'Inter_300Light',
     fontWeight: '300',
   },
   deckNavigationCount: {
     flex: 1,
     color: colors.muted,
     fontSize: 12,
+    fontFamily: 'Inter_700Bold',
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
     textAlign: 'center',
@@ -401,5 +404,5 @@ const styles = StyleSheet.create({
   },
   purchaseArea: { gap: spacing.sm },
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  notFoundTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
+  notFoundTitle: { color: colors.ink, fontSize: 24, fontFamily: 'Inter_900Black', fontWeight: '900' },
 });

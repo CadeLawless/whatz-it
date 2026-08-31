@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'relative',
   },
-  title: { color: colors.ink, fontSize: 28, fontWeight: '900' },
+  title: { color: colors.ink, fontSize: 28, fontFamily: 'Inter_900Black', fontWeight: '900' },
   subtitle: { color: colors.muted, fontSize: 14, lineHeight: 19 },
   list: { gap: 12, padding: spacing.lg, paddingTop: spacing.sm },
   bundleRow: {
@@ -138,14 +138,15 @@ const styles = StyleSheet.create({
   },
   coverFallback: { flex: 1, backgroundColor: colors.playSoft },
   bundleCopy: { flex: 1, gap: 6 },
-  bundleTitle: { color: colors.ink, fontSize: 17, fontWeight: '900' },
+  bundleTitle: { color: colors.ink, fontSize: 17, fontFamily: 'Inter_900Black', fontWeight: '900' },
   bundleDescription: { color: colors.muted, fontSize: 13, lineHeight: 18 },
   bundleMeta: {
     color: colors.play,
     fontSize: 10,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 0.45,
   },
-  rowChevron: { color: colors.play, fontSize: 28, fontWeight: '400' },
+  rowChevron: { color: colors.play, fontSize: 28, fontFamily: 'Inter_400Regular', fontWeight: '400' },
   pressed: { opacity: 0.72 },
 });

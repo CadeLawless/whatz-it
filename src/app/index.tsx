@@ -54,6 +54,7 @@ import {
 } from '@/components/storefront-explore';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
+import { platformReleaseCapabilities } from '@/release/platform-release';
 import {
   loadDeckLibrarySort,
   loadDeckPlayHistory,
@@ -82,6 +83,7 @@ const SORT_MENU_GAP = 6;
 const SORT_MENU_VIEWPORT_MARGIN = 12;
 const SORT_MENU_ESTIMATED_HEIGHT = DECK_LIBRARY_SORTS.length * 44 + 2;
 const HOME_SCROLL_DIAGNOSTICS = __DEV__;
+const releaseCapabilities = platformReleaseCapabilities(Platform.OS);
 
 const DECK_SORT_LABELS: Record<DeckLibrarySort, string> = {
   'recently-played': 'Recently played',
@@ -134,7 +136,9 @@ export default function DeckLibraryScreen() {
   const catalogState = useCatalog();
   const { catalog } = catalogState;
   const supportDiagnosticsText = useMemo(() => {
-    const manifestUrl = configuredCatalogManifestUrl();
+    const manifestUrl = releaseCapabilities.catalogUpdates
+      ? configuredCatalogManifestUrl()
+      : null;
     const rollout = catalogRolloutSelectedDetails(
       configuredCatalogSource(),
       manifestUrl,
@@ -299,7 +303,8 @@ export default function DeckLibraryScreen() {
   const filteredDecks = useMemo(() => {
     const searchLower = deckSearch.trim().toLowerCase();
     const allInstalledDecks = sessionOrderedDecks.filter(
-      (deck) => deck.installationStatus === 'installed',
+      (deck) => deck.installationStatus === 'installed'
+        && (releaseCapabilities.storefront || deck.access === 'free'),
     );
     if (!searchLower) return allInstalledDecks;
     return allInstalledDecks.filter((deck) =>
@@ -890,9 +895,11 @@ export default function DeckLibraryScreen() {
           }}
           style={[styles.library, { width: pageWidth, paddingHorizontal: horizontalPadding }]}
         >
-          <HomeModeControl mode={homeMode} onChange={setHomeMode} />
+          {releaseCapabilities.storefront && (
+            <HomeModeControl mode={homeMode} onChange={setHomeMode} />
+          )}
 
-          {homeMode === 'my-decks' ? (
+          {!releaseCapabilities.storefront || homeMode === 'my-decks' ? (
             <View style={styles.myDecksContent}>
               <MyLibraryControl
                 indicatorStyle={myLibraryIndicatorStyle}
@@ -1085,17 +1092,19 @@ export default function DeckLibraryScreen() {
         title={saveNotice?.title ?? ''}
         visible={saveNotice !== null}
       />
-      <ConfirmationPrompt
-        cancelLabel={null}
-        confirmLabel="OK"
-        message={restorePurchasesNotice?.message ?? ''}
-        onCancel={dismissRestorePurchasesNotice}
-        onConfirm={dismissRestorePurchasesNotice}
-        onDismissed={() => logHomeScroll('restore-notice-native-dismissed')}
-        onShown={() => logHomeScroll('restore-notice-native-shown')}
-        title={restorePurchasesNotice?.title ?? ''}
-        visible={restorePurchasesNotice !== null}
-      />
+      {releaseCapabilities.storefront && (
+        <ConfirmationPrompt
+          cancelLabel={null}
+          confirmLabel="OK"
+          message={restorePurchasesNotice?.message ?? ''}
+          onCancel={dismissRestorePurchasesNotice}
+          onConfirm={dismissRestorePurchasesNotice}
+          onDismissed={() => logHomeScroll('restore-notice-native-dismissed')}
+          onShown={() => logHomeScroll('restore-notice-native-shown')}
+          title={restorePurchasesNotice?.title ?? ''}
+          visible={restorePurchasesNotice !== null}
+        />
+      )}
       <ConfirmationPrompt
         cancelLabel={null}
         confirmLabel="OK"
@@ -1482,6 +1491,7 @@ const styles = StyleSheet.create({
   homeModeTabText: {
     color: '#64748B',
     fontSize: 12,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 0.7,
   },
@@ -1507,6 +1517,7 @@ const styles = StyleSheet.create({
   myLibraryTabText: {
     color: '#64748B',
     fontSize: 12,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 0.6,
   },
@@ -1533,6 +1544,7 @@ const styles = StyleSheet.create({
   deckSortLabel: {
     color: '#64748B',
     fontSize: 10,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 0.8,
   },
@@ -1596,12 +1608,14 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#2563EB',
     fontSize: 12,
+    fontFamily: 'Inter_800ExtraBold',
     fontWeight: '800',
   },
 
   deckSortChevron: {
     color: '#64748B',
     fontSize: 22,
+    fontFamily: 'Inter_700Bold',
     fontWeight: '700',
     transform: [{ rotate: '-90deg' }],
   },
@@ -1672,17 +1686,20 @@ const styles = StyleSheet.create({
   deckSortMenuItemText: {
     color: '#64748B',
     fontSize: 13,
+    fontFamily: 'Inter_700Bold',
     fontWeight: '700',
   },
 
   deckSortMenuItemTextSelected: {
     color: '#2563EB',
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
   },
 
   deckSortCheck: {
     color: '#459EFE',
     fontSize: 15,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
   },
 
@@ -1753,6 +1770,7 @@ const styles = StyleSheet.create({
     color: '#2563EB',
     fontSize: 22,
     lineHeight: 24,
+    fontFamily: 'Inter_700Bold',
     fontWeight: '700',
     marginTop: -2,
   },
@@ -1779,7 +1797,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
-  pendingVideoText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
+  pendingVideoText: { color: '#64748B', fontSize: 14, fontFamily: 'Inter_700Bold', fontWeight: '700' },
   videoGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   videoCard: {
     overflow: 'hidden',
@@ -1794,7 +1812,7 @@ const styles = StyleSheet.create({
   },
   video: { width: '100%', aspectRatio: 16 / 9 },
   videoPreparing: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC' },
-  videoDeckName: { color: '#111111', fontSize: 14, fontWeight: '900', marginTop: 10, marginHorizontal: 10 },
+  videoDeckName: { color: '#111111', fontSize: 14, fontFamily: 'Inter_900Black', fontWeight: '900', marginTop: 10, marginHorizontal: 10 },
   videoDate: { color: '#64748B', fontSize: 11, marginTop: 2, marginHorizontal: 10 },
   videoActions: { flexDirection: 'row', gap: 7, marginTop: 10, marginHorizontal: 10 },
   saveButton: {
@@ -1805,7 +1823,7 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     backgroundColor: '#459EFE',
   },
-  saveButtonText: { color: '#FFFFFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  saveButtonText: { color: '#FFFFFF', fontSize: 9, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.7 },
   deleteButton: {
     flex: 1,
     minHeight: 34,
@@ -1815,7 +1833,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  deleteButtonText: { color: '#64748B', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  deleteButtonText: { color: '#64748B', fontSize: 9, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.7 },
   footerLinks: {
     minHeight: 76,
     flexDirection: 'row',
@@ -1836,6 +1854,7 @@ const styles = StyleSheet.create({
   footerLinkText: {
     color: '#64748B',
     fontSize: 12,
+    fontFamily: 'Inter_800ExtraBold',
     fontWeight: '800',
     letterSpacing: 0.4,
   },

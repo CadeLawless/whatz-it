@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import {
   BundledCatalogRepository,
@@ -29,8 +29,10 @@ import {
 import type { CatalogSnapshot } from './catalog-snapshot';
 import { CatalogSyncError, synchronizeCatalog } from './catalog-sync';
 import { recordFlightEvent } from '@/utils/flight-recorder';
+import { platformReleaseCapabilities } from '@/release/platform-release';
 
 const SYNC_FRESHNESS_MS = 5 * 60 * 1000;
+const releaseCapabilities = platformReleaseCapabilities(Platform.OS);
 
 type CatalogProviderCoreState =
   | { status: 'loading'; catalog: CatalogSnapshot }
@@ -118,12 +120,15 @@ export function CatalogProvider({ children }: PropsWithChildren) {
         const database = await openCatalogDatabase();
         const repository = new SqliteCatalogRepository(database);
         const catalog = await repository.load();
-        const developmentPreview = configuredDevPreviewEnabled();
-        const manifestUrl = configuredCatalogManifestUrl(
-          undefined,
-          undefined,
-          developmentPreview,
-        );
+        const developmentPreview = releaseCapabilities.catalogUpdates
+          && configuredDevPreviewEnabled();
+        const manifestUrl = releaseCapabilities.catalogUpdates
+          ? configuredCatalogManifestUrl(
+              undefined,
+              undefined,
+              developmentPreview,
+            )
+          : null;
         const developmentPreviewKey = configuredDevPreviewKey();
         if (developmentPreview && !manifestUrl) {
           throw new Error('Expo development preview requires a dedicated preview manifest URL.');

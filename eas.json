@@ -45,12 +45,20 @@
     "production": {
       "autoIncrement": true,
       "environment": "production",
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "WHATZIT_VERIFY_RELEASE_BASELINE": "enabled"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
+      }
+    }
   }
 }

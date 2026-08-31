@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   presetSelected: { borderColor: colors.play },
-  presetText: { color: '#000000', fontSize: 15, fontWeight: '800' },
+  presetText: { color: '#000000', fontSize: 15, fontFamily: 'Inter_800ExtraBold' },
   presetTextSelected: { color: colors.play },
   customRow: {
     marginTop: spacing.lg,
@@ -103,8 +103,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#D2DEE8',
   },
-  customLabel: { color: '#000000', fontSize: 14, fontWeight: '500' },
-  customValue: { color: colors.play, fontSize: 30, lineHeight: 34, fontWeight: '900', marginTop: 3 },
+  customLabel: { color: '#000000', fontSize: 14, fontFamily: 'Inter_800ExtraBold' },
+  customValue: { color: colors.play, fontSize: 30, lineHeight: 32, fontFamily: 'Inter_900Black', marginTop: 3 },
   stepper: { flexDirection: 'row', gap: spacing.sm },
   stepButton: {
     width: 52,
@@ -116,5 +116,5 @@ const styles = StyleSheet.create({
   },
   incrementButton: { backgroundColor: colors.playBorder },
   stepButtonDisabled: { opacity: 0.3 },
-  stepText: { color: '#000000', fontSize: 30, fontWeight: '600', marginTop: -2 },
+  stepText: { color: '#000000', fontSize: 30, fontFamily: 'Inter_700Bold', marginTop: -2 },
 });

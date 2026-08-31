@@ -142,6 +142,7 @@ const styles = StyleSheet.create({
   seeBundlesText: {
     color: '#2563EB',
     fontSize: 12,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 0.6,
   },
@@ -149,6 +150,7 @@ const styles = StyleSheet.create({
     color: '#2563EB',
     fontSize: 24,
     lineHeight: 26,
+    fontFamily: 'Inter_500Medium',
     fontWeight: '500',
   },
   purchaseFooter: {
@@ -178,6 +180,7 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 0.7,
   },

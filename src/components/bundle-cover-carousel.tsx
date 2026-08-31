@@ -136,6 +136,7 @@ const styles = StyleSheet.create({
   heading: {
     color: colors.play,
     fontSize: 13,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 0.8,
   },
@@ -149,6 +150,7 @@ const styles = StyleSheet.create({
     color: colors.play,
     textAlign: 'center',
     fontSize: 12,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
@@ -172,6 +174,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     textAlign: 'center',
     fontSize: 17,
+    fontFamily: 'Inter_900Black',
     fontWeight: '900',
   },
   motionNote: { color: colors.muted, fontSize: 12, lineHeight: 17 },
