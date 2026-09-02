@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 17,
     lineHeight: 20,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Inter_400Regular',
   },
   heroShadow: {
     borderRadius: radius.xl,
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 17,
     lineHeight: 21,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Inter_400Regular',
     textAlign: 'left',
     marginTop: spacing.md,
   },

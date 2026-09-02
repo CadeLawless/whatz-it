@@ -147,7 +147,8 @@ class WhatzItVideoExportModule : Module() {
     }
 
     AsyncFunction("prepareRecordingAudio") {
-      // VisionCamera configures Android's recording audio source directly.
+      // Expo Audio owns Android microphone capture for rounds, so there is no
+      // separate CameraX audio source to configure here.
     }
 
     AsyncFunction("muxLiveOverlayVideo") {

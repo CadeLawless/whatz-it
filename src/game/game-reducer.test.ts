@@ -12,6 +12,8 @@ import { shuffle } from './shuffle';
 import {
   createTiltDetectorState,
   DEFAULT_TILT_CONFIG,
+  ANDROID_TILT_CONFIG,
+  getPortraitMotionSample,
   isForeheadPosition,
   normalizeLandscapeTilt,
   normalizePortraitCanvasTilt,
@@ -276,9 +278,9 @@ describe('tilt detector', () => {
     assert.equal(result.state.armed, true);
   });
 
-  it('accepts a relaxed return-to-center range by default', () => {
+  it('rearms Android on the first return-to-center sample', () => {
     const quickConfig = {
-      ...DEFAULT_TILT_CONFIG,
+      ...ANDROID_TILT_CONFIG,
       calibrationSamples: 2,
       calibrationMovementTolerance: 1,
       smoothingFactor: 1,
@@ -293,8 +295,6 @@ describe('tilt detector', () => {
     result = updateTiltDetector(result.state, 0.31, quickConfig);
     assert.equal(result.rearmed, false);
     result = updateTiltDetector(result.state, 0.29, quickConfig);
-    assert.equal(result.rearmed, false);
-    result = updateTiltDetector(result.state, 0.29, quickConfig);
     assert.equal(result.rearmed, true);
   });
 
@@ -307,6 +307,33 @@ describe('tilt detector', () => {
   it('normalizes motion for the portrait-locked clockwise game canvas', () => {
     assert.equal(normalizePortraitCanvasTilt(0.5), -0.5);
     assert.equal(normalizePortraitCanvasTilt(-0.5), 0.5);
+  });
+
+  it('ignores incomplete Android motion startup samples', () => {
+    assert.equal(getPortraitMotionSample({ rotation: { gamma: 0.5 } }), null);
+    assert.equal(
+      getPortraitMotionSample({
+        accelerationIncludingGravity: { x: 9, y: 0, z: 1 },
+      }),
+      null,
+    );
+    assert.equal(
+      getPortraitMotionSample({
+        accelerationIncludingGravity: { x: Number.NaN, y: 0, z: 1 },
+        rotation: { gamma: 0.5 },
+      }),
+      null,
+    );
+  });
+
+  it('extracts a complete portrait-canvas motion sample', () => {
+    assert.deepEqual(
+      getPortraitMotionSample({
+        accelerationIncludingGravity: { x: 9, y: 0.2, z: 1 },
+        rotation: { gamma: 0.5 },
+      }),
+      { gravity: { x: 9, y: 0.2, z: 1 }, angle: -0.5 },
+    );
   });
 
   it('unwraps the gamma discontinuity without reversing the gesture', () => {

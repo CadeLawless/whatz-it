@@ -19,11 +19,24 @@ type RoundHapticOptions = {
 };
 
 const QUICK_IMPACT_GAP_MS = 80;
+let hapticGeneration = 0;
+const pendingDelays = new Map<ReturnType<typeof setTimeout>, () => void>();
+
+export function cancelRoundHaptics() {
+  hapticGeneration += 1;
+  for (const [timeout, resolve] of pendingDelays) {
+    clearTimeout(timeout);
+    resolve();
+  }
+  pendingDelays.clear();
+  Vibration.cancel();
+}
 
 export async function triggerRoundHaptic(
   cue: RoundHapticCue,
   { cameraActive, countdownValue }: RoundHapticOptions,
 ) {
+  const generation = hapticGeneration;
   const startedAt = Date.now();
   // Always use the original camera-active native path on iOS so microphone
   // permission and recording state cannot select a different vibration set.
@@ -50,6 +63,7 @@ export async function triggerRoundHaptic(
           requestedPattern,
         });
       } catch (nativeError) {
+        if (generation !== hapticGeneration) return;
         warnRoundDiagnostic('iOS native feedback failed; using fallback feedback', nativeError, {
           cameraActive,
           cue,
@@ -62,11 +76,11 @@ export async function triggerRoundHaptic(
             cue,
           });
         } else {
-          await performStyledHaptic(cue, countdownValue);
+          await performStyledHaptic(cue, countdownValue, generation);
         }
       }
     } else {
-      await performStyledHaptic(cue, countdownValue);
+      await performStyledHaptic(cue, countdownValue, generation);
       logRoundDiagnostic('styled round haptic API completed', {
         cue,
         note: 'The native API completed; operating systems do not confirm physical motor output.',
@@ -88,7 +102,17 @@ export async function triggerRoundHaptic(
   }
 }
 
-async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3) {
+async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3, generation = hapticGeneration) {
+  if (generation !== hapticGeneration) return;
+  // Use Expo's Vibrator-backed impacts on Android. View-based Confirm/Reject/
+  // Gesture_End can resolve successfully while the device rejects the effect
+  // as unsupported. Do not attempt both APIs: that can double the vibration.
+  if (Platform.OS === 'android' && cue === 'correct') {
+    // Keep scoring feedback brief instead of restoring the old 450ms motor
+    // burst while the player is returning to neutral. Pass/flip use Medium.
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    return;
+  }
   switch (cue) {
     case 'card-flip':
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -100,12 +124,13 @@ async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 |
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       return;
     case 'get-ready':
-      await performImpactSeries(Haptics.ImpactFeedbackStyle.Medium, 2);
+      await performImpactSeries(Haptics.ImpactFeedbackStyle.Medium, 2, generation);
       return;
     case 'initial-countdown':
       await performImpactSeries(
         Haptics.ImpactFeedbackStyle.Light,
         countdownValue ? 4 - countdownValue : 1,
+        generation,
       );
       return;
     case 'final-countdown':
@@ -116,9 +141,10 @@ async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 |
   }
 }
 
-async function performImpactSeries(style: Haptics.ImpactFeedbackStyle, count: number) {
+async function performImpactSeries(style: Haptics.ImpactFeedbackStyle, count: number, generation: number) {
   for (let index = 0; index < count; index += 1) {
     if (index > 0) await delay(QUICK_IMPACT_GAP_MS);
+    if (generation !== hapticGeneration) return;
     await Haptics.impactAsync(style);
   }
 }
@@ -154,7 +180,7 @@ function describeRequestedPattern(cue: RoundHapticCue, countdownValue?: 1 | 2 | 
     case 'card-flip':
       return 'Medium impact';
     case 'correct':
-      return 'one long system vibration at system-controlled strength';
+      return Platform.OS === 'android' ? 'Heavy impact' : 'one long system vibration at system-controlled strength';
     case 'pass':
       return 'Medium impact';
     case 'get-ready':
@@ -201,5 +227,11 @@ function dispatchSystemVibrationSeries(count: number) {
 }
 
 function delay(milliseconds: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+  return new Promise<void>((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingDelays.delete(timeout);
+      resolve();
+    }, milliseconds);
+    pendingDelays.set(timeout, resolve);
+  });
 }

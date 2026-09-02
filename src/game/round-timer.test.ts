@@ -5,9 +5,48 @@ import {
   getNextSecondBoundaryDelay,
   getRemainingSeconds,
   getRemainingSecondsFromMs,
+  scheduleRoundTimer,
 } from '@/hooks/use-round-timer';
 
 describe('round timer scheduling', () => {
+  it('emits 3, 2, 1, 0 once each on the absolute countdown timeline', (context) => {
+    context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+    const values: number[] = [];
+    const stop = scheduleRoundTimer(3000, (value) => values.push(value));
+    context.mock.timers.tick(1000);
+    context.mock.timers.tick(1000);
+    context.mock.timers.tick(1000);
+    context.mock.timers.tick(5000);
+    assert.deepEqual(values, [3, 2, 1, 0]);
+    stop();
+  });
+
+  it('cancels the old countdown before starting another deck', (context) => {
+    context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+    const old: number[] = [];
+    const current: number[] = [];
+    const stopOld = scheduleRoundTimer(3000, (value) => old.push(value));
+    context.mock.timers.tick(1000);
+    stopOld();
+    const stopCurrent = scheduleRoundTimer(4000, (value) => current.push(value));
+    context.mock.timers.tick(1000);
+    context.mock.timers.tick(1000);
+    context.mock.timers.tick(1000);
+    assert.deepEqual(old, [3, 2]);
+    assert.deepEqual(current, [3, 2, 1, 0]);
+    stopCurrent();
+  });
+
+  it('skips expired beats after a JS stall instead of bursting old cues', (context) => {
+    context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+    const values: number[] = [];
+    const stop = scheduleRoundTimer(3000, (value) => values.push(value));
+    context.mock.timers.tick(2200);
+    assert.deepEqual(values, [3, 1]);
+    context.mock.timers.tick(800);
+    assert.deepEqual(values, [3, 1, 0]);
+    stop();
+  });
   it('targets the exact next whole-second boundary', () => {
     assert.equal(getRemainingSeconds(30_000, 0), 30);
     assert.equal(getNextSecondBoundaryDelay(30_000, 30, 0), 1_000);

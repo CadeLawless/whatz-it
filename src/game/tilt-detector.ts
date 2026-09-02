@@ -6,6 +6,16 @@ export type GravityVector = {
   z: number;
 };
 
+type MotionMeasurementLike = {
+  accelerationIncludingGravity?: Partial<GravityVector> | null;
+  rotation?: { gamma?: number | null } | null;
+};
+
+export type PortraitMotionSample = {
+  gravity: GravityVector;
+  angle: number;
+};
+
 export type LandscapeOrientation = 90 | -90;
 
 export type TiltDetectorConfig = {
@@ -17,6 +27,7 @@ export type TiltDetectorConfig = {
   neutralAngle: number;
   rearmSamples: number;
   baselineAdjustmentFactor: number;
+  rearmUsingRawAngle?: boolean;
 };
 
 export type TiltDetectorState = {
@@ -49,6 +60,14 @@ export const DEFAULT_TILT_CONFIG: TiltDetectorConfig = {
   neutralAngle: 0.3,
   rearmSamples: 2,
   baselineAdjustmentFactor: 0.015,
+};
+
+export const ANDROID_TILT_CONFIG: TiltDetectorConfig = {
+  ...DEFAULT_TILT_CONFIG,
+  // Keep confirmation/filtering for scoring, but do not make returning to
+  // center wait for the low-pass filter's tail after a deep tilt.
+  rearmUsingRawAngle: true,
+  rearmSamples: 1,
 };
 
 export function createTiltDetectorState(baseline: number | null = null): TiltDetectorState {
@@ -106,14 +125,15 @@ export function updateTiltDetector(
   const delta = filteredAngle - state.baseline;
 
   if (!state.armed) {
-    const neutralCount = Math.abs(delta) <= config.neutralAngle ? state.neutralCount + 1 : 0;
+    const neutralDelta = config.rearmUsingRawAngle ? unwrappedAngle - state.baseline : delta;
+    const neutralCount = Math.abs(neutralDelta) <= config.neutralAngle ? state.neutralCount + 1 : 0;
     const rearmed = neutralCount >= config.rearmSamples;
     return {
       state: {
         ...state,
         rawAngle: angle,
         unwrappedAngle,
-        filteredAngle,
+        filteredAngle: rearmed && config.rearmUsingRawAngle ? unwrappedAngle : filteredAngle,
         armed: rearmed,
         candidateAction: null,
         candidateCount: 0,
@@ -197,6 +217,30 @@ export function normalizePortraitCanvasTilt(gamma: number) {
   // The native window is portrait while the game canvas is rotated clockwise.
   // Reverse gamma so a tilt toward the floor remains Correct in visual landscape.
   return -gamma;
+}
+
+export function getPortraitMotionSample(
+  measurement: MotionMeasurementLike,
+): PortraitMotionSample | null {
+  const gravity = measurement.accelerationIncludingGravity;
+  const gamma = measurement.rotation?.gamma;
+  if (
+    !gravity ||
+    !Number.isFinite(gravity.x) ||
+    !Number.isFinite(gravity.y) ||
+    !Number.isFinite(gravity.z) ||
+    !Number.isFinite(gamma)
+  ) {
+    return null;
+  }
+  return {
+    gravity: {
+      x: gravity.x as number,
+      y: gravity.y as number,
+      z: gravity.z as number,
+    },
+    angle: normalizePortraitCanvasTilt(gamma as number),
+  };
 }
 
 export function isLandscapeOrientation(orientation: number): orientation is LandscapeOrientation {

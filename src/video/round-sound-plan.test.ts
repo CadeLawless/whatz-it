@@ -47,4 +47,5 @@ describe('round sound loading plan', () => {
     playerKeys.add('final-tick-b');
     assert.equal(playerKeys.size, 11);
   });
+
 });

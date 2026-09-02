@@ -33,11 +33,14 @@ describe('bundled SQLite catalog seed', () => {
     assert.equal(seed.state.localSchemaVersion, 5);
     assert.equal(seed.state.catalogSchemaVersion, 5);
     assert.equal(seed.state.catalogRevision, catalog.revision);
-    assert.equal(seed.decks.length, 20);
-    assert.equal(seed.bundles.length, 2);
+    assert.equal(seed.decks.length, catalog.decks.length);
+    assert.equal(seed.bundles.length, catalog.bundles.length);
     assert.equal(
       seed.decks.reduce((total, deck) => total + deck.cardCount, 0),
-      3814,
+      catalog.decks.reduce(
+        (total, deck) => total + (deck.cardCount ?? deck.cards.length),
+        0,
+      ),
     );
     assert.deepEqual(
       seed.deckOrders.filter(({ scope }) => scope === 'free').map(({ deckId }) => deckId),

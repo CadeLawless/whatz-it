@@ -1,4 +1,4 @@
-import { type Href, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -25,6 +25,7 @@ const READY_TRANSITION_MS = 450;
 const AUDIO_STARTUP_GRACE_MS = 1500;
 
 export default function ReadyScreen() {
+  const focused = useIsFocused();
   const { catalog } = useCatalog();
   const { height } = useLandscapeDimensions();
   const router = useRouter();
@@ -47,14 +48,16 @@ export default function ReadyScreen() {
   const [introComplete, setIntroComplete] = useState(false);
   const [soundsPrepared, setSoundsPrepared] = useState(false);
   const [soundPreparationFailed, setSoundPreparationFailed] = useState(false);
-  const [audioStartupGraceComplete, setAudioStartupGraceComplete] = useState(false);
+  const [audioStartupGraceElapsed, setAudioStartupGraceComplete] = useState(false);
   const [recordingPreparation, setRecordingPreparation] =
     useState<RecordingPreparation | 'preparing'>('preparing');
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
   const mounted = useRef(true);
   const introStarted = useRef(false);
-  const soundPreparationStarted = useRef(false);
+  const operation = useRef(0);
+  const leaving = useRef(false);
+  const lastCountdownCue = useRef<number | null>(null);
   const previousGateSignature = useRef('');
   const pausedIntroRemaining = useRef<number | null>(null);
   const pausedCountdownRemaining = useRef<number | null>(null);
@@ -65,17 +68,24 @@ export default function ReadyScreen() {
     loadTimedOut: soundLoadTimedOut,
     play: playSound,
     prepareForRound,
-    recoverAudio,
+    stopAll,
+    stopIntro,
   } = useRoundSounds();
+  const audioStartupGraceComplete = soundsReady || audioStartupGraceElapsed;
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     mounted.current = true;
+    stopAll();
     return () => {
       mounted.current = false;
+      operation.current += 1;
+      stopIntro();
+      if (!launched.current) void cancelRecording();
     };
-  }, []);
-  const foreheadStatus = useForeheadPosition(round.status === 'ready');
+  }, [cancelRecording, stopAll, stopIntro]));
+  const foreheadStatus = useForeheadPosition(focused && appActive && !isLeaving && round.status === 'ready');
   const positionReady =
+    introComplete || introEndsAt !== null ||
     foreheadStatus === 'ready' ||
     foreheadStatus === 'denied' ||
     foreheadStatus === 'unavailable';
@@ -87,7 +97,11 @@ export default function ReadyScreen() {
     recordingPreparation === 'unavailable';
   const handleCountdownSecond = useCallback(
     (remaining: number) => {
+      if (!mounted.current || leaving.current || AppState.currentState !== 'active') return;
       if (remaining < 1 || remaining > 3) return;
+      if (lastCountdownCue.current === remaining) return;
+      lastCountdownCue.current = remaining;
+      const currentOperation = operation.current;
       const sound: RoundSoundId =
         remaining === 3 ? 'count-3' : remaining === 2 ? 'count-2' : 'count-1';
       recordOverlayEvent({ kind: 'countdown', text: String(remaining) });
@@ -101,12 +115,13 @@ export default function ReadyScreen() {
         cameraActive: isRecording,
         countdownValue: remaining as 1 | 2 | 3,
       });
-      void playSound(sound);
+      void playSound(sound, () => mounted.current && !leaving.current &&
+        operation.current === currentOperation && lastCountdownCue.current === remaining);
     },
     [countdownEndsAt, isRecording, playSound, recordOverlayEvent],
   );
   const handleCountdownExpire = useCallback(() => {
-    if (launched.current) return;
+    if (launched.current || !mounted.current || leaving.current || AppState.currentState !== 'active') return;
     launched.current = true;
     void playSound('round-start');
     logRoundDiagnostic('ready countdown expired; playing round start cue and navigating to game', {
@@ -117,12 +132,14 @@ export default function ReadyScreen() {
   }, [countdownEndsAt, playSound, router]);
   const count = useRoundTimer({
     endsAt: countdownEndsAt,
-    active: appActive && introComplete && !isLeaving,
+    active: focused && appActive && introComplete && !isLeaving,
     onExpire: handleCountdownExpire,
     onSecond: handleCountdownSecond,
   });
 
   const beginCountdown = useCallback(() => {
+    if (!mounted.current || leaving.current || AppState.currentState !== 'active') return;
+    lastCountdownCue.current = null;
     const endsAt = Date.now() + 3000;
     logRoundDiagnostic('get-ready completed; starting absolute 3-2-1 countdown', {
       endsAt,
@@ -134,11 +151,11 @@ export default function ReadyScreen() {
   }, []);
 
   useEffect(() => {
-    if (!appActive || introEndsAt === null || introComplete || isLeaving) return;
+    if (!focused || !appActive || introEndsAt === null || introComplete || isLeaving) return;
     const remaining = Math.max(0, introEndsAt - Date.now());
     const timeout = setTimeout(beginCountdown, remaining);
     return () => clearTimeout(timeout);
-  }, [appActive, beginCountdown, introComplete, introEndsAt, isLeaving]);
+  }, [focused, appActive, beginCountdown, introComplete, introEndsAt, isLeaving]);
 
   useEffect(() => {
     let previousState = AppState.currentState;
@@ -147,6 +164,10 @@ export default function ReadyScreen() {
       const enteredForeground = previousState !== 'active' && nextState === 'active';
       previousState = nextState;
       if (leftForeground) {
+        operation.current += 1;
+        // A startup continuation cannot launch audio while backgrounded. If it
+        // had not reached the intro timeline, allow a fresh attempt on resume.
+        if (introEndsAt === null && !introComplete) introStarted.current = false;
         setAppActive(false);
         if (introEndsAt !== null) {
           pausedIntroRemaining.current = Math.max(0, introEndsAt - Date.now());
@@ -172,7 +193,9 @@ export default function ReadyScreen() {
           void resumeRecording();
         } else if (recordingPreparation === 'ready') {
           setRecordingPreparation('preparing');
-          void prepareRecording().then(setRecordingPreparation);
+          void prepareRecording().then((result) => {
+            if (mounted.current && !leaving.current) setRecordingPreparation(result);
+          });
         }
       }
     });
@@ -180,6 +203,7 @@ export default function ReadyScreen() {
   }, [
     countdownEndsAt,
     introEndsAt,
+    introComplete,
     pauseRecording,
     prepareRecording,
     recordingPreparation,
@@ -208,31 +232,6 @@ export default function ReadyScreen() {
     previousGateSignature.current = signature;
     logRoundDiagnostic('ready screen gate state changed', details);
   });
-
-  useEffect(() => {
-    if (!soundsReady || soundPreparationStarted.current) return;
-    soundPreparationStarted.current = true;
-    logRoundDiagnostic('ready screen starting round audio preparation');
-    let active = true;
-    void prepareForRound().then(async (initiallyPrepared) => {
-      let prepared = initiallyPrepared;
-      if (!prepared) {
-        // Recreate every player after a native rewind/session failure. A
-        // player can report loaded and still reject a seek on some devices.
-        await recoverAudio(true);
-        if (active) prepared = await prepareForRound();
-      }
-      logRoundDiagnostic('ready screen received audio preparation result', { active, prepared });
-      if (!active) return;
-      setSoundsPrepared(prepared);
-      setSoundPreparationFailed(!prepared);
-      setAudioStartupGraceComplete(true);
-      if (!prepared) soundPreparationStarted.current = false;
-    });
-    return () => {
-      active = false;
-    };
-  }, [prepareForRound, recoverAudio, soundsReady]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -270,6 +269,7 @@ export default function ReadyScreen() {
   }, [orientationSettled, revealTransition]);
 
   useEffect(() => {
+    if (!focused) return;
     if (!canStartReadyIntro({
       appActive,
       audioStartupGraceComplete,
@@ -280,6 +280,9 @@ export default function ReadyScreen() {
       recordingPrepared,
     })) return;
     introStarted.current = true;
+    const currentOperation = operation.current;
+    const isCurrent = () => mounted.current && !leaving.current &&
+      currentOperation === operation.current && AppState.currentState === 'active';
     logRoundDiagnostic('ready intro gates passed; starting recording before audio', {
       recordingPreparation,
     });
@@ -290,7 +293,7 @@ export default function ReadyScreen() {
         recordingPreparation,
         started,
       });
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
       if (recordingPreparation === 'ready' && !started) {
         introStarted.current = false;
         setRecordingPreparation('error');
@@ -301,14 +304,22 @@ export default function ReadyScreen() {
       if (started) {
         recordOverlayEvent({ kind: 'countdown', text: 'GET READY' });
         logRoundDiagnostic('get-ready overlay attached to recording');
+
       }
+      // Arm once after the recorder changes Android's shared audio mode.
+      // Readiness/status changes must not re-prepare a running countdown.
+      const rearmed = await prepareForRound();
+      if (!isCurrent()) return;
+      setSoundsPrepared(rearmed);
+      setSoundPreparationFailed(!rearmed);
+      logRoundDiagnostic('round audio rearmed after recording start', { rearmed });
       void triggerRoundHaptic('get-ready', { cameraActive: started });
-      const played = await playSound('get-ready');
+      const played = await playSound('get-ready', isCurrent);
       logRoundDiagnostic('get-ready playback request completed', {
         mounted: mounted.current,
         played,
       });
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
       if (!played) {
         // A live cue is feedback, not a prerequisite for gameplay. The cue is
         // still attached to the exported video, so continue the intro even if
@@ -322,12 +333,14 @@ export default function ReadyScreen() {
     };
     void startIntro();
   }, [
+    focused,
     isLeaving,
     appActive,
     audioStartupGraceComplete,
     orientationSettled,
     playSound,
     positionReady,
+    prepareForRound,
     recordOverlayEvent,
     recordingPreparation,
     recordingPrepared,
@@ -374,6 +387,9 @@ export default function ReadyScreen() {
   };
 
   const handleCancel = async () => {
+    leaving.current = true;
+    operation.current += 1;
+    stopAll();
     setIsLeaving(true);
     await cancelRecording();
     try {
@@ -441,7 +457,8 @@ export default function ReadyScreen() {
                     <Text
                       style={[styles.count, { fontSize: countSize, lineHeight: countSize * 1.05 }]}
                     >
-                      {count}
+                      {/* Keep the final beat visible until Game replaces Ready. */}
+                      {Math.max(1, count)}
                     </Text>
                   ) : (
                     <Text style={styles.getReady}>GET READY</Text>
@@ -461,12 +478,12 @@ export default function ReadyScreen() {
                 </Text>
               </View>
             )}
+            {isRecording && (
+              <RecordingIndicator
+                position={motionControlsUnavailable ? 'top-left' : 'bottom-left'}
+              />
+            )}
           </View>
-          {isRecording && (
-            <RecordingIndicator
-              position={motionControlsUnavailable ? 'top-left' : 'bottom-left'}
-            />
-          )}
         </SafeAreaView>
       </LandscapeViewport>
     </View>

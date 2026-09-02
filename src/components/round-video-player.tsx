@@ -27,6 +27,7 @@ import { CircularCloseButton } from '@/components/circular-close-button';
 import { LandscapeViewport } from '@/components/landscape-viewport';
 import { formatRoundClock } from '@/game/round-duration';
 import { colors, radius, spacing } from '@/theme';
+import { getClockwiseLandscapeInsets } from '@/utils/clockwise-landscape-insets';
 import type { RoundVideo, RoundVideoEvent } from '@/video/round-videos';
 import {
   flushRoundDiagnostics,
@@ -45,6 +46,7 @@ type RoundVideoPlayerProps = {
   isSaving?: boolean;
   saveDisabled?: boolean;
   staticThumbnail?: boolean;
+  suspending?: boolean;
   onSave?: (video: RoundVideo) => Promise<VideoSaveNotice>;
   onDelete?: (video: RoundVideo) => Promise<void>;
 };
@@ -66,6 +68,7 @@ export function RoundVideoPlayer({
   isSaving = false,
   saveDisabled = false,
   staticThumbnail = false,
+  suspending = false,
   onSave,
   onDelete,
 }: RoundVideoPlayerProps) {
@@ -110,6 +113,13 @@ export function RoundVideoPlayer({
     instance.timeUpdateEventInterval = 0.1;
     if (!staticThumbnail) instance.play();
   });
+
+  useEffect(() => {
+    if (!suspending) return;
+    expandedRef.current = false;
+    player.pause();
+    pauseAudioPlayer(separateAudio);
+  }, [player, separateAudio, suspending]);
 
   useEffect(() => {
     logVideoDiagnostic('player mounted', {
@@ -256,14 +266,7 @@ export function RoundVideoPlayer({
     () => getContainedVideoFrame(containerSize, videoSize),
     [containerSize, videoSize],
   );
-  const leftChromeInset = Math.max(
-    spacing.md,
-    insets.top + spacing.sm - videoFrame.x,
-  );
-  const rightChromeInset = Math.max(
-    spacing.md,
-    insets.bottom + spacing.sm - videoFrame.x,
-  );
+  const landscapeInsets = getClockwiseLandscapeInsets(insets);
 
   const clearControlsTimer = () => {
     if (controlsTimer.current === null) return;
@@ -595,7 +598,7 @@ export function RoundVideoPlayer({
         <View style={[styles.frame, style]}>
           {thumbnail ? (
             <Image contentFit="cover" source={thumbnail} style={StyleSheet.absoluteFill} />
-          ) : (
+          ) : !suspending ? (
             <VideoView
               contentFit="cover"
               nativeControls={false}
@@ -603,7 +606,7 @@ export function RoundVideoPlayer({
               style={StyleSheet.absoluteFill}
               surfaceType="textureView"
             />
-          )}
+          ) : null}
           {!video.playbackIncludesOverlays && (
             <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} compact />
           )}
@@ -643,7 +646,15 @@ export function RoundVideoPlayer({
                 const { width, height } = layoutEvent.nativeEvent.layout;
                 setContainerSize({ width, height });
               }}
-              style={styles.expandedFrame}
+              style={[
+                styles.expandedFrame,
+                {
+                  marginTop: landscapeInsets.top,
+                  marginRight: landscapeInsets.right,
+                  marginBottom: landscapeInsets.bottom,
+                  marginLeft: landscapeInsets.left,
+                },
+              ]}
             >
               <VideoView
                 contentFit="contain"
@@ -673,7 +684,7 @@ export function RoundVideoPlayer({
                   <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} />
                 )}
                 <View
-                  style={[styles.playerActions, { left: leftChromeInset, top: spacing.md }]}
+                  style={[styles.playerActions, { left: spacing.md, top: spacing.md }]}
                 >
                   {onSave && (
                     <Pressable
@@ -723,14 +734,14 @@ export function RoundVideoPlayer({
                   onPress={closeExpanded}
                   style={[
                     styles.closeButtonPosition,
-                    { right: rightChromeInset, top: spacing.md },
+                    { right: spacing.md, top: spacing.md },
                   ]}
                 />
                 {controlsVisible && (
                   <View
                     style={[
                       styles.playbackControls,
-                      { left: leftChromeInset, right: rightChromeInset },
+                      { left: spacing.md, right: spacing.md },
                     ]}
                   >
                     <Pressable

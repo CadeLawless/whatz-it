@@ -35,6 +35,12 @@ function synchronizedDeckVersion(deckId: string) {
   return deck.version + 1;
 }
 
+function synchronizedCardContentVersion(deckId: string) {
+  const deck = bundledCatalog.decks.find(({ id }) => id === deckId);
+  if (!deck) throw new Error(`Bundled deck ${deckId} was not found.`);
+  return (deck.cardContentVersion ?? 1) + 1;
+}
+
 describe('catalog artifact verification', () => {
   const bytes = new TextEncoder().encode('verified catalog artifact');
   const hash = createHash('sha256').update(bytes).digest('hex');
@@ -119,7 +125,7 @@ describe('catalog synchronization activation', () => {
         {
           title: 'Synchronized title',
           deck_version: synchronizedDeckVersion('celebrity-shuffle'),
-          card_content_version: 2,
+          card_content_version: synchronizedCardContentVersion('celebrity-shuffle'),
         },
       );
       assert.equal(
@@ -200,7 +206,7 @@ describe('catalog synchronization activation', () => {
       successor.catalogRevision += 1;
       successor.updatedAt = '2026-08-13T23:00:00Z';
       successor.decks[1].deckVersion += 1;
-      successor.decks[1].cardContentVersion = 2;
+      successor.decks[1].cardContentVersion += 1;
       successor.decks[1].content.hash = 'e'.repeat(64);
       const preparedMedia = new Map(
         successor.decks.flatMap((deck) => [deck.cover, deck.thumbnail]).map(
@@ -231,7 +237,7 @@ describe('catalog synchronization activation', () => {
         ),
         {
           ownership_source: 'purchase',
-          desired_content_version: 2,
+          desired_content_version: successor.decks[1].cardContentVersion,
           installed_content_version: 1,
           status: 'installed',
           last_verified_at: '2026-08-13T22:00:00Z',
@@ -264,7 +270,7 @@ describe('Phase 3 catalog acceptance', () => {
       const paidArtifact: DeckContentArtifact = {
         schemaVersion: 1,
         deckId: 'accents-and-impressions',
-        cardContentVersion: 1,
+        cardContentVersion: fixture.manifest.decks[1].cardContentVersion,
         cards: [{ id: 'preview-paid-card', text: 'Preview paid card' }],
       };
       const paidBytes = new TextEncoder().encode(JSON.stringify(paidArtifact));
@@ -295,7 +301,7 @@ describe('Phase 3 catalog acceptance', () => {
         ),
         {
           ownership_source: 'purchase',
-          installed_content_version: 1,
+          installed_content_version: fixture.manifest.decks[1].cardContentVersion,
           status: 'installed',
         },
       );
@@ -324,7 +330,7 @@ describe('Phase 3 catalog acceptance', () => {
       const paidArtifact: DeckContentArtifact = {
         schemaVersion: 1,
         deckId: 'accents-and-impressions',
-        cardContentVersion: 1,
+        cardContentVersion: fixture.manifest.decks[1].cardContentVersion,
         cards: [{ id: 'preview-paid-card', text: 'Preview paid card' }],
       };
       const paidBytes = new TextEncoder().encode(JSON.stringify(paidArtifact));
@@ -651,7 +657,7 @@ function updateFixture() {
         price: null,
         status: 'active',
         deckVersion: synchronizedDeckVersion('celebrity-shuffle'),
-        cardContentVersion: 2,
+        cardContentVersion: synchronizedCardContentVersion('celebrity-shuffle'),
         cardCount: 1,
         featuredCards: [
           { id: 'preview-one', text: 'First offline preview' },
@@ -683,7 +689,7 @@ function updateFixture() {
   const artifact: DeckContentArtifact = {
     schemaVersion: 1,
     deckId: 'celebrity-shuffle',
-    cardContentVersion: 2,
+    cardContentVersion: synchronizedCardContentVersion('celebrity-shuffle'),
     cards: [{ id: 'sync-card', text: 'Synchronized card' }],
   };
   return {
@@ -703,7 +709,7 @@ function acceptanceFixture(revision: number) {
   const artifact: DeckContentArtifact = {
     schemaVersion: 1,
     deckId: 'celebrity-shuffle',
-    cardContentVersion: 2,
+    cardContentVersion: synchronizedCardContentVersion('celebrity-shuffle'),
     cards: [{ id: 'acceptance-card', text: 'Acceptance card' }],
   };
   const freeContent = new TextEncoder().encode(JSON.stringify(artifact));
@@ -736,7 +742,7 @@ function acceptanceFixture(revision: number) {
         price: null,
         status: 'active',
         deckVersion: synchronizedDeckVersion('celebrity-shuffle'),
-        cardContentVersion: 2,
+        cardContentVersion: synchronizedCardContentVersion('celebrity-shuffle'),
         cardCount: 1,
         content: {
           hash: sha256(freeContent),
@@ -758,7 +764,7 @@ function acceptanceFixture(revision: number) {
         price: 1.99,
         status: 'active',
         deckVersion: synchronizedDeckVersion('accents-and-impressions'),
-        cardContentVersion: 1,
+        cardContentVersion: synchronizedCardContentVersion('accents-and-impressions'),
         cardCount: 86,
         content: {
           hash: 'f'.repeat(64),

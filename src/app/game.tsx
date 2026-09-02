@@ -1,8 +1,8 @@
 import { useKeepAwake } from 'expo-keep-awake';
-import { type Href, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   AppState,
   Platform,
@@ -29,19 +29,24 @@ import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnosti
 
 const ROUND_END_SCREEN_MS = 2495;
 const RESULTS_SCREENSHOT_TIMEOUT_MS = 2_000;
+const MANUAL_FEEDBACK_DURATION_MS = Platform.OS === 'android' ? 350 : 550;
 
 export default function GameScreen() {
+  const focused = useIsFocused();
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   useKeepAwake();
   const { width, height } = useLandscapeDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const roundStarted = useRef(false);
   const finishSoundPlayed = useRef(false);
+  const feedbackSoundCard = useRef<number | null>(null);
+  const flipSoundCard = useRef<number | null>(null);
   const timerPausedForBackground = useRef(false);
   const recordingPausedForBackground = useRef(false);
   const [foregroundResumeGeneration, setForegroundResumeGeneration] = useState(0);
   const screenRef = useRef<View>(null);
   const resultsTransitionStarted = useRef(false);
-  const { play: playSound } = useRoundSounds();
+  const { play: playSound, stopAll } = useRoundSounds();
   const router = useRouter();
   const { beginTransition } = useScreenshotTransition();
   const {
@@ -58,7 +63,14 @@ export default function GameScreen() {
     resumeRound,
     startRound,
     stopRecording,
+    cancelRecording,
   } = useRound();
+  const finishedRef = useRef(false);
+  useLayoutEffect(() => { finishedRef.current = round.status === 'finished'; }, [round.status]);
+  useFocusEffect(useCallback(() => () => {
+    stopAll();
+    if (!finishedRef.current) void cancelRecording();
+  }, [cancelRecording, stopAll]));
   const stopRecordingRef = useRef(stopRecording);
   const resumeRecordingRef = useRef(resumeRecording);
   const deck = roundDeck;
@@ -82,7 +94,7 @@ export default function GameScreen() {
   }, [resumeRecording]);
   const remainingSeconds = useRoundTimer({
     endsAt: round.endsAt,
-    active: round.status === 'playing' || round.status === 'feedback',
+    active: focused && appActive && (round.status === 'playing' || round.status === 'feedback'),
     onExpire: handleExpire,
     onSecond: handleTimerSecond,
   });
@@ -92,28 +104,37 @@ export default function GameScreen() {
       : remainingSeconds;
   const handleAnswer = useCallback(
     (outcome: 'correct' | 'passed') => {
-      if (outcome === 'correct') {
-        void playSound('correct');
-        void triggerRoundHaptic('correct', { cameraActive: isRecording });
-      } else {
-        void playSound('pass');
-        void triggerRoundHaptic('pass', { cameraActive: isRecording });
-      }
       answerCard(outcome);
     },
-    [answerCard, isRecording, playSound],
+    [answerCard],
   );
-  const handleRearmed = useCallback(() => {
+  // Audio/haptics follow the committed card state, never precede its dispatch.
+  useEffect(() => {
+    if (!focused || round.status !== 'feedback') return;
+    if (feedbackSoundCard.current === round.currentCardIndex) return;
+    feedbackSoundCard.current = round.currentCardIndex;
+    const outcome = round.latestOutcome;
+    if (outcome === 'correct') {
+      void playSound('correct');
+      void triggerRoundHaptic('correct', { cameraActive: isRecording });
+    } else {
+      void playSound('pass');
+      void triggerRoundHaptic('pass', { cameraActive: isRecording });
+    }
+  }, [focused, round.status, round.latestOutcome, round.currentCardIndex, isRecording, playSound]);
+  useEffect(() => {
+    if (!focused || round.status !== 'playing' || round.currentCardIndex === 0) return;
+    if (flipSoundCard.current === round.currentCardIndex) return;
+    flipSoundCard.current = round.currentCardIndex;
     void triggerRoundHaptic('card-flip', { cameraActive: isRecording });
     void playSound('flip');
-    advanceCard();
-  }, [advanceCard, isRecording, playSound]);
+  }, [focused, isRecording, playSound, round.currentCardIndex, round.status]);
   const tiltStatus = useTiltControls({
     enabled:
-      round.status === 'ready' || round.status === 'playing' || round.status === 'feedback',
+      focused && appActive && (round.status === 'ready' || round.status === 'playing' || round.status === 'feedback'),
     acceptingInput: round.status === 'playing',
     onAction: handleAnswer,
-    onRearmed: handleRearmed,
+    onRearmed: advanceCard,
   });
   const handleFinishEarly = useCallback(() => {
     setFinishPromptVisible(true);
@@ -131,18 +152,20 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (round.status !== 'ready') return;
+    if (!focused || !appActive) return;
     if (!roundStarted.current && (tiltStatus === 'ready' || tiltStatus === 'unavailable' || tiltStatus === 'denied')) {
       roundStarted.current = true;
       startRound();
     }
-  }, [round.status, startRound, tiltStatus]);
+  }, [appActive, focused, round.status, startRound, tiltStatus]);
 
   useEffect(() => {
     if (round.status !== 'feedback') return;
+    if (!focused) return;
     if (tiltStatus !== 'unavailable' && tiltStatus !== 'denied') return;
-    const timeout = setTimeout(advanceCard, 550);
+    const timeout = setTimeout(advanceCard, MANUAL_FEEDBACK_DURATION_MS);
     return () => clearTimeout(timeout);
-  }, [advanceCard, round.status, tiltStatus]);
+  }, [advanceCard, focused, round.status, tiltStatus]);
 
   useEffect(() => {
     if (!currentCard) return;
@@ -166,8 +189,8 @@ export default function GameScreen() {
     if (round.status !== 'finished') return;
     if (!finishSoundPlayed.current) {
       finishSoundPlayed.current = true;
-      void triggerRoundHaptic('times-up', { cameraActive: isRecording });
       void playSound('round-end');
+      void triggerRoundHaptic('times-up', { cameraActive: isRecording });
     }
   }, [isRecording, playSound, round.status]);
 
@@ -178,6 +201,7 @@ export default function GameScreen() {
     if (resultsTransitionStarted.current) return;
     resultsTransitionStarted.current = true;
     let active = true;
+    let endHoldTimeout: ReturnType<typeof setTimeout> | undefined;
     const showResults = async () => {
       const transitionStartedAt = Date.now();
       logVideoDiagnostic('results transition started', {
@@ -203,6 +227,7 @@ export default function GameScreen() {
             elapsedMs: Date.now() - screenshotStartedAt,
             uri,
           });
+          if (!active) return;
           await beginTransition({
             destination: 'results',
             direction: 'left',
@@ -218,7 +243,7 @@ export default function GameScreen() {
           });
         }
       })();
-      await new Promise((resolve) => setTimeout(resolve, ROUND_END_SCREEN_MS));
+      await new Promise((resolve) => { endHoldTimeout = setTimeout(resolve, ROUND_END_SCREEN_MS); });
       if (!active) return;
       logVideoDiagnostic('results end-screen hold completed; finalization dispatched', {
         elapsedMs: Date.now() - transitionStartedAt,
@@ -239,6 +264,7 @@ export default function GameScreen() {
     showResults();
     return () => {
       active = false;
+      if (endHoldTimeout !== undefined) clearTimeout(endHoldTimeout);
     };
   }, [beginTransition, round.status, router]);
 
@@ -248,7 +274,8 @@ export default function GameScreen() {
       const leftForeground = previousState === 'active' && nextState !== 'active';
       const enteredForeground = previousState !== 'active' && nextState === 'active';
       previousState = nextState;
-      if (leftForeground && round.status !== 'ready') {
+      if (leftForeground) {
+        setAppActive(false);
         if (round.status === 'playing' || round.status === 'feedback') {
           timerPausedForBackground.current = true;
           pauseRound();
@@ -256,6 +283,7 @@ export default function GameScreen() {
         recordingPausedForBackground.current = true;
         void pauseRecording();
       } else if (enteredForeground) {
+        setAppActive(true);
         if (timerPausedForBackground.current) {
           timerPausedForBackground.current = false;
           resumeRound();
@@ -278,7 +306,9 @@ export default function GameScreen() {
 
   if (!deck || !currentCard) return null;
 
-  const feedbackColor = round.latestOutcome === 'correct' ? colors.correct : colors.pass;
+  const isCorrectFeedback = round.latestOutcome === 'correct';
+  const isFeedbackVisible = round.status === 'feedback';
+  const feedbackColor = isCorrectFeedback ? colors.correct : colors.pass;
   const outerColor =
     round.status === 'feedback'
       ? feedbackColor
@@ -312,7 +342,13 @@ export default function GameScreen() {
   return (
     <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
       <LandscapeViewport>
-        <SafeAreaView edges={[]} style={[styles.safeArea, { backgroundColor: outerColor }]}>
+        <SafeAreaView
+          edges={[]}
+          style={[
+            styles.safeArea,
+            { backgroundColor: outerColor },
+          ]}
+        >
           <StatusBar hidden animated={false} />
           <View
             style={[
@@ -425,56 +461,60 @@ export default function GameScreen() {
               </View>
             )}
 
+            {isRecording && (
+              <RecordingIndicator
+                position={motionControlsUnavailable ? 'top-left' : 'bottom-left'}
+              />
+            )}
+
+            {round.status !== 'finished' && round.status !== 'feedback' && (
+              <View pointerEvents="box-none" style={styles.closeButton}>
+                <CloseButton
+                  accessibilityLabel="End round early"
+                  disabled={false}
+                  onPress={handleFinishEarly}
+                />
+              </View>
+            )}
+
           </View>
 
-          {round.status === 'feedback' && (
-            <View style={[styles.feedback, { backgroundColor: feedbackColor }]}>
-              {round.latestOutcome === 'correct' ? (
-                <SymbolView
-                  accessibilityElementsHidden
-                  name={{ android: 'check', ios: 'checkmark', web: 'check' }}
-                  size={112}
-                  style={styles.feedbackCheckIcon}
-                  tintColor={colors.correctText}
-                />
-              ) : (
-                <Text
-                  style={[
-                    styles.feedbackIcon,
-                    styles.passFeedbackText,
-                    { color: colors.passText },
-                  ]}
-                >
-                  ×
-                </Text>
-              )}
+          <View
+            accessibilityElementsHidden={!isFeedbackVisible}
+            importantForAccessibility={isFeedbackVisible ? 'yes' : 'no-hide-descendants'}
+            pointerEvents="none"
+            style={[
+              styles.feedback,
+              { backgroundColor: feedbackColor, opacity: isFeedbackVisible ? 1 : 0 },
+            ]}
+          >
+            <View style={styles.feedbackIconSlot}>
+              <SymbolView
+                accessibilityElementsHidden
+                name={{ android: 'check', ios: 'checkmark', web: 'check' }}
+                size={112}
+                style={[styles.feedbackCheckIcon, { opacity: isCorrectFeedback ? 1 : 0 }]}
+                tintColor={colors.correctText}
+              />
               <Text
                 style={[
-                  styles.feedbackText,
-                  round.latestOutcome === 'passed' && styles.passFeedbackText,
-                  { color: round.latestOutcome === 'correct' ? colors.correctText : colors.passText },
+                  styles.feedbackIcon,
+                  styles.feedbackPassIcon,
+                  { color: colors.passText, opacity: isCorrectFeedback ? 0 : 1 },
                 ]}
               >
-                {round.latestOutcome === 'correct' ? 'CORRECT!' : 'PASS'}
+                ×
               </Text>
             </View>
-          )}
-
-          {isRecording && (
-            <RecordingIndicator
-              position={motionControlsUnavailable ? 'top-left' : 'bottom-left'}
-            />
-          )}
-
-          {round.status !== 'finished' && round.status !== 'feedback' && (
-            <View pointerEvents="box-none" style={styles.closeButton}>
-              <CloseButton
-                accessibilityLabel="End round early"
-                disabled={false}
-                onPress={handleFinishEarly}
-              />
-            </View>
-          )}
+            <Text
+              style={[
+                styles.feedbackText,
+                { color: isCorrectFeedback ? colors.correctText : colors.passText },
+              ]}
+            >
+              {isCorrectFeedback ? 'CORRECT!' : 'PASS'}
+            </Text>
+          </View>
 
           {finishPromptVisible && round.status !== 'finished' && (
             <View accessibilityViewIsModal style={styles.promptOverlay}>
@@ -548,7 +588,9 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     overflow: 'hidden',
   },
-  closeButton: { position: 'absolute', top: 30, left: 30, zIndex: 70 },
+  // Center the 48-point control on the same 36-point axis as the timer and
+  // deck name in the 72-point top row.
+  closeButton: { position: 'absolute', top: 12, left: 14, zIndex: 70 },
   topRow: {
     height: 72,
     flexShrink: 0,
@@ -681,10 +723,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  feedbackIcon: { color: '#000000', fontSize: 124, fontFamily: 'Inter_700Bold', fontWeight: '700', lineHeight: 130 },
+  feedbackIcon: { fontSize: 124, fontFamily: 'Inter_700Bold', fontWeight: '700', lineHeight: 130 },
+  feedbackIconSlot: { width: 124, height: 130, alignItems: 'center', justifyContent: 'center' },
+  feedbackPassIcon: { position: 'absolute', width: 124, textAlign: 'center' },
   feedbackCheckIcon: { width: 112, height: 112 },
-  feedbackText: { color: '#000000', fontSize: 42, fontFamily: 'Inter_500Medium', fontWeight: '500', letterSpacing: 0.5 },
-  passFeedbackText: { color: colors.white },
+  feedbackText: { fontSize: 42, fontFamily: 'Inter_500Medium', fontWeight: '500', letterSpacing: 0.5 },
   transitionOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 30,

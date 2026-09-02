@@ -1,4 +1,5 @@
 import { File, Paths } from 'expo-file-system';
+import { writeAsStringAsync } from 'expo-file-system/legacy';
 import { AppState, type AppStateStatus, Platform } from 'react-native';
 
 const FLIGHT_RECORDER_FILE_NAME = 'whatz-it-flight-recorder.json';
@@ -52,6 +53,8 @@ let recorderFile: File | null = null;
 let recorderState: FlightRecorderState | null = null;
 let scheduledFlush: ReturnType<typeof setTimeout> | null = null;
 let newlyDetectedUnexpectedExit: UnexpectedExitSnapshot | null = null;
+let persistenceRunning = false;
+let persistenceRequested = false;
 
 export function initializeFlightRecorder() {
   ensureInitialized();
@@ -221,13 +224,24 @@ function readStoredState() {
 
 function persistState() {
   if (Platform.OS === 'web' || !recorderState) return;
-  try {
-    const file = getRecorderFile();
-    if (!file.exists) file.create({ intermediates: true });
-    file.write(JSON.stringify(recorderState));
-  } catch (error) {
-    console.warn('[FlightRecorder] Could not persist the diagnostic snapshot.', error);
-  }
+  persistenceRequested = true;
+  if (persistenceRunning) return;
+  persistenceRunning = true;
+  // Audio and tilt events used to force synchronous disk writes every 250ms.
+  // Serialize asynchronous writes so an older snapshot cannot overwrite a new
+  // one, without blocking the JS thread that owns gameplay and countdowns.
+  void (async () => {
+    try {
+      while (persistenceRequested) {
+        persistenceRequested = false;
+        await writeAsStringAsync(getRecorderFile().uri, JSON.stringify(recorderState));
+      }
+    } catch (error) {
+      console.warn('[FlightRecorder] Could not persist the diagnostic snapshot.', error);
+    } finally {
+      persistenceRunning = false;
+    }
+  })();
 }
 
 function scheduleFlush() {

@@ -93,6 +93,10 @@ export default function ResultsScreen() {
   const handleReplay = async () => {
     if (isStarting) return;
     setIsStarting(true);
+    // First detach the native TextureVideoView while its shared player is
+    // still alive. The following state change can then release the old player
+    // without racing the Android view-property update.
+    await waitForNextPaint();
     if (!(await configureRound(deck.id, round.durationSeconds))) {
       setIsStarting(false);
       return;
@@ -178,6 +182,7 @@ export default function ResultsScreen() {
                       onDelete={() => deleteCurrentVideo()}
                       onSave={handleSaveVideo}
                       staticThumbnail
+                      suspending={isStarting}
                       video={currentVideo}
                       style={styles.video}
                     />
@@ -285,6 +290,12 @@ export default function ResultsScreen() {
       />
     </SafeAreaView>
   );
+}
+
+function waitForNextPaint() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 }
 
 const styles = StyleSheet.create({

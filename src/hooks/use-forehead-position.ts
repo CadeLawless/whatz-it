@@ -5,7 +5,7 @@ import {
   clearRoundTiltCalibration,
   rememberRoundTiltCalibration,
 } from '@/game/round-tilt-calibration';
-import { isForeheadPosition, normalizePortraitCanvasTilt } from '@/game/tilt-detector';
+import { getPortraitMotionSample, isForeheadPosition } from '@/game/tilt-detector';
 import { getRoundMotionAccess } from '@/utils/round-motion-permission';
 import { logRoundDiagnostic } from '@/video/video-diagnostics';
 
@@ -54,11 +54,14 @@ export function useForeheadPosition(enabled: boolean) {
       });
       try {
         subscription = DeviceMotion.addListener((measurement) => {
-          const gravity = measurement.accelerationIncludingGravity;
+          if (!active) return;
+          const sample = getPortraitMotionSample(measurement);
+          if (!sample) return;
+          const { angle, gravity } = sample;
           const physicalOrientation = Math.abs(gravity.x) >= 6.5 ? 90 : 0;
           if (isForeheadPosition(gravity, physicalOrientation)) {
             stableSamples += 1;
-            tiltSamples.push(normalizePortraitCanvasTilt(measurement.rotation.gamma));
+            tiltSamples.push(angle);
             if (tiltSamples.length > REQUIRED_STABLE_SAMPLES) tiltSamples.shift();
             if (stableSamples >= REQUIRED_STABLE_SAMPLES) {
               const baseline =

@@ -15,34 +15,52 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import { usePathname } from 'expo-router';
+import { cancelRoundHaptics } from '@/utils/round-haptics';
 import {
   getRoundSoundSource,
   playRoundSound,
   preloadCriticalRoundSounds,
   rewindRoundSoundPlayer,
+  stopRoundSoundPlayer,
   type RoundSoundId,
 } from '@/video/round-sounds';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
-const PLAYER_OPTIONS = {
-  keepAudioSessionActive: true,
-  updateInterval: 250,
-} as const;
+const PLAYER_OPTIONS = Platform.select({
+  // This is an iOS-only option. It deliberately remains on the platform that
+  // supports it; it never kept Android players alive.
+  ios: {
+    downloadFirst: true,
+    keepAudioSessionActive: true,
+    updateInterval: 500,
+  },
+  // Android needs its own copy of each bundled cue before a recording starts.
+  // Expo specifically recommends downloadFirst for multiple simultaneous
+  // players, avoiding the CameraX-owned cache path that could unload a cue.
+  default: {
+    downloadFirst: true,
+    updateInterval: 500,
+  },
+})!;
 const AUDIO_LOAD_TIMEOUT_MS = 3_000;
-const AUDIO_RECOVERY_LOAD_WAIT_MS = 750;
 
 type RoundSoundContextValue = {
   isReady: boolean;
   loadTimedOut: boolean;
-  play: (sound: RoundSoundId) => Promise<boolean>;
+  play: (sound: RoundSoundId, isCurrent?: () => boolean) => Promise<boolean>;
   prepareForRound: () => Promise<boolean>;
+  stopAll: () => void;
+  stopIntro: () => void;
   recoverAudio: (reloadAll?: boolean) => Promise<void>;
 };
 
 const RoundSoundContext = createContext<RoundSoundContextValue | null>(null);
 
 export function RoundSoundProvider({ children }: PropsWithChildren) {
+  const pathname = usePathname();
+  const generation = useRef(0);
   const getReady = useAudioPlayer(getRoundSoundSource('get-ready'), PLAYER_OPTIONS);
   // Keep the three identical countdown cues on separate native players. Android
   // can race a seek/play replay on one completed player, causing the cues to
@@ -132,7 +150,6 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   const tickIndex = useRef(0);
   const previousStatusKeys = useRef(new Map<string, string>());
   const audioModePromise = useRef<Promise<boolean> | null>(null);
-  const automaticRecoveryAttempted = useRef(false);
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const isReady = criticalStatuses.every(([, status]) => status.isLoaded && !status.error);
   const gameplayReady = namedStatuses
@@ -158,16 +175,38 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     ],
     [correct, count1, count2, count3, flip, getReady, pass, roundEnd, roundStart, tick1, tick2],
   );
+  const statusesRef = useRef(namedStatuses);
+  useEffect(() => { statusesRef.current = namedStatuses; }, [namedStatuses]);
   const getLoadSnapshot = useCallback(() => {
-    const players = playerEntries.map(([name, , player]) => [name, player] as const);
-    return {
-      failedPlayers: players
-        .filter(([, player]) => player.currentStatus.error)
-        .map(([name, player]) => ({ name, error: player.currentStatus.error })),
-      loadedPlayers: players.filter(([, player]) => player.isLoaded).map(([name]) => name),
-      pendingPlayers: players.filter(([, player]) => !player.isLoaded).map(([name]) => name),
-    };
+    const failedPlayers: { name: string; error: string | null }[] = [];
+    const loadedPlayers: string[] = [];
+    const pendingPlayers: string[] = [];
+    // Status events are already in JS. Direct getters synchronously wait on
+    // Android's main thread and were adding dozens of round trips per update.
+    for (const [name, status] of statusesRef.current) {
+      if (status.error) failedPlayers.push({ name, error: status.error });
+      else if (status.isLoaded) loadedPlayers.push(name);
+      else pendingPlayers.push(name);
+    }
+    return { failedPlayers, loadedPlayers, pendingPlayers };
+  }, []);
+
+  const stopAll = useCallback(() => {
+    generation.current += 1;
+    cancelRoundHaptics();
+    for (const [, , player] of playerEntries) stopRoundSoundPlayer(player);
   }, [playerEntries]);
+  const stopIntro = useCallback(() => {
+    generation.current += 1;
+    cancelRoundHaptics();
+    for (const sound of ['get-ready', 'count-3', 'count-2', 'count-1'] as const) {
+      stopRoundSoundPlayer(regularPlayers[sound]);
+    }
+  }, [regularPlayers]);
+  useEffect(() => {
+    if (pathname !== '/ready' && pathname !== '/game') stopAll();
+  }, [pathname, stopAll]);
+  useEffect(() => () => stopAll(), [stopAll]);
 
   const configureAudioSession = useCallback(async () => {
     if (!audioModePromise.current) {
@@ -198,17 +237,6 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
-  const reloadPlayers = useCallback((reloadAll = false) => {
-    const reloaded: string[] = [];
-    for (const [name, sound, player] of playerEntries) {
-      if (reloadAll || !player.isLoaded || player.currentStatus.error) {
-        player.replace(getRoundSoundSource(sound));
-        reloaded.push(name);
-      }
-    }
-    logRoundDiagnostic('audio players reloaded', { reloadAll, reloaded });
-  }, [playerEntries]);
-
   useEffect(() => {
     logRoundDiagnostic('audio provider mounted', {
       playerCount: namedStatuses.length,
@@ -227,13 +255,16 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     const subscription = AppState.addEventListener('change', (nextState) => {
       const enteredForeground = previousState !== 'active' && nextState === 'active';
       previousState = nextState;
+      if (nextState !== 'active') {
+        stopAll();
+        return;
+      }
       if (!enteredForeground) return;
       logRoundDiagnostic('audio provider entered foreground; restoring session');
       void configureAudioSession();
-      reloadPlayers();
     });
     return () => subscription.remove();
-  }, [configureAudioSession, reloadPlayers]);
+  }, [configureAudioSession, stopAll]);
 
   useEffect(() => {
     for (const [name, status] of namedStatuses) {
@@ -261,7 +292,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
         timeControlStatus: status.timeControlStatus,
       });
     }
-  });
+  }, [namedStatuses]);
 
   useEffect(() => {
     const snapshot = getLoadSnapshot();
@@ -271,7 +302,6 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
       ...snapshot,
     });
     if (isReady) {
-      automaticRecoveryAttempted.current = false;
       return;
     }
     const timeout = setTimeout(() => {
@@ -282,102 +312,54 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
         new Error('Not all audio players loaded'),
         snapshot,
       );
-      if (!automaticRecoveryAttempted.current) {
-        automaticRecoveryAttempted.current = true;
-        reloadPlayers();
-        void configureAudioSession();
-      }
     }, AUDIO_LOAD_TIMEOUT_MS);
     return () => clearTimeout(timeout);
   }, [
-    configureAudioSession,
     gameplayReady,
     getLoadSnapshot,
     isReady,
     readinessSignature,
-    reloadPlayers,
   ]);
 
-  useEffect(() => {
-    if (!tick1Status.didJustFinish || !tick1.isLoaded) return;
-    logRoundDiagnostic('rewinding completed countdown player', { name: 'final-tick-a' });
-    void tick1.seekTo(0);
-  }, [tick1, tick1Status.didJustFinish]);
-
-  useEffect(() => {
-    if (!tick2Status.didJustFinish || !tick2.isLoaded) return;
-    logRoundDiagnostic('rewinding completed countdown player', { name: 'final-tick-b' });
-    void tick2.seekTo(0);
-  }, [tick2, tick2Status.didJustFinish]);
-
   const play = useCallback(
-    async (sound: RoundSoundId) => {
-      logRoundDiagnostic('audio cue requested from provider', {
-        sound,
-        isReady,
-        tickIndex: tickIndex.current,
-      });
-      const sessionReady = await configureAudioSession();
-      if (!sessionReady) return false;
+    async (sound: RoundSoundId, isCurrent: () => boolean = () => true) => {
+      if (AppState.currentState !== 'active' || !isCurrent()) return false;
+      if (sound === 'round-end') stopAll();
+      const requestGeneration = generation.current;
+      const canPlay = () => generation.current === requestGeneration && isCurrent();
+      // Do not await a native audio-session operation here. Android serializes
+      // those operations, so 3-2-1 requests can accumulate behind a slow
+      // activation and then all call play() together. The session is armed
+      // during round preparation (and again after recording starts); cues
+      // themselves must stay on the timer's timeline.
       if (sound !== 'final-tick') {
-        if (sound === 'round-end') {
-          // The tick file is 1.129 seconds long. Stop the final tail at the
-          // round boundary so it cannot overlap the Time's Up sound.
-          for (const player of tickPlayers) {
-            if (player.playing) player.pause();
-          }
-        }
-        const player = regularPlayers[sound];
-        if (!player.isLoaded || player.currentStatus.error) {
-          warnRoundDiagnostic(
-            'audio cue unavailable; reloading for a later cue',
-            player.currentStatus.error,
-            { sound },
-          );
-          player.replace(getRoundSoundSource(sound));
-          return false;
-        }
-        return playRoundSound(player, sound);
+        return playRoundSound(regularPlayers[sound], sound, canPlay);
       }
       const player = tickPlayers[tickIndex.current % tickPlayers.length];
       tickIndex.current += 1;
-      if (!player.isLoaded || player.currentStatus.error) {
-        warnRoundDiagnostic(
-          'countdown audio cue unavailable; reloading for a later cue',
-          player.currentStatus.error,
-          { sound },
-        );
-        player.replace(getRoundSoundSource('final-tick'));
-        return false;
-      }
-      return playRoundSound(player, sound);
+      return playRoundSound(player, sound, canPlay);
     },
-    [configureAudioSession, isReady, regularPlayers, tickPlayers],
+    [regularPlayers, stopAll, tickPlayers],
   );
 
   const prepareForRound = useCallback(async () => {
     const before = getLoadSnapshot();
-    logRoundDiagnostic('round audio preparation requested', { isReady, ...before });
+    const requestGeneration = generation.current;
+    logRoundDiagnostic('round audio preparation requested', before);
     try {
       const sessionReady = await configureAudioSession();
+      if (requestGeneration !== generation.current) return false;
       tickIndex.current = 0;
-      const players: [string, AudioPlayer][] = [
-        ['get-ready', getReady],
-        ['count-3', count3],
-        ['count-2', count2],
-        ['count-1', count1],
-        ['round-start', roundStart],
-      ];
       const results = await Promise.all(
-        players.map(async ([name, player]) => ({
+        playerEntries.map(async ([name, sound, player]) => ({
           name,
-          prepared: await rewindRoundSoundPlayer(player),
+          prepared: await rewindRoundSoundPlayer(player, sound),
         })),
       );
       const failedPlayers = results
         .filter((result) => !result.prepared)
         .map((result) => result.name);
-      const prepared = sessionReady && failedPlayers.length === 0;
+      const prepared = requestGeneration === generation.current && sessionReady && failedPlayers.length === 0;
       logRoundDiagnostic('round audio preparation completed', {
         prepared,
         sessionReady,
@@ -388,32 +370,20 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
       warnRoundDiagnostic('round audio preparation failed', error);
       return false;
     }
-  }, [configureAudioSession, count1, count2, count3, getLoadSnapshot, getReady, isReady, roundStart]);
+  }, [configureAudioSession, getLoadSnapshot, playerEntries]);
 
-  const recoverAudio = useCallback(async (reloadAll = false) => {
-    logRoundDiagnostic('audio recovery requested', { reloadAll });
-    setLoadTimedOut(false);
-    reloadPlayers(reloadAll);
-    const players = playerEntries.map(([, , player]) => player);
-    await Promise.all([
-      configureAudioSession(),
-      waitForPlayersToLoad(players, AUDIO_RECOVERY_LOAD_WAIT_MS),
-    ]);
-  }, [configureAudioSession, playerEntries, reloadPlayers]);
+  const recoverAudio = useCallback(async () => {
+    // Never replace a player after Android has released its shared object.
+    // A fresh app/round mount owns player construction; recovery here only
+    // restores the shared audio session.
+    await configureAudioSession();
+  }, [configureAudioSession]);
 
   const value = useMemo(
-    () => ({ isReady, loadTimedOut: effectiveLoadTimedOut, play, prepareForRound, recoverAudio }),
-    [effectiveLoadTimedOut, isReady, play, prepareForRound, recoverAudio],
+    () => ({ isReady, loadTimedOut: effectiveLoadTimedOut, play, prepareForRound, recoverAudio, stopAll, stopIntro }),
+    [effectiveLoadTimedOut, isReady, play, prepareForRound, recoverAudio, stopAll, stopIntro],
   );
   return <RoundSoundContext.Provider value={value}>{children}</RoundSoundContext.Provider>;
-}
-
-async function waitForPlayersToLoad(players: AudioPlayer[], timeoutMs: number) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (players.every((player) => player.isLoaded && !player.currentStatus.error)) return;
-    await new Promise<void>((resolve) => setTimeout(resolve, 25));
-  }
 }
 
 export function useRoundSounds() {

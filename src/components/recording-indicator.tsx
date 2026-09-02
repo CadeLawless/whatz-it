@@ -55,8 +55,8 @@ export function RecordingIndicator({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    left: 30,
-    bottom: 28,
+    left: 14,
+    bottom: 14,
     zIndex: 90,
     elevation: 90,
     minHeight: 34,
@@ -68,9 +68,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.72)',
   },
   topLeft: {
-    top: 37,
+    // Sit on the top-row centerline immediately after the close control.
+    top: 19,
     bottom: 'auto',
-    left: 90,
+    left: 76,
   },
   dot: {
     width: 10,

@@ -27,7 +27,13 @@ const ROUND_VIDEO_TARGET_BIT_RATE = 5_000_000;
 // Ready and Game render a clockwise-rotated landscape canvas while the native
 // screen stays portrait. Capture must follow that fixed canvas orientation
 // instead of a motion-driven device orientation that may be unavailable.
-const ROUND_CAMERA_ORIENTATION: CameraOrientation = 'left';
+// CameraX's Android surface-rotation direction is opposite the Apple capture
+// connection for this clockwise-rotated landscape canvas. Keeping one shared
+// value turns the Android frame output 180 degrees in the saved video.
+const ROUND_CAMERA_ORIENTATION: CameraOrientation = Platform.select({
+  android: 'right',
+  default: 'left',
+});
 
 export type RoundCameraRef = {
   startRecording: (maxDuration: number) => Promise<number | null>;
@@ -96,9 +102,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       // avoids making the exporter decode and scale 1080p frames first.
       targetResolution: CommonResolutions.HD_16_9,
       targetBitRate: ROUND_VIDEO_TARGET_BIT_RATE,
-      // The live-overlay path records microphone audio independently. The
-      // standard Android recorder still uses CameraX's embedded audio track.
-      enableAudio: microphoneEnabled && Platform.OS !== 'ios',
+      // Keep video capture silent. The microphone is recorded by expo-audio on
+      // both platforms, matching the iOS path and leaving one native audio
+      // owner for the round's microphone and sound-effect players.
+      enableAudio: false,
       fileType: 'mp4',
     });
     const liveOverlayOutput = useMemo<LiveOverlayOutput | null>(() => {
@@ -129,7 +136,6 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
     const liveOverlayActiveRef = useRef(false);
 
     const prepareMicrophone = useCallback(async () => {
-      if (Platform.OS !== 'ios' && !liveOverlayOutput) return microphoneEnabled;
       if (microphonePreparedRef.current) return true;
       try {
         const statusBefore = microphoneRecorder.getStatus();
@@ -166,7 +172,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         });
         return false;
       }
-    }, [liveOverlayOutput, microphoneEnabled, microphoneRecorder]);
+    }, [microphoneEnabled, microphoneRecorder]);
 
     useImperativeHandle(
       ref,
@@ -181,15 +187,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               microphoneEnabled,
               platform: Platform.OS,
             });
-            let microphonePrepared = await prepareMicrophone();
-            if (microphonePrepared && Platform.OS !== 'ios' && !liveOverlayOutput) {
-              try {
-                await prepareRoundRecordingAudio();
-              } catch (error) {
-                microphonePrepared = false;
-                warnVideoDiagnostic('microphone setup failed; recording video without audio', error);
-              }
-            }
+            const microphonePrepared = await prepareMicrophone();
             if (liveOverlayOutput) {
               const branding = await loadLiveOverlayBrandingUris();
               await liveOverlayOutput.startRecording(
@@ -215,7 +213,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               await recorder.startRecording(finishRecording, failRecording);
             }
             const videoStartedAt = Date.now();
-            if ((Platform.OS === 'ios' || !!liveOverlayOutput) && microphonePrepared) {
+            if (microphonePrepared) {
               try {
                 microphoneRecorder.record();
                 const microphoneUri = microphoneRecorder.uri;
@@ -289,10 +287,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             } catch {
               // The experimental recorder may not have armed before the start failure.
             }
-            if (
-              (Platform.OS === 'ios' || !!liveOverlayOutput) &&
-              microphoneRecorder.getStatus().isRecording
-            ) {
+            if (microphoneRecorder.getStatus().isRecording) {
               try {
                 await microphoneRecorder.stop();
               } catch {
@@ -333,7 +328,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
               });
             }
             let microphoneUri: string | undefined;
-            if (Platform.OS === 'ios' || stoppingLiveOverlay) {
+            if (microphoneRecorder.getStatus().isRecording || microphoneRef.current) {
               const microphoneCapture = microphoneRef.current;
               try {
                 const microphoneStopStartedAt = Date.now();
@@ -409,10 +404,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             // The live output may already have stopped; microphone cleanup still continues.
           }
           try {
-            if (
-              (Platform.OS === 'ios' || !!liveOverlayOutput) &&
-              microphoneRecorder.getStatus().isRecording
-            ) {
+            if (microphoneRecorder.getStatus().isRecording) {
               await microphoneRecorder.stop();
               const microphoneUri = microphoneRecorder.uri;
               if (microphoneUri) {
@@ -464,6 +456,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         // Keep the native preview and capture outputs mounted while inactive.
         // Deallocating the session during output teardown can trip an AVFoundation assertion.
         isActive={enabled}
+        // Android's default SurfaceView cannot obey opacity/view layering and
+        // can flash through a native-stack replacement. Keep the preview
+        // mounted for session stability, but invisible throughout recording.
+        implementationMode="compatible"
         // Toggle the recorded front-camera image from the prior behavior so it
         // has the expected left/right orientation in playback and exports.
         mirrorMode="off"
@@ -476,7 +472,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         outputs={cameraOutputs}
         pointerEvents="none"
         resizeMode="cover"
-        style={StyleSheet.absoluteFill}
+        style={[StyleSheet.absoluteFill, { opacity: 0 }]}
       />
     );
   },

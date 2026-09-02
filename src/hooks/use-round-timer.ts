@@ -8,7 +8,7 @@ type RoundTimerOptions = {
 };
 
 export function useRoundTimer({ endsAt, active, onExpire, onSecond }: RoundTimerOptions) {
-  const [remainingSeconds, setRemainingSeconds] = useState(() => getRemainingSeconds(endsAt));
+  const [tick, setTick] = useState(() => ({ endsAt, remaining: getRemainingSeconds(endsAt) }));
   const onExpireRef = useRef(onExpire);
   const onSecondRef = useRef(onSecond);
 
@@ -20,42 +20,40 @@ export function useRoundTimer({ endsAt, active, onExpire, onSecond }: RoundTimer
   useEffect(() => {
     if (!active || !endsAt) return;
 
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let previousRemaining: number | null = null;
-    let expired = false;
-
-    const update = () => {
-      const now = Date.now();
-      const remaining = getRemainingSeconds(endsAt, now);
-      setRemainingSeconds(remaining);
-      if (remaining !== previousRemaining) {
-        previousRemaining = remaining;
-        onSecondRef.current?.(remaining);
-      }
-      if (remaining === 0) {
-        if (!expired) {
-          expired = true;
-          onExpireRef.current();
-        }
-        return;
-      }
-
-      // Schedule against the absolute round end instead of repeatedly polling.
-      // This keeps each second boundary independent, so a delayed callback does
-      // not introduce cumulative drift into the rest of the countdown.
-      timeout = setTimeout(
-        update,
-        getNextSecondBoundaryDelay(endsAt, remaining, Date.now()),
-      );
-    };
-
-    update();
-    return () => {
-      if (timeout) clearTimeout(timeout);
-    };
+    return scheduleRoundTimer(endsAt, (remaining) => setTick({ endsAt, remaining }));
   }, [active, endsAt]);
 
-  return active ? remainingSeconds : getRemainingSeconds(endsAt);
+  // Read state, not Date.now() with an unchanged deadline: React Compiler can
+  // memoize that calculation and leave the text on 3 while callbacks keep firing.
+  const remaining = tick.endsAt === endsAt ? tick.remaining : getRemainingSeconds(endsAt);
+  const delivered = useRef<{ endsAt: number; remaining: number } | null>(null);
+  useEffect(() => {
+    if (!active || endsAt === null || tick.endsAt !== endsAt) return;
+    if (delivered.current?.endsAt === endsAt && delivered.current.remaining === remaining) return;
+    delivered.current = { endsAt, remaining };
+    // Deliver cues from the same committed value used by the visible number.
+    onSecondRef.current?.(remaining);
+    if (remaining === 0) onExpireRef.current();
+  }, [active, endsAt, remaining, tick.endsAt]);
+  return remaining;
+}
+
+export function scheduleRoundTimer(endsAt: number, onTick: (remaining: number) => void) {
+  let cancelled = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const update = () => {
+    if (cancelled) return;
+    const remaining = getRemainingSeconds(endsAt);
+    onTick(remaining);
+    if (remaining > 0 && !cancelled) {
+      timeout = setTimeout(update, getNextSecondBoundaryDelay(endsAt, remaining));
+    }
+  };
+  update();
+  return () => {
+    cancelled = true;
+    if (timeout !== undefined) clearTimeout(timeout);
+  };
 }
 
 export function getRemainingSeconds(endsAt: number | null, now = Date.now()) {

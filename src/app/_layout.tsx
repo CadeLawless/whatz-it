@@ -6,6 +6,7 @@ import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { Inter_800ExtraBold } from '@expo-google-fonts/inter/800ExtraBold';
 import { Inter_900Black } from '@expo-google-fonts/inter/900Black';
 import { useFonts } from 'expo-font';
+import { NavigationBar } from 'expo-navigation-bar';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -162,6 +163,11 @@ function RootLayoutContent() {
         <ScreenshotTransitionProvider>
           <RoundProvider>
           <StatusBar style="dark" />
+          {/* One route-based owner keeps the controls hidden across Ready → Game
+              and restores them on Results, cancellation, or returning to decks. */}
+          {Platform.OS === 'android' && (
+            <NavigationBar hidden={pathname === '/ready' || pathname === '/game'} />
+          )}
           <Stack
         screenOptions={{
           contentStyle: { backgroundColor: colors.background },

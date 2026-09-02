@@ -1,4 +1,5 @@
 import { preload, type AudioPlayer } from 'expo-audio';
+import { RoundSoundPlayback } from './round-sound-playback';
 
 import {
   logRoundDiagnostic,
@@ -38,6 +39,7 @@ const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
   'round-start': 0.65,
   'final-tick': 0.8,
 };
+const playback = new RoundSoundPlayback();
 
 export function getRoundSoundSource(sound: RoundSoundId) {
   return ROUND_SOUND_SOURCES[sound];
@@ -47,44 +49,10 @@ export function preloadCriticalRoundSounds() {
   return criticalPreloadPromise;
 }
 
-export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
-  logRoundDiagnostic('audio playback function entered', {
-    sound,
-    currentTime: player.currentTime,
-    duration: player.duration,
-    isBuffering: player.isBuffering,
-    isLoaded: player.isLoaded,
-    paused: player.paused,
-    playing: player.playing,
-  });
-  if (!player.isLoaded) {
-    warnVideoDiagnostic('round cue skipped because its player is not loaded', undefined, { sound });
-    return false;
-  }
-
+export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId, isCurrent?: () => boolean) {
   try {
     const volume = ROUND_SOUND_VOLUMES[sound] ?? DEFAULT_ROUND_SOUND_VOLUME;
-    if (player.playing) player.pause();
-    if (player.currentTime > 0.005) {
-      const seekStartedAt = Date.now();
-      logRoundDiagnostic('audio cue rewind started', { sound, from: player.currentTime });
-      await player.seekTo(0);
-      logRoundDiagnostic('audio cue rewind completed', {
-        sound,
-        elapsedMs: Date.now() - seekStartedAt,
-        currentTime: player.currentTime,
-      });
-    }
-    if (!player.isLoaded) return false;
-    player.volume = volume;
-    player.play();
-    logRoundDiagnostic('native audio play invoked', {
-      sound,
-      volume,
-      currentTime: player.currentTime,
-      duration: player.duration,
-      playing: player.playing,
-    });
+    if (!await playback.play(player, volume, isCurrent)) return false;
     logVideoDiagnostic('round cue playback started', { sound, volume });
     return true;
   } catch (error) {
@@ -94,12 +62,17 @@ export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId) {
   }
 }
 
-export async function rewindRoundSoundPlayer(player: AudioPlayer) {
-  if (!player.isLoaded) return false;
+export function stopRoundSoundPlayer(player: AudioPlayer) {
   try {
-    if (player.playing) player.pause();
-    if (player.currentTime > 0.005) await player.seekTo(0);
-    return player.isLoaded;
+    playback.stop(player);
+  } catch {
+    // Hook-owned players may already have been released during root teardown.
+  }
+}
+
+export async function rewindRoundSoundPlayer(player: AudioPlayer, sound: RoundSoundId) {
+  try {
+    return await playback.prepare(player, ROUND_SOUND_VOLUMES[sound] ?? DEFAULT_ROUND_SOUND_VOLUME);
   } catch {
     return false;
   }
