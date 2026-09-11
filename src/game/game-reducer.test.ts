@@ -281,6 +281,8 @@ describe('tilt detector', () => {
   it('rearms Android on the first return-to-center sample', () => {
     const quickConfig = {
       ...ANDROID_TILT_CONFIG,
+      calibrationMs: 0,
+      confirmationMs: 0,
       calibrationSamples: 2,
       calibrationMovementTolerance: 1,
       smoothingFactor: 1,

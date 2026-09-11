@@ -42,6 +42,13 @@ export type VideoStorageMaintenanceResult = {
 };
 
 type WhatzItVideoExportNativeModule = {
+  androidRoundHapticAmplitudeControl?(): boolean;
+  androidGameplayTraceClock?(): number | null;
+  startAndroidGameplayTrace?(): void;
+  stopAndroidGameplayTrace?(): void;
+  saveAndroidGameplayTrace?(json: string): Promise<void>;
+  playAndroidRoundWaveform?(timings: number[], amplitudes: number[]): void;
+  cancelAndroidRoundWaveform?(): void;
   overlayExportVersion?: number;
   getSystemOutputVolume?(): number;
   exportOverlayVideo(
@@ -83,6 +90,30 @@ type WhatzItVideoExportNativeModule = {
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
+
+export const androidGameplayTrace = {
+  clock: () => nativeModule.androidGameplayTraceClock?.() ?? null,
+  start: () => nativeModule.startAndroidGameplayTrace?.(),
+  stop: () => nativeModule.stopAndroidGameplayTrace?.(),
+  save: (json: string) => nativeModule.saveAndroidGameplayTrace?.(json),
+};
+
+// Optional for existing installed binaries; absence selects a duration-only
+// waveform, never a speculative second effect after a native dispatch.
+export function playAndroidRoundWaveform(timings: number[], amplitudes: number[]) {
+  if (!nativeModule.playAndroidRoundWaveform) return false;
+  nativeModule.playAndroidRoundWaveform(timings, amplitudes);
+  return true;
+}
+
+export function cancelAndroidRoundWaveform() {
+  nativeModule.cancelAndroidRoundWaveform?.();
+}
+
+let androidAmplitudeControl: boolean | undefined;
+export function hasAndroidRoundHapticAmplitudeControl() {
+  return androidAmplitudeControl ??= nativeModule.androidRoundHapticAmplitudeControl?.() ?? false;
+}
 
 export function getSystemOutputVolume() {
   const volume = nativeModule.getSystemOutputVolume?.();

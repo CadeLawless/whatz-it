@@ -24,6 +24,7 @@ import { getRemainingSecondsFromMs, useRoundTimer } from '@/hooks/use-round-time
 import { useTiltControls } from '@/hooks/use-tilt-controls';
 import { colors, radius, spacing, typography } from '@/theme';
 import { triggerRoundHaptic } from '@/utils/round-haptics';
+import { traceAndroidCommit, traceAndroidGameplay } from '@/utils/android-gameplay-trace';
 import { useRoundSounds } from '@/video/round-sound-provider';
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
@@ -66,6 +67,11 @@ export default function GameScreen() {
     cancelRecording,
   } = useRound();
   const finishedRef = useRef(false);
+  const committedCueState = useRef({ status: round.status, card: round.currentCardIndex });
+  useLayoutEffect(() => {
+    committedCueState.current = { status: round.status, card: round.currentCardIndex };
+    traceAndroidCommit(round.status, round.currentCardIndex);
+  }, [round.status, round.currentCardIndex]);
   useLayoutEffect(() => { finishedRef.current = round.status === 'finished'; }, [round.status]);
   useFocusEffect(useCallback(() => () => {
     stopAll();
@@ -113,12 +119,25 @@ export default function GameScreen() {
     if (!focused || round.status !== 'feedback') return;
     if (feedbackSoundCard.current === round.currentCardIndex) return;
     feedbackSoundCard.current = round.currentCardIndex;
+    traceAndroidGameplay('feedback.effect');
+    // A replay seek may finish after a fast return to neutral. Android must
+    // not start the previous answer sound over the now-active next card.
+    const isCurrent = Platform.OS === 'android' ? () =>
+      committedCueState.current.status === 'feedback' &&
+      committedCueState.current.card === round.currentCardIndex : undefined;
     const outcome = round.latestOutcome;
+    if (Platform.OS === 'android') {
+      // Expo Audio's ostensibly fire-and-forget play path starts with a
+      // synchronous main-thread pause. It must not hold up motor dispatch.
+      void triggerRoundHaptic(outcome === 'correct' ? 'correct' : 'pass', { cameraActive: isRecording });
+      void playSound(outcome === 'correct' ? 'correct' : 'pass', isCurrent);
+      return;
+    }
     if (outcome === 'correct') {
-      void playSound('correct');
+      void playSound('correct', isCurrent);
       void triggerRoundHaptic('correct', { cameraActive: isRecording });
     } else {
-      void playSound('pass');
+      void playSound('pass', isCurrent);
       void triggerRoundHaptic('pass', { cameraActive: isRecording });
     }
   }, [focused, round.status, round.latestOutcome, round.currentCardIndex, isRecording, playSound]);
@@ -126,8 +145,11 @@ export default function GameScreen() {
     if (!focused || round.status !== 'playing' || round.currentCardIndex === 0) return;
     if (flipSoundCard.current === round.currentCardIndex) return;
     flipSoundCard.current = round.currentCardIndex;
+    const isCurrent = Platform.OS === 'android' ? () =>
+      committedCueState.current.status === 'playing' &&
+      committedCueState.current.card === round.currentCardIndex : undefined;
     void triggerRoundHaptic('card-flip', { cameraActive: isRecording });
-    void playSound('flip');
+    void playSound('flip', isCurrent);
   }, [focused, isRecording, playSound, round.currentCardIndex, round.status]);
   const tiltStatus = useTiltControls({
     enabled:

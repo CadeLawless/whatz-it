@@ -13,6 +13,7 @@ import {
 } from '@/game/tilt-detector';
 import { getRoundMotionAccess } from '@/utils/round-motion-permission';
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
+import { startAndroidGameplayTrace, stopAndroidGameplayTrace, traceAndroidGameplay, traceAndroidGesture } from '@/utils/android-gameplay-trace';
 
 export type TiltControlStatus = 'checking' | 'calibrating' | 'ready' | 'unavailable' | 'denied';
 
@@ -81,10 +82,12 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
       }
 
       // Feedback is cleared as soon as the player returns the phone to center.
-      // A 40 ms cadence keeps the two-sample action confirmation responsive
-      // without weakening it or burdening the JS thread.
-      const updateIntervalMs = Platform.OS === 'android' ? 40 : 50;
+      // Android dispatches only on display frames: 40 ms becomes ~50 ms at
+      // 60 Hz, easily skipping a quick neutral crossing. Observe each frame;
+      // elapsed-time filtering/confirmation preserve the scoring safeguards.
+      const updateIntervalMs = Platform.OS === 'android' ? 16 : 50;
       const config = Platform.OS === 'android' ? ANDROID_TILT_CONFIG : DEFAULT_TILT_CONFIG;
+      startAndroidGameplayTrace();
       DeviceMotion.setUpdateInterval(updateIntervalMs);
       const recentCalibration = getRecentRoundTiltCalibration();
       if (recentCalibration) {
@@ -106,11 +109,14 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
       try {
         subscription = DeviceMotion.addListener((measurement) => {
           if (!active || !enabledRef.current) return;
+          traceAndroidGameplay('sensor.js-receipt', { sampleMs: (measurement.rotation?.timestamp ?? 0) * 1000 });
           // Android dispatches on display frames; a frame may contain the same
           // rotation sample. It must not count twice toward confirmation.
           const timestamp = measurement.rotation?.timestamp;
+          let elapsedMs = 50;
           if (Platform.OS === 'android' && timestamp !== undefined) {
-            if (timestamp === lastTimestamp) return;
+            if (!Number.isFinite(timestamp) || (lastTimestamp !== undefined && timestamp <= lastTimestamp)) return;
+            if (lastTimestamp !== undefined) elapsedMs = (timestamp - lastTimestamp) * 1000;
             lastTimestamp = timestamp;
           }
           // Ready/Game remain portrait-locked at the native level and rotate their
@@ -124,8 +130,15 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
             angle,
             config,
             acceptingInputRef.current,
+            elapsedMs,
           );
           detector.current = result.state;
+          traceAndroidGameplay('sensor.classified', {
+            sampleMs: (timestamp ?? 0) * 1000, raw: angle,
+            baseline: result.state.baseline, filtered: result.state.filteredAngle,
+            candidate: result.state.candidateAction, candidateMs: result.state.candidateDurationMs,
+            action: result.action, rearmed: result.rearmed,
+          });
 
           if (result.calibrated && !readyPublished) {
             readyPublished = true;
@@ -139,12 +152,16 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
           if (result.action && acceptingInputRef.current) {
             acceptingInputRef.current = false;
             awaitingFeedbackCommit.current = true;
+            traceAndroidGesture();
+            if (Platform.OS === 'android') onActionRef.current(result.action);
             logRoundDiagnostic('tilt action detected', {
               action: result.action,
               delta: result.delta,
+              sampleIntervalMs: elapsedMs,
               elapsedSinceConnectMs: Date.now() - connectStartedAt,
             });
-            onActionRef.current(result.action);
+            if (Platform.OS !== 'android') onActionRef.current(result.action);
+            traceAndroidGameplay('answer.callback-returned');
           }
           if (result.rearmed) {
             logRoundDiagnostic('tilt controls rearmed', {
@@ -168,6 +185,7 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
     return () => {
       active = false;
       subscription?.remove();
+      stopAndroidGameplayTrace();
     };
   }, [enabled]);
 

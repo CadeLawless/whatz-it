@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -41,6 +42,7 @@ import {
   type RoundVideoEvent,
 } from '@/video/round-videos';
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
+import { traceAndroidGameplay } from '@/utils/android-gameplay-trace';
 
 export type RecordingPreparation = 'ready' | 'permission-denied' | 'unavailable' | 'error';
 
@@ -97,6 +99,8 @@ export function RoundProvider({ children }: PropsWithChildren) {
     [],
   );
   const [round, dispatch] = useReducer(roundReducer, initialRoundState);
+  const committedRoundEndsAt = useRef(round.endsAt);
+  useLayoutEffect(() => { committedRoundEndsAt.current = round.endsAt; }, [round.endsAt]);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -130,7 +134,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
       previous.text === event.text &&
       previous.byline === event.byline
     ) return;
-    const timedEvent = { ...event, atMs };
+    const timerEndsAtMs = Platform.OS === 'android' && event.timerEndsAtMs === undefined && committedRoundEndsAt.current !== null
+      ? Math.max(0, committedRoundEndsAt.current - recordingStartedAt.current)
+      : event.timerEndsAtMs;
+    const timedEvent = { ...event, ...(timerEndsAtMs === undefined ? {} : { timerEndsAtMs }), atMs };
     recordingEvents.current.push(timedEvent);
     cameraRef.current?.recordOverlayEvent(timedEvent);
   }, []);
@@ -736,12 +743,23 @@ export function RoundProvider({ children }: PropsWithChildren) {
         dispatch({ type: 'START', now: Date.now() });
       },
       answerCard: (outcome) => {
+        traceAndroidGameplay('answerCard.enter');
+        if (Platform.OS === 'android') {
+          traceAndroidGameplay('reducer.dispatch');
+          dispatch({ type: 'ANSWER', outcome, now: Date.now() });
+          traceAndroidGameplay('reducer.dispatch-returned');
+          // GameScreen records the overlay from committed feedback. Keep this
+          // input turn free of recording/native work before React can render.
+          return;
+        }
         recordOverlayEvent({
           kind: outcome === 'correct' ? 'correct' : 'passed',
           text: outcome === 'correct' ? 'CORRECT!' : 'PASS',
           timerEndsAtMs: getRecordingTimerEndsAtMs(round.endsAt),
         });
+        traceAndroidGameplay('reducer.dispatch');
         dispatch({ type: 'ANSWER', outcome, now: Date.now() });
+        traceAndroidGameplay('reducer.dispatch-returned');
       },
       advanceCard: () => {
         if (round.status === 'feedback') {

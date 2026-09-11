@@ -1,6 +1,9 @@
 import * as Haptics from 'expo-haptics';
 import { Platform, Vibration } from 'react-native';
-import { playRoundHaptic } from 'whatz-it-video-export';
+import { cancelAndroidRoundWaveform, hasAndroidRoundHapticAmplitudeControl, playAndroidRoundWaveform, playRoundHaptic } from 'whatz-it-video-export';
+import { androidHapticPattern } from '../game/android-haptic-pattern';
+import { AndroidHapticScheduler } from '../game/android-haptic-scheduler';
+import { traceAndroidGameplay } from './android-gameplay-trace';
 
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
 
@@ -20,6 +23,18 @@ type RoundHapticOptions = {
 
 const QUICK_IMPACT_GAP_MS = 80;
 let hapticGeneration = 0;
+const androidScheduler = new AndroidHapticScheduler((cue, { timings, amplitudes }) => {
+  try {
+    traceAndroidGameplay('haptic.dispatch', { cue, timings });
+    if (!playAndroidRoundWaveform(timings, amplitudes)) {
+      Vibration.cancel();
+      Vibration.vibrate(timings, false);
+    }
+    traceAndroidGameplay('haptic.dispatch-returned', { cue });
+  } catch (error) {
+    warnRoundDiagnostic('Android round waveform failed', error, { cue });
+  }
+});
 const pendingDelays = new Map<ReturnType<typeof setTimeout>, () => void>();
 
 export function cancelRoundHaptics() {
@@ -29,6 +44,10 @@ export function cancelRoundHaptics() {
     resolve();
   }
   pendingDelays.clear();
+  if (Platform.OS === 'android') {
+    androidScheduler.cancel();
+    cancelAndroidRoundWaveform();
+  }
   Vibration.cancel();
 }
 
@@ -36,6 +55,11 @@ export async function triggerRoundHaptic(
   cue: RoundHapticCue,
   { cameraActive, countdownValue }: RoundHapticOptions,
 ) {
+  if (Platform.OS === 'android') {
+    traceAndroidGameplay('haptic.request', { cue });
+    androidScheduler.request(cue, androidHapticPattern(cue, countdownValue, hasAndroidRoundHapticAmplitudeControl()));
+    return;
+  }
   const generation = hapticGeneration;
   const startedAt = Date.now();
   // Always use the original camera-active native path on iOS so microphone
@@ -104,15 +128,8 @@ export async function triggerRoundHaptic(
 
 async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3, generation = hapticGeneration) {
   if (generation !== hapticGeneration) return;
-  // Use Expo's Vibrator-backed impacts on Android. View-based Confirm/Reject/
-  // Gesture_End can resolve successfully while the device rejects the effect
-  // as unsupported. Do not attempt both APIs: that can double the vibration.
-  if (Platform.OS === 'android' && cue === 'correct') {
-    // Keep scoring feedback brief instead of restoring the old 450ms motor
-    // burst while the player is returning to neutral. Pass/flip use Medium.
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    return;
-  }
+  // Android uses a complete waveform above. Keep the existing iOS fallback
+  // and web paths separate from that motor lifecycle.
   switch (cue) {
     case 'card-flip':
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

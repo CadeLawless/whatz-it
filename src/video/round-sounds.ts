@@ -1,5 +1,6 @@
 import { preload, type AudioPlayer } from 'expo-audio';
 import { RoundSoundPlayback } from './round-sound-playback';
+import { traceAndroidGameplay } from '@/utils/android-gameplay-trace';
 
 import {
   logRoundDiagnostic,
@@ -50,9 +51,11 @@ export function preloadCriticalRoundSounds() {
 }
 
 export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId, isCurrent?: () => boolean) {
+  traceAndroidGameplay('audio.request', { sound });
   try {
     const volume = ROUND_SOUND_VOLUMES[sound] ?? DEFAULT_ROUND_SOUND_VOLUME;
     if (!await playback.play(player, volume, isCurrent)) return false;
+    traceAndroidGameplay('audio.play-returned', { sound });
     logVideoDiagnostic('round cue playback started', { sound, volume });
     return true;
   } catch (error) {

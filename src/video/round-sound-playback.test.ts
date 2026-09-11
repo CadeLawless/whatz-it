@@ -75,3 +75,18 @@ test('stopping during preparation cannot prime a player for the next game', asyn
   assert.equal(player.seeks, 2);
   assert.equal(player.plays, 1);
 });
+
+test('an answer seek finishing after neutral cannot play over the next card', async () => {
+  const lifecycle = new RoundSoundPlayback();
+  const player = new EndedPlayer();
+  let complete!: () => void;
+  player.seekFinished = new Promise(resolve => { complete = resolve; });
+  let card = 0;
+  const answer = lifecycle.play(player, 0.4, () => card === 0);
+  card = 1;
+  complete();
+  assert.equal(await answer, false);
+  assert.equal(player.plays, 0);
+  assert.equal(await lifecycle.play(player, 0.4, () => card === 1), true);
+  assert.equal(player.plays, 1);
+});

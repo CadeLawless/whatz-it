@@ -17,6 +17,10 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.content.Context
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.Effect
@@ -66,11 +70,63 @@ class RoundVideoSegment(
 
 @OptIn(UnstableApi::class)
 class WhatzItVideoExportModule : Module() {
+  private val gameplayTrace by lazy {
+    appContext.reactContext?.applicationContext?.let { AndroidGameplayTrace(it) }
+  }
+  private var roundVibrator: Vibrator? = null
+
+  private fun getRoundVibrator(): Vibrator? {
+    roundVibrator?.let { return it }
+    val context = appContext.reactContext?.applicationContext ?: return null
+    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+    } else {
+      @Suppress("DEPRECATION")
+      context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    }
+    roundVibrator = vibrator
+    return vibrator
+  }
   private val activeExports = ConcurrentHashMap<String, Transformer>()
   private val storageCleanupCutoffMs = System.currentTimeMillis() - 2_000
 
   override fun definition() = ModuleDefinition {
     Name("WhatzItVideoExport")
+
+    Function("androidRoundHapticAmplitudeControl") {
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && getRoundVibrator()?.hasAmplitudeControl() == true
+    }
+
+    Function("androidGameplayTraceClock") {
+      if (gameplayTrace?.enabled() == true) SystemClock.elapsedRealtimeNanos() / 1_000_000.0 else null
+    }
+    Function("startAndroidGameplayTrace") { gameplayTrace?.start(); Unit }
+    AsyncFunction("saveAndroidGameplayTrace") { json: String -> gameplayTrace?.save(json); Unit }
+    Function("stopAndroidGameplayTrace") { gameplayTrace?.stop(); Unit }
+
+    // Synchronous dispatch keeps play/cancel in JS invocation order. The OS
+    // runs the entire waveform; there are no delayed native or JS callbacks.
+    Function("playAndroidRoundWaveform") { timings: List<Int>, amplitudes: List<Int> ->
+      require(timings.isNotEmpty() && timings.size == amplitudes.size)
+      require(timings.all { it >= 0 } && timings.sumOf { it.toLong() } in 1..2000)
+      require(amplitudes.all { it in 0..255 })
+      val vibrator = getRoundVibrator()
+      if (vibrator != null && vibrator.hasVibrator()) {
+        vibrator.cancel()
+        val durations = timings.map { it.toLong() }.toLongArray()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          val levels = if (vibrator.hasAmplitudeControl()) amplitudes.toIntArray()
+            else amplitudes.map { if (it == 0) 0 else VibrationEffect.DEFAULT_AMPLITUDE }.toIntArray()
+          vibrator.vibrate(VibrationEffect.createWaveform(durations, levels, -1))
+        } else {
+          @Suppress("DEPRECATION")
+          vibrator.vibrate(durations, -1)
+        }
+      }
+    }
+    Function("cancelAndroidRoundWaveform") { roundVibrator?.cancel(); Unit }
+    OnActivityEntersBackground { roundVibrator?.cancel(); gameplayTrace?.stop() }
+    OnDestroy { roundVibrator?.cancel(); gameplayTrace?.stop() }
 
     AsyncFunction("performVideoStorageMaintenance") {
       val context = appContext.reactContext?.applicationContext

@@ -28,6 +28,10 @@ export type TiltDetectorConfig = {
   rearmSamples: number;
   baselineAdjustmentFactor: number;
   rearmUsingRawAngle?: boolean;
+  triggerUsingRawAngle?: boolean;
+  samplePeriodMs?: number;
+  confirmationMs?: number;
+  calibrationMs?: number;
 };
 
 export type TiltDetectorState = {
@@ -37,9 +41,11 @@ export type TiltDetectorState = {
   filteredAngle: number | null;
   calibrationTotal: number;
   calibrationCount: number;
+  calibrationDurationMs: number;
   armed: boolean;
   candidateAction: TiltAction | null;
   candidateCount: number;
+  candidateDurationMs: number;
   neutralCount: number;
 };
 
@@ -68,6 +74,12 @@ export const ANDROID_TILT_CONFIG: TiltDetectorConfig = {
   // center wait for the low-pass filter's tail after a deep tilt.
   rearmUsingRawAngle: true,
   rearmSamples: 1,
+  // Preserve the filter response of the previous ~50 ms delivered cadence.
+  samplePeriodMs: 50,
+  // Discrete gestures need two real samples, not a smoothed orientation plus
+  // a dwell timer. A filter tail must never score after the phone is centered.
+  triggerUsingRawAngle: true,
+  calibrationMs: 800,
 };
 
 export function createTiltDetectorState(baseline: number | null = null): TiltDetectorState {
@@ -78,9 +90,11 @@ export function createTiltDetectorState(baseline: number | null = null): TiltDet
     filteredAngle: baseline,
     calibrationTotal: 0,
     calibrationCount: 0,
+    calibrationDurationMs: 0,
     armed: true,
     candidateAction: null,
     candidateCount: 0,
+    candidateDurationMs: 0,
     neutralCount: 0,
   };
 }
@@ -90,19 +104,32 @@ export function updateTiltDetector(
   angle: number,
   config = DEFAULT_TILT_CONFIG,
   canTrigger = true,
+  elapsedMs = 50,
 ): TiltDetectorResult {
+  const sampleMs = Math.max(0, Math.min(elapsedMs, config.samplePeriodMs ?? elapsedMs));
+  const smoothingFactor = config.samplePeriodMs
+    ? 1 - Math.pow(1 - config.smoothingFactor, sampleMs / config.samplePeriodMs)
+    : config.smoothingFactor;
+  if (config.samplePeriodMs) {
+    config = {
+      ...config,
+      baselineAdjustmentFactor: 1 - Math.pow(1 - config.baselineAdjustmentFactor, sampleMs / config.samplePeriodMs),
+      calibrationMovementTolerance: config.calibrationMovementTolerance * sampleMs / config.samplePeriodMs,
+    };
+  }
   const unwrappedAngle = unwrapTiltAngle(angle, state.rawAngle, state.unwrappedAngle);
   const movement = state.unwrappedAngle === null ? 0 : Math.abs(unwrappedAngle - state.unwrappedAngle);
   const filteredAngle =
     state.filteredAngle === null
       ? unwrappedAngle
-      : state.filteredAngle + config.smoothingFactor * (unwrappedAngle - state.filteredAngle);
+      : state.filteredAngle + smoothingFactor * (unwrappedAngle - state.filteredAngle);
 
   if (state.baseline === null) {
     const stable = movement <= config.calibrationMovementTolerance;
     const calibrationCount = stable ? state.calibrationCount + 1 : 1;
     const calibrationTotal = stable ? state.calibrationTotal + filteredAngle : filteredAngle;
-    const calibrated = calibrationCount >= config.calibrationSamples;
+    const calibrationDurationMs = stable ? state.calibrationDurationMs + sampleMs : sampleMs;
+    const calibrated = calibrationCount >= config.calibrationSamples && calibrationDurationMs >= (config.calibrationMs ?? 0);
     const baseline = calibrated ? calibrationTotal / calibrationCount : null;
 
     return {
@@ -113,6 +140,7 @@ export function updateTiltDetector(
         unwrappedAngle,
         filteredAngle,
         calibrationCount,
+        calibrationDurationMs,
         calibrationTotal,
       },
       action: null,
@@ -137,6 +165,7 @@ export function updateTiltDetector(
         armed: rearmed,
         candidateAction: null,
         candidateCount: 0,
+        candidateDurationMs: 0,
         neutralCount,
       },
       action: null,
@@ -146,8 +175,9 @@ export function updateTiltDetector(
     };
   }
 
+  const triggerDelta = config.triggerUsingRawAngle ? unwrappedAngle - state.baseline : delta;
   const candidateAction =
-    delta >= config.triggerAngle ? 'correct' : delta <= -config.triggerAngle ? 'passed' : null;
+    triggerDelta >= config.triggerAngle ? 'correct' : triggerDelta <= -config.triggerAngle ? 'passed' : null;
 
   if (!canTrigger) {
     return {
@@ -159,9 +189,10 @@ export function updateTiltDetector(
           filteredAngle,
           candidateAction: null,
           candidateCount: 0,
+          candidateDurationMs: 0,
           neutralCount: 0,
         },
-        delta,
+        triggerDelta,
         config,
       ),
       action: null,
@@ -173,7 +204,10 @@ export function updateTiltDetector(
 
   const candidateCount =
     candidateAction === null ? 0 : candidateAction === state.candidateAction ? state.candidateCount + 1 : 1;
-  const action = candidateCount >= config.confirmationSamples ? candidateAction : null;
+  const candidateDurationMs = candidateAction !== null && candidateAction === state.candidateAction
+    ? state.candidateDurationMs + sampleMs : 0;
+  const action = candidateCount >= config.confirmationSamples &&
+    candidateDurationMs >= (config.confirmationMs ?? 0) ? candidateAction : null;
   const nextState = adjustNeutralBaseline(
     {
       ...state,
@@ -183,9 +217,10 @@ export function updateTiltDetector(
       armed: action === null,
       candidateAction: action === null ? candidateAction : null,
       candidateCount: action === null ? candidateCount : 0,
+      candidateDurationMs: action === null ? candidateDurationMs : 0,
       neutralCount: 0,
     },
-    delta,
+    triggerDelta,
     config,
   );
 
