@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
+import type { RoundResultSnapshot } from '@/game/round-result-snapshot';
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
 const STORAGE_KEY = 'whatz-it:round-videos:v1';
@@ -13,6 +14,7 @@ export type RoundVideo = {
   uri: string;
   audioUri?: string;
   exportUri?: string;
+  thumbnailUri?: string;
   playbackIncludesOverlays?: boolean;
   exportIncludesOverlays?: boolean;
   requiresBrandedExport?: boolean;
@@ -20,6 +22,7 @@ export type RoundVideo = {
   deckId: string;
   createdAt: number;
   events?: RoundVideoEvent[];
+  resultSnapshot?: RoundResultSnapshot;
 };
 
 export type RoundVideoEvent = {
@@ -30,10 +33,11 @@ export type RoundVideoEvent = {
   timerEndsAtMs?: number;
 };
 
-type StoredRoundVideo = Omit<RoundVideo, 'uri' | 'audioUri' | 'exportUri'> & {
+type StoredRoundVideo = Omit<RoundVideo, 'uri' | 'audioUri' | 'exportUri' | 'thumbnailUri'> & {
   uri: string;
   audioUri?: string;
   exportUri?: string;
+  thumbnailUri?: string;
 };
 
 function readExtension(uri: string) {
@@ -71,12 +75,14 @@ function notifyRoundVideoLibrary(videos: RoundVideo[]) {
   });
 }
 
-async function writeStoredMetadata(videos: RoundVideo[]) {
+async function writeStoredMetadata(videos: RoundVideo[], notifyListeners = true) {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(videos.map(toStoredRoundVideo)));
-  notifyRoundVideoLibrary(videos);
+  if (notifyListeners) notifyRoundVideoLibrary(videos);
 }
 
 const activeExports = new Map<string, Promise<RoundVideo>>();
+const activeThumbnailStores = new Map<string, Promise<RoundVideo | null>>();
+let thumbnailStoreQueue: Promise<void> = Promise.resolve();
 const pendingManagedVideoIds = new Set<string>();
 let storageMaintenancePromise: Promise<void> | null = null;
 
@@ -101,6 +107,8 @@ export async function loadRoundVideos() {
     const sourceExists = new File(video.uri).exists;
     const audioUri = video.audioUri && new File(video.audioUri).exists ? video.audioUri : undefined;
     let exportUri = video.exportUri && new File(video.exportUri).exists ? video.exportUri : undefined;
+    const thumbnailUri =
+      video.thumbnailUri && new File(video.thumbnailUri).exists ? video.thumbnailUri : undefined;
     const hasLegacyIosOverlayExport =
       Platform.OS === 'ios' &&
       !!exportUri &&
@@ -118,6 +126,7 @@ export async function loadRoundVideos() {
         uri: sourceExists ? video.uri : exportUri!,
         audioUri,
         exportUri,
+        thumbnailUri,
         exportIncludesOverlays: exportUri ? video.exportIncludesOverlays : undefined,
         exportStatus: exportUri
           ? ('ready' as const)
@@ -151,6 +160,7 @@ export async function storeRoundVideo(
   temporaryReadyExportUri?: string,
   playbackIncludesOverlays = false,
   requiresBrandedExport = false,
+  resultSnapshot?: RoundResultSnapshot,
 ) {
   const persistenceStartedAt = Date.now();
   if (Platform.OS === 'web') throw new Error('Round recording is only available on a device.');
@@ -245,6 +255,7 @@ export async function storeRoundVideo(
     deckId,
     createdAt,
     events,
+    resultSnapshot,
   };
   const storedVideo = compactCompletedExport(video);
   const libraryLoadStartedAt = Date.now();
@@ -284,6 +295,56 @@ export async function deleteRoundVideo(id: string) {
   const next = videos.filter((video) => video.id !== id);
   await writeStoredMetadata(next);
   return next;
+}
+
+export async function storeRoundVideoThumbnail(id: string, temporaryUri: string) {
+  if (Platform.OS === 'web') return null;
+  const activeStore = activeThumbnailStores.get(id);
+  if (activeStore) {
+    const { File } = await import('expo-file-system');
+    const redundantThumbnail = new File(temporaryUri);
+    if (redundantThumbnail.exists) redundantThumbnail.delete();
+    return activeStore;
+  }
+
+  const storing = thumbnailStoreQueue
+    .then(() => storeRoundVideoThumbnailOnce(id, temporaryUri))
+    .finally(() => {
+      activeThumbnailStores.delete(id);
+    });
+  thumbnailStoreQueue = storing.then(
+    () => undefined,
+    () => undefined,
+  );
+  activeThumbnailStores.set(id, storing);
+  return storing;
+}
+
+async function storeRoundVideoThumbnailOnce(id: string, temporaryUri: string) {
+  const { Directory, File, Paths } = await import('expo-file-system');
+  const videoDirectory = new Directory(Paths.document, VIDEO_DIRECTORY_NAME);
+  videoDirectory.create({ idempotent: true, intermediates: true });
+  const temporaryThumbnail = new File(temporaryUri);
+  const destination = new File(videoDirectory, `${id}-thumbnail.jpg`);
+
+  if (destination.exists) destination.delete();
+  await temporaryThumbnail.move(destination);
+
+  const { videos } = await readHydratedMetadata();
+  const current = videos.find((video) => video.id === id);
+  if (!current) {
+    if (destination.exists) destination.delete();
+    return null;
+  }
+
+  const thumbnailVideo = { ...current, thumbnailUri: destination.uri };
+  const next = videos.map((video) => (video.id === id ? thumbnailVideo : video));
+  // Thumbnail persistence is background maintenance. Avoid re-rendering the
+  // library after every item in a legacy migration batch; the generated native
+  // image is already visible and the durable URI will be picked up next load.
+  await writeStoredMetadata(next, false);
+  logVideoDiagnostic('round thumbnail persisted', { videoId: id });
+  return thumbnailVideo;
 }
 
 export function isRoundVideoReadyToSave(video: RoundVideo) {
@@ -705,7 +766,7 @@ async function inspectVideoAudioTrackCount(uri: string): Promise<number | null> 
 
 async function updateStoredVideo(video: RoundVideo) {
   const { videos } = await readHydratedMetadata();
-  const next = videos.map((item) => (item.id === video.id ? video : item));
+  const next = videos.map((item) => (item.id === video.id ? { ...item, ...video } : item));
   await writeStoredMetadata(next);
   return video;
 }
@@ -763,6 +824,9 @@ function hydrateStoredRoundVideo(
     exportUri: video.exportUri
       ? resolveManagedFileUri(video.exportUri, videoDirectory, FileType)
       : undefined,
+    thumbnailUri: video.thumbnailUri
+      ? resolveManagedFileUri(video.thumbnailUri, videoDirectory, FileType)
+      : undefined,
   };
 }
 
@@ -772,6 +836,7 @@ function toStoredRoundVideo(video: RoundVideo): StoredRoundVideo {
     uri: getManagedFileName(video.uri),
     audioUri: video.audioUri ? getManagedFileName(video.audioUri) : undefined,
     exportUri: video.exportUri ? getManagedFileName(video.exportUri) : undefined,
+    thumbnailUri: video.thumbnailUri ? getManagedFileName(video.thumbnailUri) : undefined,
   };
 }
 
@@ -880,7 +945,7 @@ function deleteVideoFiles(
   video: RoundVideo,
   FileType: typeof import('expo-file-system').File,
 ) {
-  [video.uri, video.audioUri, video.exportUri].forEach((uri) => {
+  [video.uri, video.audioUri, video.exportUri, video.thumbnailUri].forEach((uri) => {
     if (!uri) return;
     const file = new FileType(uri);
     if (file.exists) file.delete();
@@ -892,8 +957,10 @@ function deleteSupersededVideoFiles(
   next: RoundVideo,
   FileType: typeof import('expo-file-system').File,
 ) {
-  const retainedUris = new Set([next.uri, next.audioUri, next.exportUri].filter(Boolean));
-  [previous.uri, previous.audioUri, previous.exportUri].forEach((uri) => {
+  const retainedUris = new Set(
+    [next.uri, next.audioUri, next.exportUri, next.thumbnailUri].filter(Boolean),
+  );
+  [previous.uri, previous.audioUri, previous.exportUri, previous.thumbnailUri].forEach((uri) => {
     if (!uri || retainedUris.has(uri)) return;
     try {
       const file = new FileType(uri);
@@ -910,11 +977,20 @@ function reconcileRoundVideoDirectory(
   FileType: typeof import('expo-file-system').File,
 ) {
   const referencedFileNames = new Set(
-    videos.flatMap((video) => [video.uri, video.audioUri, video.exportUri])
+    videos.flatMap((video) => [
+      video.uri,
+      video.audioUri,
+      video.exportUri,
+      video.thumbnailUri,
+    ])
       .filter((uri): uri is string => !!uri)
       .map(getManagedFileName),
   );
-  const activeVideoIds = [...activeExports.keys(), ...pendingManagedVideoIds]
+  const activeVideoIds = [
+    ...activeExports.keys(),
+    ...activeThumbnailStores.keys(),
+    ...pendingManagedVideoIds,
+  ]
     .map((id) => id.toLowerCase());
   let deletedBytes = 0;
   const deletedFiles: string[] = [];

@@ -17,6 +17,11 @@ import { captureRef } from 'react-native-view-shot';
 import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { RecordingIndicator } from '@/components/recording-indicator';
+import {
+  RoundReadyCountdown,
+  RoundReadyPanel,
+  RoundReadyPosition,
+} from '@/components/round-ready-panel';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { useRound } from '@/game/round-context';
 import { formatRoundClock } from '@/game/round-duration';
@@ -31,6 +36,13 @@ import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnosti
 const ROUND_END_SCREEN_MS = 2495;
 const RESULTS_SCREENSHOT_TIMEOUT_MS = 2_000;
 const MANUAL_FEEDBACK_DURATION_MS = Platform.OS === 'android' ? 350 : 550;
+const RESUME_COUNTDOWN_MS = 3_000;
+const ROUND_FRAME_INSET = 16;
+const ROUND_FRAME_BORDER_WIDTH = 6;
+const ROUND_FRAME_RADIUS = 28;
+const ROUND_PLAYING_BORDER_COLOR = '#439EFE';
+
+type PortraitPausePhase = 'prompt' | 'positioning' | 'countdown' | 'restarting' | 'finished';
 
 export default function GameScreen() {
   const focused = useIsFocused();
@@ -38,16 +50,23 @@ export default function GameScreen() {
   useKeepAwake();
   const { width, height } = useLandscapeDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
+  const [portraitPausePhase, setPortraitPausePhase] = useState<PortraitPausePhase | null>(null);
+  const [resumeCountdownEndsAt, setResumeCountdownEndsAt] = useState<number | null>(null);
   const roundStarted = useRef(false);
   const finishSoundPlayed = useRef(false);
   const feedbackSoundCard = useRef<number | null>(null);
   const flipSoundCard = useRef<number | null>(null);
   const timerPausedForBackground = useRef(false);
   const recordingPausedForBackground = useRef(false);
+  const pausedResumeCountdownRemaining = useRef<number | null>(null);
+  const lastResumeCountdownCue = useRef<number | null>(null);
+  const portraitPausePhaseRef = useRef<PortraitPausePhase | null>(null);
+  const portraitResumeOperation = useRef(0);
+  const portraitRecordingResume = useRef<Promise<boolean> | null>(null);
   const [foregroundResumeGeneration, setForegroundResumeGeneration] = useState(0);
   const screenRef = useRef<View>(null);
   const resultsTransitionStarted = useRef(false);
-  const { play: playSound, stopAll } = useRoundSounds();
+  const { play: playSound, prepareForRound, stopAll } = useRoundSounds();
   const router = useRouter();
   const { beginTransition } = useScreenshotTransition();
   const {
@@ -73,6 +92,7 @@ export default function GameScreen() {
     traceAndroidCommit(round.status, round.currentCardIndex);
   }, [round.status, round.currentCardIndex]);
   useLayoutEffect(() => { finishedRef.current = round.status === 'finished'; }, [round.status]);
+  useLayoutEffect(() => { portraitPausePhaseRef.current = portraitPausePhase; }, [portraitPausePhase]);
   useFocusEffect(useCallback(() => () => {
     stopAll();
     if (!finishedRef.current) void cancelRecording();
@@ -151,11 +171,87 @@ export default function GameScreen() {
     void triggerRoundHaptic('card-flip', { cameraActive: isRecording });
     void playSound('flip', isCurrent);
   }, [focused, isRecording, playSound, round.currentCardIndex, round.status]);
-  const tiltStatus = useTiltControls({
+
+  const handleDevicePostureChange = useCallback((nextPosture: 'landscape' | 'portrait') => {
+    const currentPausePhase = portraitPausePhaseRef.current;
+    if (nextPosture === 'portrait') {
+      if (currentPausePhase === 'positioning') {
+        portraitResumeOperation.current += 1;
+        portraitRecordingResume.current = null;
+        stopAll();
+        void pauseRecording();
+        return;
+      }
+      if (currentPausePhase === 'countdown' || currentPausePhase === 'restarting') {
+        portraitResumeOperation.current += 1;
+        portraitRecordingResume.current = null;
+        stopAll();
+        lastResumeCountdownCue.current = null;
+        setResumeCountdownEndsAt(null);
+        portraitPausePhaseRef.current = 'positioning';
+        setPortraitPausePhase('positioning');
+        void pauseRecording();
+        return;
+      }
+      if (currentPausePhase !== null) return;
+      if (round.status !== 'playing' && round.status !== 'feedback') return;
+      setFinishPromptVisible(false);
+      setResumeCountdownEndsAt(null);
+      portraitPausePhaseRef.current = 'prompt';
+      setPortraitPausePhase('prompt');
+      recordingPausedForBackground.current = false;
+      stopAll();
+      pauseRound();
+      void pauseRecording();
+      logVideoDiagnostic('round paused after sustained portrait hold', {
+        previousStatus: round.status,
+      });
+      return;
+    }
+
+    if (currentPausePhase !== 'positioning') return;
+    const operation = ++portraitResumeOperation.current;
+    // Initial round start finishes recorder and audio preparation before its
+    // visible 3-2-1. Mirror that ordering here, using the placement screen in
+    // place of Get Ready, so every countdown beat stays on its exact timeline.
+    portraitRecordingResume.current = (async () => {
+      const recordingReady = await resumeRecording({ restoreOverlay: false });
+      if (
+        operation !== portraitResumeOperation.current ||
+        portraitPausePhaseRef.current !== 'positioning' ||
+        AppState.currentState !== 'active'
+      ) {
+        if (recordingReady) void pauseRecording();
+        return false;
+      }
+      await prepareForRound();
+      if (
+        operation !== portraitResumeOperation.current ||
+        portraitPausePhaseRef.current !== 'positioning' ||
+        AppState.currentState !== 'active'
+      ) {
+        if (recordingReady) void pauseRecording();
+        return false;
+      }
+      lastResumeCountdownCue.current = null;
+      setResumeCountdownEndsAt(Date.now() + RESUME_COUNTDOWN_MS);
+      portraitPausePhaseRef.current = 'countdown';
+      setPortraitPausePhase('countdown');
+      return recordingReady;
+    })();
+  }, [pauseRecording, pauseRound, prepareForRound, resumeRecording, round.status, stopAll]);
+
+  const { status: tiltStatus } = useTiltControls({
     enabled:
-      focused && appActive && (round.status === 'ready' || round.status === 'playing' || round.status === 'feedback'),
+      focused && appActive && (
+        round.status === 'ready' ||
+        round.status === 'playing' ||
+        round.status === 'feedback' ||
+        (portraitPausePhase !== null && portraitPausePhase !== 'finished')
+    ),
     acceptingInput: round.status === 'playing',
     onAction: handleAnswer,
+    onPostureChange: handleDevicePostureChange,
     onRearmed: advanceCard,
   });
   const handleFinishEarly = useCallback(() => {
@@ -165,6 +261,83 @@ export default function GameScreen() {
     setFinishPromptVisible(false);
     finishRound();
   }, [finishRound]);
+
+  const handleKeepPlaying = useCallback(() => {
+    lastResumeCountdownCue.current = null;
+    setResumeCountdownEndsAt(null);
+    portraitPausePhaseRef.current = 'positioning';
+    setPortraitPausePhase('positioning');
+  }, []);
+
+  const handlePortraitFinish = useCallback(() => {
+    portraitResumeOperation.current += 1;
+    portraitRecordingResume.current = null;
+    setResumeCountdownEndsAt(null);
+    portraitPausePhaseRef.current = 'finished';
+    setPortraitPausePhase('finished');
+    finishRound();
+  }, [finishRound]);
+
+  const handleResumeCountdownSecond = useCallback(
+    (remaining: number) => {
+      if (remaining < 1 || remaining > 3) return;
+      if (lastResumeCountdownCue.current === remaining) return;
+      lastResumeCountdownCue.current = remaining;
+      const sound = remaining === 3 ? 'count-3' : remaining === 2 ? 'count-2' : 'count-1';
+      void triggerRoundHaptic('initial-countdown', {
+        cameraActive: false,
+        countdownValue: remaining as 1 | 2 | 3,
+      });
+      void playSound(sound, () =>
+        portraitPausePhaseRef.current === 'countdown' && AppState.currentState === 'active');
+    },
+    [playSound],
+  );
+
+  const handleResumeCountdownExpire = useCallback(async () => {
+    if (portraitPausePhaseRef.current !== 'countdown') return;
+    const operation = ++portraitResumeOperation.current;
+    setResumeCountdownEndsAt(null);
+    portraitPausePhaseRef.current = 'restarting';
+    setPortraitPausePhase('restarting');
+
+    const recordingReady = await (
+      portraitRecordingResume.current ?? resumeRecording({ restoreOverlay: false })
+    );
+    portraitRecordingResume.current = null;
+    if (
+      operation !== portraitResumeOperation.current ||
+      portraitPausePhaseRef.current !== 'restarting' ||
+      AppState.currentState !== 'active'
+    ) {
+      if (recordingReady) void pauseRecording();
+      return;
+    }
+
+    // Match initial round start: dispatch the cue and reveal the card in the
+    // same turn instead of waiting for the native player's promise to settle.
+    void playSound('round-start');
+
+    // Resuming feedback advances to the next card; resuming play retains it.
+    // Mark that destination as already sonified so the normal card effect
+    // cannot layer a flip cue over the round-start cue.
+    flipSoundCard.current = round.pausedStatus === 'feedback'
+      ? round.currentCardIndex + 1
+      : round.currentCardIndex;
+    resumeRound();
+    portraitPausePhaseRef.current = null;
+    setPortraitPausePhase(null);
+    logVideoDiagnostic('portrait-paused round revealed after recording restart', {
+      recordingReady,
+    });
+  }, [pauseRecording, playSound, resumeRecording, resumeRound, round.currentCardIndex, round.pausedStatus]);
+
+  const resumeCountdownSeconds = useRoundTimer({
+    endsAt: resumeCountdownEndsAt,
+    active: focused && appActive && portraitPausePhase === 'countdown',
+    onExpire: handleResumeCountdownExpire,
+    onSecond: handleResumeCountdownSecond,
+  });
 
   useEffect(() => {
     if (!deck || !currentCard || round.status === 'idle') {
@@ -297,27 +470,52 @@ export default function GameScreen() {
       const enteredForeground = previousState !== 'active' && nextState === 'active';
       previousState = nextState;
       if (leftForeground) {
+        if (
+          portraitPausePhaseRef.current === 'positioning' ||
+          portraitPausePhaseRef.current === 'countdown' ||
+          portraitPausePhaseRef.current === 'restarting'
+        ) {
+          portraitResumeOperation.current += 1;
+          portraitRecordingResume.current = null;
+          lastResumeCountdownCue.current = null;
+          pausedResumeCountdownRemaining.current = null;
+          setResumeCountdownEndsAt(null);
+          portraitPausePhaseRef.current = 'positioning';
+          setPortraitPausePhase('positioning');
+          void pauseRecording();
+        }
         setAppActive(false);
         if (round.status === 'playing' || round.status === 'feedback') {
           timerPausedForBackground.current = true;
           pauseRound();
         }
-        recordingPausedForBackground.current = true;
-        void pauseRecording();
+        if (
+          resumeCountdownEndsAt !== null &&
+          portraitPausePhaseRef.current !== 'positioning'
+        ) {
+          pausedResumeCountdownRemaining.current = Math.max(0, resumeCountdownEndsAt - Date.now());
+          setResumeCountdownEndsAt(null);
+        }
+        recordingPausedForBackground.current = portraitPausePhaseRef.current === null;
+        if (recordingPausedForBackground.current) void pauseRecording();
       } else if (enteredForeground) {
         setAppActive(true);
         if (timerPausedForBackground.current) {
           timerPausedForBackground.current = false;
           resumeRound();
         }
-        if (recordingPausedForBackground.current) {
+        if (pausedResumeCountdownRemaining.current !== null) {
+          setResumeCountdownEndsAt(Date.now() + pausedResumeCountdownRemaining.current);
+          pausedResumeCountdownRemaining.current = null;
+        }
+        if (recordingPausedForBackground.current && portraitPausePhaseRef.current === null) {
           recordingPausedForBackground.current = false;
           setForegroundResumeGeneration((generation) => generation + 1);
         }
       }
     });
     return () => subscription.remove();
-  }, [pauseRecording, pauseRound, resumeRound, round.status]);
+  }, [pauseRecording, pauseRound, resumeCountdownEndsAt, resumeRound, round.status]);
 
   useEffect(() => {
     if (foregroundResumeGeneration === 0) return;
@@ -360,6 +558,117 @@ export default function GameScreen() {
   const manualControlHeight = Math.round(Math.max(52, Math.min(70, height * 0.16)));
   const manualControlMaxWidth = Math.round(Math.min(720, width * 0.82));
   const manualControlFontSize = Math.round(Math.max(12, Math.min(16, height * 0.034)));
+
+  if (portraitPausePhase === 'prompt') {
+    return (
+      <SafeAreaView edges={[]} style={styles.portraitPauseRoot}>
+        <StatusBar hidden animated={false} />
+        <View style={styles.portraitPauseCard}>
+          <Text style={styles.portraitPauseTimer}>
+            {formatRoundClock(displayedRemainingSeconds)}
+          </Text>
+          <View style={styles.portraitPauseCopy}>
+            <Text style={styles.portraitPauseEyebrow}>
+              ROUND PAUSED
+            </Text>
+            <Text style={styles.portraitPauseTitle}>
+              Take a breather
+            </Text>
+            <Text style={styles.portraitPauseBody}>
+              The answer is hidden and the timer is stopped.
+            </Text>
+          </View>
+
+          <View style={styles.portraitPauseActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={handleKeepPlaying}
+              style={({ pressed }) => [
+                styles.portraitPrimaryButton,
+                pressed && styles.promptPressed,
+              ]}
+            >
+              <Text style={styles.portraitPrimaryButtonText}>KEEP PLAYING</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={handlePortraitFinish}
+              style={({ pressed }) => [
+                styles.portraitEndButton,
+                pressed && styles.promptPressed,
+              ]}
+            >
+              <Text style={styles.portraitEndButtonText}>END ROUND</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (portraitPausePhase === 'positioning') {
+    return (
+      <View style={styles.readyCaptureRoot}>
+        <LandscapeViewport>
+          <SafeAreaView edges={[]} style={styles.readySafeArea}>
+            <StatusBar hidden animated={false} />
+            <RoundReadyPanel
+              closeAccessibilityLabel="End round"
+              deckTitle={deck.title}
+              isRecording={isRecording}
+              onClose={handlePortraitFinish}
+            >
+              <RoundReadyPosition title="Place on forehead" />
+            </RoundReadyPanel>
+          </SafeAreaView>
+        </LandscapeViewport>
+      </View>
+    );
+  }
+
+  if (portraitPausePhase === 'finished') {
+    return (
+      <View ref={screenRef} collapsable={false} style={styles.portraitFinishRoot}>
+        <SafeAreaView edges={[]} style={styles.portraitFinishSafeArea}>
+          <StatusBar hidden animated={false} />
+          <View style={styles.portraitFinishCard}>
+            <Text
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={1}
+              minimumFontScale={0.8}
+              numberOfLines={1}
+              style={styles.portraitFinishTitle}
+            >
+              TIME&apos;S UP!
+            </Text>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (portraitPausePhase === 'countdown' || portraitPausePhase === 'restarting') {
+    return (
+      <View style={styles.captureRoot}>
+        <LandscapeViewport>
+          <SafeAreaView edges={[]} style={styles.readySafeArea}>
+            <StatusBar hidden animated={false} />
+            <RoundReadyPanel
+              closeAccessibilityLabel="End round"
+              deckTitle={deck.title}
+              isRecording={isRecording}
+              onClose={handlePortraitFinish}
+            >
+              <RoundReadyCountdown
+                fontSize={Math.max(92, Math.min(138, height * 0.34))}
+                value={portraitPausePhase === 'restarting' ? 1 : resumeCountdownSeconds}
+              />
+            </RoundReadyPanel>
+          </SafeAreaView>
+        </LandscapeViewport>
+      </View>
+    );
+  }
 
   return (
     <View ref={screenRef} collapsable={false} style={styles.captureRoot}>
@@ -598,16 +907,127 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
 
 const styles = StyleSheet.create({
   captureRoot: { flex: 1, backgroundColor: colors.playSoft },
+  readyCaptureRoot: { flex: 1, backgroundColor: colors.surface },
+  portraitFinishRoot: { flex: 1, backgroundColor: colors.surface },
+  portraitFinishSafeArea: {
+    flex: 1,
+    padding: ROUND_FRAME_INSET,
+    backgroundColor: colors.surface,
+  },
+  portraitPauseRoot: {
+    flex: 1,
+    padding: ROUND_FRAME_INSET,
+    backgroundColor: colors.playSoft,
+  },
+  portraitPauseCard: {
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xl,
+    borderWidth: ROUND_FRAME_BORDER_WIDTH,
+    borderColor: ROUND_PLAYING_BORDER_COLOR,
+    borderRadius: ROUND_FRAME_RADIUS,
+    backgroundColor: colors.surface,
+    justifyContent: 'space-between',
+  },
+  portraitFinishCard: {
+    flex: 1,
+    minHeight: 0,
+    borderWidth: ROUND_FRAME_BORDER_WIDTH,
+    borderColor: colors.playBorder,
+    borderRadius: ROUND_FRAME_RADIUS,
+    backgroundColor: colors.play,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  portraitFinishTitle: {
+    maxWidth: '100%',
+    paddingHorizontal: spacing.xl,
+    color: colors.white,
+    fontSize: 48,
+    lineHeight: 56,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  portraitPauseTimer: {
+    color: colors.play,
+    fontSize: 25,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  portraitPauseCopy: { alignItems: 'center', gap: spacing.md },
+  portraitPauseEyebrow: {
+    color: colors.play,
+    fontSize: 13,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 1.6,
+  },
+  portraitPauseTitle: {
+    ...typography.hero,
+    color: colors.ink,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  portraitPauseBody: {
+    ...typography.body,
+    maxWidth: 310,
+    color: colors.muted,
+    textAlign: 'center',
+  },
+  portraitPauseActions: { gap: 12 },
+  portraitPrimaryButton: {
+    minHeight: 58,
+    borderRadius: radius.pill,
+    backgroundColor: colors.play,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  portraitPrimaryButtonText: {
+    color: colors.white,
+    fontSize: 15,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  portraitEndButton: {
+    minHeight: 52,
+    borderWidth: 2,
+    borderColor: colors.passBorder,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  portraitEndButtonText: {
+    color: colors.pass,
+    fontSize: 14,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  readySafeArea: {
+    flex: 1,
+    padding: ROUND_FRAME_INSET,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
   safeArea: {
     flex: 1,
-    padding: 16,
+    padding: ROUND_FRAME_INSET,
     overflow: 'hidden',
   },
   panel: {
     flex: 1,
     minHeight: 0,
-    borderWidth: 6,
-    borderRadius: 28,
+    borderWidth: ROUND_FRAME_BORDER_WIDTH,
+    borderRadius: ROUND_FRAME_RADIUS,
     overflow: 'hidden',
   },
   // Center the 48-point control on the same 36-point axis as the timer and

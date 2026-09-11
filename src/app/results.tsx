@@ -1,4 +1,5 @@
-import { type Href, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,14 +9,26 @@ import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
+import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
-import { isRoundVideoReadyToSave, saveRoundVideoToDevice } from '@/video/round-videos';
+import {
+  deleteRoundVideo,
+  isRoundVideoReadyToSave,
+  loadRoundVideos,
+  prepareRoundVideoExport,
+  saveRoundVideoToDevice,
+  subscribeToRoundVideoLibrary,
+  type RoundVideo,
+} from '@/video/round-videos';
 import { logVideoDiagnostic } from '@/video/video-diagnostics';
 
 export default function ResultsScreen() {
   const router = useRouter();
+  const { roundId } = useLocalSearchParams<{ roundId?: string }>();
+  const isArchivedRound = typeof roundId === 'string' && roundId.length > 0;
+  const { catalog } = useCatalog();
   const {
     currentVideo,
     isVideoFinalizing,
@@ -29,6 +42,14 @@ export default function ResultsScreen() {
   const [isStarting, setIsStarting] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [isSavingVideo, setIsSavingVideo] = useState(false);
+  const [deletePromptVisible, setDeletePromptVisible] = useState(false);
+  const [isDeletingRound, setIsDeletingRound] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [thumbnailReadyVideoId, setThumbnailReadyVideoId] = useState<string | null>(null);
+  const [archivedVideoState, setArchivedVideoState] = useState<{
+    roundId: string;
+    video: RoundVideo | null;
+  } | null>(null);
   const [saveNotice, setSaveNotice] = useState<{
     title: string;
     message: string;
@@ -37,33 +58,83 @@ export default function ResultsScreen() {
   const isPortrait = usePortraitScreen();
   const { beginTransition, revealTransition } = useScreenshotTransition();
   const deck = roundDeck;
-  const correctCount = round.results.filter((result) => result.outcome === 'correct').length;
-  const passedCount = round.results.filter((result) => result.outcome === 'passed').length;
-  const videoReady = currentVideo ? isRoundVideoReadyToSave(currentVideo) : false;
-  const videoExportFailed = currentVideo?.exportStatus === 'failed';
-  const videoPlaybackBlocked = !!currentVideo && !videoReady && !videoExportFailed;
+  const archiveLoaded =
+    !isArchivedRound || archivedVideoState?.roundId === roundId;
+  const archivedVideo =
+    isArchivedRound && archivedVideoState?.roundId === roundId
+      ? archivedVideoState.video
+      : null;
+  const displayedVideo = isArchivedRound ? archivedVideo : currentVideo;
+  const archivedResults = archivedVideo?.resultSnapshot;
+  const displayedResults = isArchivedRound ? archivedResults?.results ?? [] : round.results;
+  const displayedDeckTitle = isArchivedRound
+    ? archivedResults?.deckTitle ?? catalog.getDeckById(archivedVideo?.deckId)?.title ?? 'Round results'
+    : deck?.title;
+  const correctCount = displayedResults.filter((result) => result.outcome === 'correct').length;
+  const passedCount = displayedResults.filter((result) => result.outcome === 'passed').length;
+  const videoReady = displayedVideo ? isRoundVideoReadyToSave(displayedVideo) : false;
+  const videoExportFailed = displayedVideo?.exportStatus === 'failed';
+  const videoPlaybackBlocked = !!displayedVideo && !videoReady && !videoExportFailed;
+  const archivedScreenReady =
+    archiveLoaded &&
+    (!archivedVideo ||
+      !archivedResults ||
+      (!videoPlaybackBlocked && thumbnailReadyVideoId === displayedVideo?.id));
+
+  useEffect(() => {
+    if (!isArchivedRound) return;
+
+    let active = true;
+    const updateArchivedVideo = (videos: RoundVideo[]) => {
+      if (!active) return;
+      const video = videos.find((item) => item.id === roundId) ?? null;
+      setArchivedVideoState({
+        roundId,
+        video,
+      });
+      return video;
+    };
+    const unsubscribe = subscribeToRoundVideoLibrary(updateArchivedVideo);
+    void loadRoundVideos().then((videos) => {
+      const video = updateArchivedVideo(videos);
+      if (!video || isRoundVideoReadyToSave(video) || video.exportStatus === 'failed') return;
+      void prepareRoundVideoExport(video).then((prepared) => {
+        if (active) setArchivedVideoState({ roundId, video: prepared });
+      });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [isArchivedRound, roundId]);
 
   useEffect(() => {
     logVideoDiagnostic('results screen video state changed', {
-      currentVideoId: currentVideo?.id ?? null,
-      exportStatus: currentVideo?.exportStatus ?? null,
-      hasAudioUri: !!currentVideo?.audioUri,
-      hasExportUri: !!currentVideo?.exportUri,
-      isVideoFinalizing,
+      currentVideoId: displayedVideo?.id ?? null,
+      exportStatus: displayedVideo?.exportStatus ?? null,
+      hasAudioUri: !!displayedVideo?.audioUri,
+      hasExportUri: !!displayedVideo?.exportUri,
+      isVideoFinalizing: isArchivedRound ? false : isVideoFinalizing,
       videoPlaybackBlocked,
       videoReady,
     });
   }, [
-    currentVideo?.audioUri,
-    currentVideo?.exportStatus,
-    currentVideo?.exportUri,
-    currentVideo?.id,
+    displayedVideo?.audioUri,
+    displayedVideo?.exportStatus,
+    displayedVideo?.exportUri,
+    displayedVideo?.id,
+    isArchivedRound,
     isVideoFinalizing,
     videoPlaybackBlocked,
     videoReady,
   ]);
 
   const returnHome = () => {
+    if (isArchivedRound) {
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
+      return;
+    }
     if (router.canDismiss()) {
       router.dismissAll();
     } else {
@@ -72,19 +143,37 @@ export default function ResultsScreen() {
   };
 
   useEffect(() => {
-    if (isPortrait) revealTransition('results');
-  }, [isPortrait, revealTransition]);
+    if (isPortrait && (!isArchivedRound || archivedScreenReady)) {
+      void revealTransition('results');
+    }
+  }, [archivedScreenReady, isArchivedRound, isPortrait, revealTransition]);
 
   if (!isPortrait) {
     return <PortraitTransition style={styles.orientationGate} />;
   }
 
-  if (!deck || round.status !== 'finished') {
+  if (isArchivedRound && !archiveLoaded) {
     return (
       <SafeAreaView style={styles.empty}>
-        <Text style={styles.emptyTitle}>No finished round yet</Text>
+        <ActivityIndicator color={colors.play} size="large" />
+        <Text style={styles.emptyTitle}>Loading round results…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (
+    (isArchivedRound && (!archivedVideo || !archivedResults)) ||
+    (!isArchivedRound && (!deck || round.status !== 'finished'))
+  ) {
+    return (
+      <SafeAreaView style={styles.empty}>
+        <Text style={styles.emptyTitle}>
+          {isArchivedRound ? 'Results are unavailable for this recording' : 'No finished round yet'}
+        </Text>
         <Pressable onPress={returnHome} style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>PICK A DECK</Text>
+          <Text style={styles.primaryButtonText}>
+            {isArchivedRound ? 'BACK TO MY ROUNDS' : 'PICK A DECK'}
+          </Text>
         </Pressable>
       </SafeAreaView>
     );
@@ -92,13 +181,43 @@ export default function ResultsScreen() {
 
   const handleReplay = async () => {
     if (isStarting) return;
+
+    if (isArchivedRound) {
+      if (!catalog.getDeckById(archivedResults!.deckId)) {
+        setSaveNotice({
+          title: 'Deck unavailable',
+          message: 'This deck is not currently available to play again.',
+        });
+        return;
+      }
+
+      // Keep this results screen on the stack. The setup screen's normal Back
+      // action then returns the player to this exact saved round.
+      router.push({
+        pathname: '/deck/[deckId]',
+        params: {
+          deckId: archivedResults!.deckId,
+          durationSeconds: String(archivedResults!.durationSeconds),
+          returnToRoundId: roundId,
+          transition: 'apple-slide',
+        },
+      });
+      return;
+    }
+
     setIsStarting(true);
     // First detach the native TextureVideoView while its shared player is
     // still alive. The following state change can then release the old player
     // without racing the Android view-property update.
     await waitForNextPaint();
-    if (!(await configureRound(deck.id, round.durationSeconds))) {
+    const replayDeckId = deck!.id;
+    const replayDuration = round.durationSeconds;
+    if (!(await configureRound(replayDeckId, replayDuration))) {
       setIsStarting(false);
+      setSaveNotice({
+        title: 'Deck unavailable',
+        message: 'This deck is not currently available to play again.',
+      });
       return;
     }
     router.replace('/ready' as Href);
@@ -117,17 +236,17 @@ export default function ResultsScreen() {
     } catch {
       // If capture is unavailable, navigation still completes normally.
     }
-    resetRound();
+    if (!isArchivedRound) resetRound();
     returnHome();
   };
 
   const handleSaveVideo = async (): Promise<VideoSaveNotice> => {
-    if (!currentVideo || !videoReady || isSavingVideo) {
+    if (!displayedVideo || !videoReady || isSavingVideo) {
       return { title: 'Video not ready', message: 'Please wait for this video to finish exporting.' };
     }
     setIsSavingVideo(true);
     try {
-      await saveRoundVideoToDevice(currentVideo);
+      await saveRoundVideoToDevice(displayedVideo);
       return {
         title: 'Video saved',
         message: 'The round video and its sound are now in your device library.',
@@ -145,12 +264,65 @@ export default function ResultsScreen() {
   };
 
   const handleRetryExport = async () => {
-    const preparedVideo = await retryCurrentVideoExport();
+    const preparedVideo = isArchivedRound && displayedVideo
+      ? await prepareRoundVideoExport(displayedVideo)
+      : await retryCurrentVideoExport();
+    if (isArchivedRound && preparedVideo) {
+      setArchivedVideoState({ roundId, video: preparedVideo });
+    }
     if (preparedVideo?.exportStatus === 'failed') {
       setSaveNotice({
         title: 'Export failed',
         message: 'The video and its audio are safe inside the WHATZ IT? app. Please send the [RoundVideo] terminal logs.',
       });
+    }
+  };
+
+  const requestDeleteRound = () => {
+    if (!displayedVideo) return;
+    setDeleteError(null);
+    setDeletePromptVisible(true);
+  };
+
+  const cancelDeleteRound = () => {
+    if (isDeletingRound) return;
+    setDeletePromptVisible(false);
+    setDeleteError(null);
+  };
+
+  const confirmDeleteRound = async () => {
+    if (!displayedVideo || isDeletingRound) return;
+    setIsDeletingRound(true);
+    setDeleteError(null);
+    let transitionUri: string | null = null;
+    try {
+      try {
+        transitionUri = await captureRef(screenRef, {
+          format: 'jpg',
+          quality: 0.95,
+          result: 'tmpfile',
+        });
+      } catch {
+        // Deletion and navigation still complete if capture is unavailable.
+      }
+
+      if (isArchivedRound) await deleteRoundVideo(displayedVideo.id);
+      else await deleteCurrentVideo();
+
+      if (transitionUri) {
+        await beginTransition({
+          destination: 'home',
+          direction: 'right',
+          uri: transitionUri,
+        });
+      }
+      setDeletePromptVisible(false);
+      if (!isArchivedRound) resetRound();
+      returnHome();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setIsDeletingRound(false);
     }
   };
 
@@ -161,8 +333,55 @@ export default function ResultsScreen() {
       style={styles.safeArea}
       edges={['top', 'bottom']}
     >
+      <View style={styles.topBar}>
+        <Pressable
+          accessibilityLabel={isArchivedRound ? 'Back to My Rounds' : 'Back to Decks'}
+          accessibilityRole="button"
+          disabled={isLeaving || isDeletingRound}
+          onPress={() => void handleHome()}
+          style={({ pressed }) => [
+            styles.backButton,
+            pressed && styles.backButtonPressed,
+          ]}
+        >
+          <SymbolView
+            accessibilityElementsHidden
+            name={{
+              android: 'arrow_back_ios_new',
+              ios: 'chevron.left',
+              web: 'arrow_back_ios_new',
+            }}
+            size={18}
+            style={styles.backIcon}
+            tintColor="#000000"
+          />
+          <Text style={styles.backButtonText}>
+            {isArchivedRound ? 'Back to My Rounds' : 'Back to Decks'}
+          </Text>
+        </Pressable>
+        {displayedVideo ? (
+          <Pressable
+            accessibilityLabel="Delete saved round"
+            accessibilityRole="button"
+            disabled={isLeaving || isDeletingRound}
+            onPress={requestDeleteRound}
+            style={({ pressed }) => [styles.topDeleteButton, pressed && styles.pressed]}
+          >
+            <SymbolView
+              accessibilityElementsHidden
+              name={{ android: 'delete', ios: 'trash', web: 'delete' }}
+              size={24}
+              style={styles.topDeleteIcon}
+              tintColor="#DC2626"
+              weight="bold"
+            />
+          </Pressable>
+        ) : (
+          <View style={styles.topBarSpacer} />
+        )}
+      </View>
       <FlatList
-        data={round.results}
+        data={displayedResults}
         style={styles.list}
         keyExtractor={(item, index) => `${item.cardId}-${index}`}
         contentContainerStyle={styles.content}
@@ -170,20 +389,20 @@ export default function ResultsScreen() {
           <View>
             <Text style={styles.eyebrow}>ROUND COMPLETE</Text>
             <Text style={styles.title}>Nice guessing!</Text>
-            <Text style={styles.deckName}>{deck.title}</Text>
-            {(isVideoFinalizing || currentVideo) && (
+            <Text style={styles.deckName}>{displayedDeckTitle}</Text>
+            {((!isArchivedRound && isVideoFinalizing) || displayedVideo) && (
               <View style={styles.videoSection}>
-                {currentVideo && !videoPlaybackBlocked ? (
+                {displayedVideo && !videoPlaybackBlocked ? (
                   <>
                     <RoundVideoPlayer
                       isSaving={isSavingVideo}
-                      key={currentVideo.id}
+                      key={displayedVideo.id}
                       saveDisabled={!videoReady}
-                      onDelete={() => deleteCurrentVideo()}
                       onSave={handleSaveVideo}
+                      onThumbnailReady={() => setThumbnailReadyVideoId(displayedVideo.id)}
                       staticThumbnail
                       suspending={isStarting}
-                      video={currentVideo}
+                      video={displayedVideo}
                       style={styles.video}
                     />
                     <Pressable
@@ -238,7 +457,13 @@ export default function ResultsScreen() {
           </View>
         }
         renderItem={({ item }) => {
-          const card = deck.cards.find((candidate) => candidate.id === item.cardId);
+          const card = isArchivedRound
+            ? archivedResults!.results.find(
+                (candidate) =>
+                  candidate.cardId === item.cardId &&
+                  candidate.answeredAt === item.answeredAt,
+              )
+            : deck!.cards.find((candidate) => candidate.id === item.cardId);
           const outcomeColor =
             item.outcome === 'correct'
               ? colors.correct
@@ -271,14 +496,22 @@ export default function ResultsScreen() {
         >
           <Text style={styles.primaryButtonText}>PLAY AGAIN</Text>
         </Pressable>
-        <Pressable
-          disabled={isLeaving}
-          onPress={handleHome}
-          style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.secondaryButtonText}>BACK TO DECKS</Text>
-        </Pressable>
       </View>
+      <ConfirmationPrompt
+        busy={isDeletingRound}
+        busyLabel="DELETING..."
+        confirmLabel="DELETE ROUND"
+        destructive
+        message={
+          deleteError
+            ? `The round could not be deleted. ${deleteError}`
+            : 'This permanently deletes the round video, score, and card-by-card details from WHATZ IT? on this device.'
+        }
+        onCancel={cancelDeleteRound}
+        onConfirm={() => void confirmDeleteRound()}
+        title={deleteError ? 'Could not delete round' : 'Delete saved round?'}
+        visible={deletePromptVisible}
+      />
       <ConfirmationPrompt
         cancelLabel={null}
         confirmLabel="OK"
@@ -300,6 +533,54 @@ function waitForNextPaint() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
+  topBar: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
+    backgroundColor: colors.background,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    shadowColor: '#64748B',
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  backButtonPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.98 }],
+  },
+  backIcon: { width: 18, height: 18 },
+  backButtonText: {
+    color: '#000000',
+    fontSize: 17,
+    lineHeight: 20,
+    fontFamily: 'Inter_400Regular',
+  },
+  topDeleteButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topDeleteIcon: { width: 24, height: 24 },
+  topBarSpacer: { width: 48, height: 48 },
   orientationGate: { flex: 1 },
   list: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.lg },
@@ -368,7 +649,6 @@ const styles = StyleSheet.create({
   noCards: { ...typography.body, color: colors.muted, textAlign: 'center', padding: spacing.xl },
   actions: {
     flexShrink: 0,
-    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
@@ -385,15 +665,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   primaryButtonText: { color: colors.white, fontSize: 14, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.2 },
-  secondaryButton: {
-    minHeight: 54,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: { color: colors.ink, fontSize: 13, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.1 },
   pressed: { transform: [{ scale: 0.99 }], opacity: 0.88 },
   disabled: { opacity: 0.55 },
 });

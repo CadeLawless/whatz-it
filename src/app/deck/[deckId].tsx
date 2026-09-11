@@ -60,12 +60,21 @@ const releaseCapabilities = platformReleaseCapabilities(Platform.OS);
 
 export default function DeckDetailsScreen() {
   const { catalog } = useCatalog();
-  const { deckId } = useLocalSearchParams<{ deckId: string }>();
+  const { deckId, durationSeconds, returnToRoundId } = useLocalSearchParams<{
+    deckId: string;
+    durationSeconds?: string;
+    returnToRoundId?: string;
+  }>();
   const deck = catalog.getDeckById(deckId);
   const router = useRouter();
   const { configureRound } = useRound();
 
-  const [duration, setDuration] = useState(DEFAULT_ROUND_DURATION);
+  const replayDuration = Number(durationSeconds);
+  const initialDuration =
+    durationSeconds && Number.isFinite(replayDuration)
+      ? clampRoundDuration(replayDuration)
+      : DEFAULT_ROUND_DURATION;
+  const [duration, setDuration] = useState(initialDuration);
   const [isStarting, setIsStarting] = useState(false);
   const [frozenRoundSetupNotice, setFrozenRoundSetupNotice] =
     useState<RoundSetupNotice | null>(null);
@@ -111,8 +120,9 @@ export default function DeckDetailsScreen() {
   );
 
   useEffect(() => {
+    if (durationSeconds) return;
     loadRoundDuration().then(setDuration);
-  }, []);
+  }, [durationSeconds]);
 
   useEffect(() => {
     let active = true;
@@ -236,6 +246,13 @@ export default function DeckDetailsScreen() {
       router.back();
       return;
     }
+    if (returnToRoundId) {
+      router.replace({
+        pathname: '/results',
+        params: { roundId: returnToRoundId },
+      });
+      return;
+    }
     router.replace('/');
   };
 
@@ -264,7 +281,7 @@ export default function DeckDetailsScreen() {
           style={styles.screen}
         >
           <DeckDetailsHeader
-            backLabel="Back to Decks"
+            backLabel={returnToRoundId ? 'Back to Results' : 'Back to Decks'}
             deck={deck}
             onBack={handleBack}
             showCarousel={false}

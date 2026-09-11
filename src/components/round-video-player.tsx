@@ -1,6 +1,6 @@
 import { useEventListener } from 'expo';
 import { type AudioPlayer, setAudioModeAsync, useAudioPlayer } from 'expo-audio';
-import { Image } from 'expo-image';
+import { Image, type ImageRef } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import {
   useVideoPlayer,
@@ -21,6 +21,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { captureRef } from 'react-native-view-shot';
 
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { CircularCloseButton } from '@/components/circular-close-button';
@@ -28,7 +29,11 @@ import { LandscapeViewport } from '@/components/landscape-viewport';
 import { formatRoundClock } from '@/game/round-duration';
 import { colors, radius, spacing } from '@/theme';
 import { getClockwiseLandscapeInsets } from '@/utils/clockwise-landscape-insets';
-import type { RoundVideo, RoundVideoEvent } from '@/video/round-videos';
+import {
+  storeRoundVideoThumbnail,
+  type RoundVideo,
+  type RoundVideoEvent,
+} from '@/video/round-videos';
 import {
   flushRoundDiagnostics,
   logVideoDiagnostic,
@@ -47,8 +52,15 @@ type RoundVideoPlayerProps = {
   saveDisabled?: boolean;
   staticThumbnail?: boolean;
   suspending?: boolean;
+  thumbnailSource?: ImageRef;
+  onThumbnailReady?: () => void;
   onSave?: (video: RoundVideo) => Promise<VideoSaveNotice>;
-  onDelete?: (video: RoundVideo) => Promise<void>;
+};
+
+type ActiveRoundVideoPlayerProps = RoundVideoPlayerProps & {
+  autoOpen?: boolean;
+  hideCollapsed?: boolean;
+  onExpandedClose?: () => void;
 };
 
 type PendingScrubCompletion = {
@@ -61,23 +73,84 @@ const SCRUB_PREVIEW_INTERVAL_MS = 90;
 const SCRUB_SETTLE_FALLBACK_MS = 220;
 const SCRUB_SETTLE_TOLERANCE_SECONDS = 0.15;
 const SCRUB_TAP_MOVEMENT_THRESHOLD = 4;
+let thumbnailGenerationQueue: Promise<void> = Promise.resolve();
 
-export function RoundVideoPlayer({
+function enqueueThumbnailGeneration<T>(generate: () => Promise<T>) {
+  const queued = thumbnailGenerationQueue.then(generate, generate);
+  thumbnailGenerationQueue = queued.then(
+    () => undefined,
+    () => undefined,
+  );
+  return queued;
+}
+
+export function RoundVideoPlayer(props: RoundVideoPlayerProps) {
+  const {
+    onThumbnailReady,
+    staticThumbnail = false,
+    style,
+    thumbnailSource,
+    video,
+  } = props;
+  const [playerOpen, setPlayerOpen] = useState(false);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+
+  if (!staticThumbnail || (!thumbnailSource && !video.thumbnailUri) || thumbnailFailed) {
+    return <ActiveRoundVideoPlayer {...props} />;
+  }
+
+  return (
+    <>
+      <View style={[styles.frame, style]}>
+        <Image
+          cachePolicy="memory-disk"
+          contentFit="cover"
+          onDisplay={onThumbnailReady}
+          onError={() => setThumbnailFailed(true)}
+          priority="high"
+          source={thumbnailSource ?? { uri: video.thumbnailUri! }}
+          style={StyleSheet.absoluteFill}
+          transition={0}
+        />
+        <View pointerEvents="none" style={styles.thumbnailPlayBadge}>
+          <Text style={styles.thumbnailPlayIcon}>{'\u25B6'}</Text>
+        </View>
+        <Pressable
+          accessibilityHint="Opens a larger player with sound"
+          accessibilityLabel="Watch round video"
+          accessibilityRole="button"
+          onPress={() => setPlayerOpen(true)}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+      {playerOpen && (
+        <ActiveRoundVideoPlayer
+          {...props}
+          autoOpen
+          hideCollapsed
+          onExpandedClose={() => setPlayerOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function ActiveRoundVideoPlayer({
   video,
   style,
   isSaving = false,
   saveDisabled = false,
   staticThumbnail = false,
   suspending = false,
+  onThumbnailReady,
   onSave,
-  onDelete,
-}: RoundVideoPlayerProps) {
+  autoOpen = false,
+  hideCollapsed = false,
+  onExpandedClose,
+}: ActiveRoundVideoPlayerProps) {
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
   const [saveNotice, setSaveNotice] = useState<VideoSaveNotice | null>(null);
-  const [deletePromptVisible, setDeletePromptVisible] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(!staticThumbnail);
   const [thumbnail, setThumbnail] = useState<VideoThumbnail | null>(null);
   const [duration, setDuration] = useState(0);
@@ -104,6 +177,11 @@ export function RoundVideoPlayer({
   const pendingScrubCompletionRef = useRef<PendingScrubCompletion | null>(null);
   const scrubSessionRef = useRef(0);
   const lastPlayerStatusRef = useRef('created');
+  const thumbnailGenerationQueuedRef = useRef(false);
+  const thumbnailReadyNotifiedRef = useRef(false);
+  const thumbnailCaptureRef = useRef<View>(null);
+  const thumbnailPersistenceStartedRef = useRef(false);
+  const autoOpenPendingRef = useRef(autoOpen);
   const [currentTime, setCurrentTime] = useState(0);
   const separateAudioUri = playbackUri === video.uri ? video.audioUri : undefined;
   const separateAudio = useAudioPlayer(separateAudioUri ?? null);
@@ -113,6 +191,48 @@ export function RoundVideoPlayer({
     instance.timeUpdateEventInterval = 0.1;
     if (!staticThumbnail) instance.play();
   });
+
+  const notifyThumbnailReady = () => {
+    if (!staticThumbnail || thumbnailReadyNotifiedRef.current) return;
+    thumbnailReadyNotifiedRef.current = true;
+    onThumbnailReady?.();
+  };
+
+  const handleThumbnailLoad = () => {
+    if (!staticThumbnail) return;
+    notifyThumbnailReady();
+  };
+
+  useEffect(() => {
+    if (
+      !staticThumbnail ||
+      video.thumbnailUri ||
+      !thumbnail ||
+      Platform.OS === 'web' ||
+      thumbnailPersistenceStartedRef.current
+    ) {
+      return;
+    }
+    thumbnailPersistenceStartedRef.current = true;
+
+    // The effect runs after the generated native image has committed. Two
+    // frames give the native image view time to draw before it is captured.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void captureRef(thumbnailCaptureRef, {
+          format: 'jpg',
+          quality: 0.82,
+          result: 'tmpfile',
+        })
+          .then((temporaryUri) => storeRoundVideoThumbnail(video.id, temporaryUri))
+          .catch((error) => {
+            warnVideoDiagnostic('round thumbnail persistence failed', error, {
+              videoId: video.id,
+            });
+          });
+      });
+    });
+  }, [staticThumbnail, thumbnail, video.id, video.thumbnailUri]);
 
   useEffect(() => {
     if (!suspending) return;
@@ -156,6 +276,7 @@ export function RoundVideoPlayer({
       videoId: video.id,
     };
     if (status === 'error') {
+      notifyThumbnailReady();
       warnVideoDiagnostic(
         'player status changed to error',
         error?.message ?? 'Unknown player error',
@@ -227,17 +348,52 @@ export function RoundVideoPlayer({
   }) => {
     setDuration(duration);
     if (staticThumbnail) {
-      const thumbnailTime = duration * 0.25;
+      // A frame near the beginning is substantially cheaper to extract from a
+      // legacy recording than seeking deep into a full round.
+      const thumbnailTime = Math.min(duration * 0.25, 1);
       thumbnailTimeRef.current = thumbnailTime;
       player.pause();
       seekVideoPlayer(player, thumbnailTime);
       setCurrentTime(thumbnailTime);
       previousVideoTime.current = thumbnailTime;
-      if (Platform.OS !== 'web') {
-        void player
-          .generateThumbnailsAsync(thumbnailTime, { maxWidth: 720 })
-          .then(([generatedThumbnail]) => setThumbnail(generatedThumbnail ?? null))
-          .catch(() => setThumbnail(null));
+      if (video.thumbnailUri) {
+        // The persisted image is rendered immediately and reports readiness on load.
+      } else if (Platform.OS !== 'web' && !thumbnailGenerationQueuedRef.current) {
+        thumbnailGenerationQueuedRef.current = true;
+        const queuedAt = Date.now();
+        logVideoDiagnostic('round thumbnail generation queued', {
+          thumbnailTime,
+          videoId: video.id,
+        });
+        void enqueueThumbnailGeneration(() => {
+          logVideoDiagnostic('round thumbnail generation started', {
+            queueWaitMs: Date.now() - queuedAt,
+            thumbnailTime,
+            videoId: video.id,
+          });
+          return player.generateThumbnailsAsync(thumbnailTime, { maxWidth: 720 });
+        })
+          .then(([generatedThumbnail]) => {
+            logVideoDiagnostic('round thumbnail generation completed', {
+              elapsedMs: Date.now() - queuedAt,
+              generated: !!generatedThumbnail,
+              videoId: video.id,
+            });
+            setThumbnail(generatedThumbnail ?? null);
+            // Generation already returns a decoded native image reference. Do
+            // not wait for an Image event that iOS does not emit for this source.
+            notifyThumbnailReady();
+          })
+          .catch((error) => {
+            warnVideoDiagnostic('round thumbnail generation failed', error, {
+              elapsedMs: Date.now() - queuedAt,
+              videoId: video.id,
+            });
+            setThumbnail(null);
+            notifyThumbnailReady();
+          });
+      } else {
+        notifyThumbnailReady();
       }
     }
     const videoTrack = availableVideoTracks[0];
@@ -255,6 +411,10 @@ export function RoundVideoPlayer({
       videoSource,
     });
     flushRoundDiagnostics();
+    if (autoOpenPendingRef.current) {
+      autoOpenPendingRef.current = false;
+      requestAnimationFrame(() => void openExpanded());
+    }
   });
 
   const event = useMemo(
@@ -321,7 +481,7 @@ export function RoundVideoPlayer({
     [],
   );
 
-  const openExpanded = async () => {
+  async function openExpanded() {
     const startTime = staticThumbnail ? 0 : player.currentTime;
     logVideoDiagnostic('expanded player open requested', {
       hasSeparateAudio: !!separateAudioUri,
@@ -383,10 +543,11 @@ export function RoundVideoPlayer({
       pauseAudioPlayer(separateAudio);
       setPlayerMuted(player, true);
       setExpanded(false);
+      onExpandedClose?.();
       restoreAppAudioMode();
       flushRoundDiagnostics();
     }
-  };
+  }
 
   const closeExpanded = () => {
     logVideoDiagnostic('expanded player close requested', {
@@ -413,34 +574,8 @@ export function RoundVideoPlayer({
       player.play();
     }
     setExpanded(false);
+    onExpandedClose?.();
     restoreAppAudioMode();
-  };
-
-  const requestDelete = () => {
-    if (!onDelete) return;
-    setDeleteError(null);
-    setDeletePromptVisible(true);
-  };
-
-  const cancelDelete = () => {
-    if (isDeleting) return;
-    setDeletePromptVisible(false);
-    setDeleteError(null);
-  };
-
-  const confirmDelete = async () => {
-    if (!onDelete || isDeleting) return;
-    setIsDeleting(true);
-    setDeleteError(null);
-    try {
-      await onDelete(video);
-      setDeletePromptVisible(false);
-      closeExpanded();
-    } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : 'Please try again.');
-    } finally {
-      setIsDeleting(false);
-    }
   };
 
   const saveFromPlayer = async () => {
@@ -594,10 +729,25 @@ export function RoundVideoPlayer({
 
   return (
     <>
-      {!expanded && (
+      {!expanded && !hideCollapsed && (
         <View style={[styles.frame, style]}>
-          {thumbnail ? (
-            <Image contentFit="cover" source={thumbnail} style={StyleSheet.absoluteFill} />
+          {video.thumbnailUri || thumbnail ? (
+            <View
+              collapsable={false}
+              ref={thumbnailCaptureRef}
+              style={StyleSheet.absoluteFill}
+            >
+              <Image
+                contentFit="cover"
+                onError={notifyThumbnailReady}
+                onDisplay={handleThumbnailLoad}
+                source={video.thumbnailUri ? { uri: video.thumbnailUri } : thumbnail}
+                style={StyleSheet.absoluteFill}
+              />
+              {!video.thumbnailUri && !video.playbackIncludesOverlays && (
+                <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} compact />
+              )}
+            </View>
           ) : !suspending ? (
             <VideoView
               contentFit="cover"
@@ -607,7 +757,7 @@ export function RoundVideoPlayer({
               surfaceType="textureView"
             />
           ) : null}
-          {!video.playbackIncludesOverlays && (
+          {!video.thumbnailUri && !thumbnail && !video.playbackIncludesOverlays && (
             <PlaybackOverlay currentTimeMs={currentTime * 1000} event={event} compact />
           )}
           {staticThumbnail && (
@@ -627,13 +777,7 @@ export function RoundVideoPlayer({
 
       <Modal
         animationType="fade"
-        onRequestClose={() =>
-          deletePromptVisible
-            ? cancelDelete()
-            : saveNotice
-              ? setSaveNotice(null)
-              : closeExpanded()
-        }
+        onRequestClose={() => (saveNotice ? setSaveNotice(null) : closeExpanded())}
         statusBarTranslucent
         supportedOrientations={['portrait']}
         visible={expanded}
@@ -711,23 +855,6 @@ export function RoundVideoPlayer({
                       </Text>
                     </Pressable>
                   )}
-                  {onDelete && (
-                    <Pressable
-                      accessibilityLabel="Delete video"
-                      accessibilityRole="button"
-                      accessibilityState={{ busy: isDeleting, disabled: isSaving || isDeleting }}
-                      disabled={isSaving || isDeleting}
-                      onPress={requestDelete}
-                      style={({ pressed }) => [
-                        styles.playerActionButton,
-                        styles.playerDeleteButton,
-                        pressed && !isSaving && !isDeleting && styles.pressed,
-                        (isSaving || isDeleting) && styles.disabled,
-                      ]}
-                    >
-                      <Text style={styles.playerDeleteButtonText}>DELETE</Text>
-                    </Pressable>
-                  )}
                 </View>
                 <CircularCloseButton
                   accessibilityLabel="Close video"
@@ -797,22 +924,6 @@ export function RoundVideoPlayer({
                 )}
               </View>
             </View>
-            <ConfirmationPrompt
-              busy={isDeleting}
-              busyLabel="DELETING..."
-              confirmLabel="DELETE VIDEO"
-              destructive
-              embedded
-              message={
-                deleteError
-                  ? `The video could not be deleted. ${deleteError}`
-                  : 'This removes the video from WHATZ IT? on this device.'
-              }
-              onCancel={cancelDelete}
-              onConfirm={() => void confirmDelete()}
-              title={deleteError ? 'Could not delete video' : 'Delete round video?'}
-              visible={deletePromptVisible}
-            />
             <ConfirmationPrompt
               cancelLabel={null}
               confirmLabel="OK"
@@ -1115,14 +1226,6 @@ const styles = StyleSheet.create({
   },
   downloadButton: { backgroundColor: 'rgba(56, 109, 236, 0.94)' },
   downloadButtonText: {
-    color: colors.white,
-    fontSize: 10,
-    fontFamily: 'Inter_900Black',
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  playerDeleteButton: { borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.5)' },
-  playerDeleteButtonText: {
     color: colors.white,
     fontSize: 10,
     fontFamily: 'Inter_900Black',

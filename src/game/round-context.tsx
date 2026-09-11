@@ -20,6 +20,7 @@ import { initialRoundState, roundReducer } from '@/game/game-reducer';
 import type { CardOutcome, RoundState } from '@/game/game-types';
 import { clampRoundDuration } from '@/game/round-duration';
 import { captureRoundDeck, resolveRoundDeck } from '@/game/round-deck-snapshot';
+import { captureRoundResultSnapshot } from '@/game/round-result-snapshot';
 import { shuffle } from '@/game/shuffle';
 import {
   loadDailySeenCardIds,
@@ -69,7 +70,7 @@ type RoundContextValue = {
   recordOverlayEvent: (event: Omit<RoundVideoEvent, 'atMs'>) => void;
   stopRecording: () => Promise<RoundVideo | null>;
   pauseRecording: () => Promise<void>;
-  resumeRecording: () => Promise<boolean>;
+  resumeRecording: (options?: { restoreOverlay?: boolean }) => Promise<boolean>;
   cancelRecording: () => Promise<void>;
 };
 
@@ -327,7 +328,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     return segmentStoppingPromise.current;
   }, [captureActiveSegment, suspendCameraSession]);
 
-  const resumeRecording = useCallback(async () => {
+  const resumeRecording = useCallback(async (options?: { restoreOverlay?: boolean }) => {
     if (segmentStoppingPromise.current) await segmentStoppingPromise.current;
     if (
       recordingCancelled.current ||
@@ -341,7 +342,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     if (preparation !== 'ready') return false;
     const started = await startRecordingSegment();
     if (!started) return false;
-    if (round.status === 'ready') return true;
+    if (round.status === 'ready' || options?.restoreOverlay === false) return true;
     if (round.status === 'finished') {
       recordOverlayEvent({ kind: 'times-up', text: "TIME'S UP!" });
       return true;
@@ -410,6 +411,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       return null;
     }
     const deckId = round.deckId;
+    const resultSnapshot = captureRoundResultSnapshot(round, roundDeck);
     const finalizationId = `finalize-${Date.now().toString(36)}`;
     const finalizationStartedAt = Date.now();
     logVideoDiagnostic('round video finalization started', {
@@ -550,6 +552,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
           undefined,
           false,
           allSegmentsHaveLiveOverlays,
+          resultSnapshot,
         );
         setCurrentVideo(video);
         setIsVideoFinalizing(false);
@@ -625,7 +628,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       }
     })();
     return stoppingPromise.current;
-  }, [captureActiveSegment, currentVideo, finishCameraSession, round.deckId]);
+  }, [captureActiveSegment, currentVideo, finishCameraSession, round, roundDeck]);
 
   const cancelRecording = useCallback(() => {
     if (cancellingPromise.current) return cancellingPromise.current;

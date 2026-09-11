@@ -199,10 +199,10 @@ function RootLayoutContent() {
             },
           })}
           options={({ route }) => ({
-            animation:
-              (route.params as { transition?: string } | undefined)?.transition === 'apple-slide'
-                ? 'default'
-                : 'none',
+                animation:
+                  (route.params as { transition?: string } | undefined)?.transition === 'apple-slide'
+                    ? 'ios_from_right'
+                    : 'none',
             title: 'Choose your round',
             orientation: 'portrait',
             headerBackTitle: 'Back to Decks',

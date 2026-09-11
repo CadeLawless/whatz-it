@@ -3,6 +3,12 @@ import { DeviceMotion } from 'expo-sensors';
 import { Platform } from 'react-native';
 
 import { getRecentRoundTiltCalibration } from '@/game/round-tilt-calibration';
+import {
+  createRoundPostureDetectorState,
+  type RoundDevicePosture,
+  type RoundPostureZone,
+  updateRoundPostureDetector,
+} from '@/game/round-posture-detector';
 import type { TiltAction } from '@/game/tilt-detector';
 import {
   createTiltDetectorState,
@@ -17,19 +23,37 @@ import { startAndroidGameplayTrace, stopAndroidGameplayTrace, traceAndroidGamepl
 
 export type TiltControlStatus = 'checking' | 'calibrating' | 'ready' | 'unavailable' | 'denied';
 
+export type RoundMotionState = {
+  status: TiltControlStatus;
+  posture: RoundDevicePosture;
+  postureZone: RoundPostureZone;
+};
+
 type UseTiltControlsOptions = {
   enabled: boolean;
   acceptingInput: boolean;
   onAction: (action: TiltAction) => void;
+  onPostureChange?: (posture: RoundDevicePosture) => void;
   onRearmed: () => void;
 };
 
-export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }: UseTiltControlsOptions) {
+export function useTiltControls({
+  enabled,
+  acceptingInput,
+  onAction,
+  onPostureChange,
+  onRearmed,
+}: UseTiltControlsOptions) {
   const [status, setStatus] = useState<TiltControlStatus>('checking');
+  const [posture, setPosture] = useState<RoundDevicePosture>('landscape');
+  const [postureZone, setPostureZone] = useState<RoundPostureZone>('other');
   const detector = useRef(createTiltDetectorState());
+  const postureDetector = useRef(createRoundPostureDetectorState());
+  const postureRef = useRef<RoundDevicePosture>('landscape');
   const acceptingInputRef = useRef(acceptingInput);
   const enabledRef = useRef(enabled);
   const onActionRef = useRef(onAction);
+  const onPostureChangeRef = useRef(onPostureChange);
   const onRearmedRef = useRef(onRearmed);
   const awaitingFeedbackCommit = useRef(false);
   const pendingRearm = useRef(false);
@@ -38,6 +62,7 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
     acceptingInputRef.current = acceptingInput && !awaitingFeedbackCommit.current;
     enabledRef.current = enabled;
     onActionRef.current = onAction;
+    onPostureChangeRef.current = onPostureChange;
     onRearmedRef.current = onRearmed;
     if (!enabled) {
       awaitingFeedbackCommit.current = false;
@@ -49,7 +74,7 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
         onRearmed();
       }
     }
-  }, [acceptingInput, enabled, onAction, onRearmed]);
+  }, [acceptingInput, enabled, onAction, onPostureChange, onRearmed]);
 
   useEffect(() => {
     logRoundDiagnostic('tilt input acceptance changed', { acceptingInput, enabled });
@@ -67,6 +92,8 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
       const connectStartedAt = Date.now();
       setStatus('checking');
       detector.current = createTiltDetectorState();
+      postureDetector.current = createRoundPostureDetectorState(postureRef.current);
+      setPostureZone('other');
 
       const motionAccess = await getRoundMotionAccess();
       if (!active) return;
@@ -124,12 +151,35 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
           // whether these screens are being used in landscape.
           const sample = getPortraitMotionSample(measurement);
           if (!sample) return;
-          const { angle } = sample;
+          const { angle, gravity } = sample;
+          const postureResult = updateRoundPostureDetector(
+            postureDetector.current,
+            gravity,
+            elapsedMs,
+          );
+          const previousPostureZone = postureDetector.current.zone;
+          postureDetector.current = postureResult.state;
+          if (postureResult.state.zone !== previousPostureZone) {
+            setPostureZone(postureResult.state.zone);
+            logRoundDiagnostic('round device posture zone changed', {
+              zone: postureResult.state.zone,
+              gravity,
+            });
+          }
+          if (postureResult.changed) {
+            postureRef.current = postureResult.state.posture;
+            setPosture(postureResult.state.posture);
+            onPostureChangeRef.current?.(postureResult.state.posture);
+            logRoundDiagnostic('round device posture changed', {
+              posture: postureResult.state.posture,
+              gravity,
+            });
+          }
           const result = updateTiltDetector(
             detector.current,
             angle,
             config,
-            acceptingInputRef.current,
+            acceptingInputRef.current && postureResult.state.zone !== 'portrait',
             elapsedMs,
           );
           detector.current = result.state;
@@ -189,5 +239,5 @@ export function useTiltControls({ enabled, acceptingInput, onAction, onRearmed }
     };
   }, [enabled]);
 
-  return status;
+  return { status, posture, postureZone } satisfies RoundMotionState;
 }

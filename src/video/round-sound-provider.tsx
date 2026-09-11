@@ -21,7 +21,6 @@ import { cancelRoundHaptics } from '@/utils/round-haptics';
 import {
   getRoundSoundSource,
   playRoundSound,
-  preloadCriticalRoundSounds,
   rewindRoundSoundPlayer,
   stopRoundSoundPlayer,
   type RoundSoundId,
@@ -247,7 +246,6 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     void configureAudioSession();
-    void preloadCriticalRoundSounds();
   }, [configureAudioSession]);
 
   useEffect(() => {
@@ -356,14 +354,21 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
           prepared: await rewindRoundSoundPlayer(player, sound),
         })),
       );
-      const failedPlayers = results
+      const seekFailedPlayers = results
         .filter((result) => !result.prepared)
         .map((result) => result.name);
-      const prepared = requestGeneration === generation.current && sessionReady && failedPlayers.length === 0;
+      const after = getLoadSnapshot();
+      const prepared =
+        requestGeneration === generation.current &&
+        sessionReady &&
+        seekFailedPlayers.length === 0 &&
+        after.failedPlayers.length === 0 &&
+        after.pendingPlayers.length === 0;
       logRoundDiagnostic('round audio preparation completed', {
         prepared,
         sessionReady,
-        failedPlayers,
+        seekFailedPlayers,
+        ...after,
       });
       return prepared;
     } catch (error) {

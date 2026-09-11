@@ -1,9 +1,10 @@
 import Constants from 'expo-constants';
 import { File, Paths } from 'expo-file-system';
-import { Image } from 'expo-image';
+import { Image, type ImageRef } from 'expo-image';
 import * as Linking from 'expo-linking';
 import * as MailComposer from 'expo-mail-composer';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,6 +25,7 @@ import Animated, {
   withTiming
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { captureRef } from 'react-native-view-shot';
 
 import {
   configuredCatalogManifestUrl,
@@ -73,6 +75,11 @@ import {
   subscribeToRoundVideoLibrary,
   type RoundVideo,
 } from '@/video/round-videos';
+import {
+  flushRoundDiagnostics,
+  logVideoDiagnostic,
+  warnVideoDiagnostic,
+} from '@/video/video-diagnostics';
 
 const PRIVACY_POLICY_URL = 'https://playwhatzit.com/#privacy';
 const SUPPORT_EMAIL = 'support@playwhatzit.com';
@@ -95,7 +102,13 @@ type SortMenuAnchor = {
   height: number;
 };
 
+type LoadedRoundThumbnail = {
+  image: ImageRef;
+  uri: string;
+};
+
 export default function DeckLibraryScreen() {
+  const router = useRouter();
   const reduceMotion = useReducedMotion();
   const catalogState = useCatalog();
   const { catalog } = catalogState;
@@ -134,6 +147,8 @@ export default function DeckLibraryScreen() {
   const { height: windowHeight, width } = useWindowDimensions();
   const safeAreaInsets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
+  const screenRef = useRef<View>(null);
+  const openingRoundResultsRef = useRef(false);
   const deckSearchInputRef = useRef<TextInput>(null);
   const isScrollingProgrammatically = useRef(false);
   const currentScrollOffset = useRef(0);
@@ -142,7 +157,7 @@ export default function DeckLibraryScreen() {
   const exploreTop = useRef(0);
   const isPortrait = usePortraitScreen();
   const { isVideoFinalizing } = useRound();
-  const { revealTransition } = useScreenshotTransition();
+  const { beginTransition, revealTransition } = useScreenshotTransition();
   const branding = getLoadedHomeBranding() ?? HOME_BRANDING_SOURCES;
   const [librarySection, setLibrarySection] = useState<'decks' | 'videos'>('decks');
   const [deckSort, setDeckSort] = useState<DeckLibrarySort>(
@@ -165,6 +180,12 @@ export default function DeckLibraryScreen() {
   const [deckPlayHistory, setDeckPlayHistory] = useState<Record<string, number>>({});
   const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
   const [videos, setVideos] = useState<RoundVideo[]>([]);
+  const [hasLoadedVideos, setHasLoadedVideos] = useState(false);
+  const [readyThumbnailIds, setReadyThumbnailIds] = useState<Record<string, true>>({});
+  const [loadedThumbnailImages, setLoadedThumbnailImages] = useState<
+    Record<string, LoadedRoundThumbnail>
+  >({});
+  const [thumbnailGateBypassKey, setThumbnailGateBypassKey] = useState<string | null>(null);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
   const [exportingVideoId, setExportingVideoId] = useState<string | null>(null);
   const [videoPendingDelete, setVideoPendingDelete] = useState<RoundVideo | null>(null);
@@ -297,10 +318,12 @@ export default function DeckLibraryScreen() {
     useCallback(() => {
       let active = true;
       let libraryChanged = false;
+      openingRoundResultsRef.current = false;
       const unsubscribe = subscribeToRoundVideoLibrary((nextVideos) => {
         if (!active) return;
         libraryChanged = true;
         setVideos(nextVideos);
+        setHasLoadedVideos(true);
       });
       if (!isPortrait) return () => {
         active = false;
@@ -326,6 +349,7 @@ export default function DeckLibraryScreen() {
         const storedVideos = await loadRoundVideos();
         if (!active) return;
         if (!libraryChanged) setVideos(storedVideos);
+        setHasLoadedVideos(true);
         storedVideos.forEach((video) => {
           if (isRoundVideoReadyToSave(video) || video.exportStatus === 'failed') return;
           void prepareRoundVideoExport(video).then((prepared) => {
@@ -349,6 +373,100 @@ export default function DeckLibraryScreen() {
       deckSearchInputRef.current?.blur();
     }
   }, [librarySection]);
+
+  useEffect(() => {
+    const thumbnails = videos.flatMap((video) =>
+      video.thumbnailUri ? [{ id: video.id, uri: video.thumbnailUri }] : [],
+    );
+    if (thumbnails.length === 0) return;
+    let active = true;
+
+    logVideoDiagnostic('round thumbnail decode batch started', {
+      thumbnailCount: thumbnails.length,
+      videoIds: thumbnails.map(({ id }) => id),
+    });
+    thumbnails.forEach(({ id, uri }) => {
+      void Image.loadAsync({ uri }, { maxWidth: 720 })
+        .then((image) => {
+          if (!active) return;
+          setLoadedThumbnailImages((current) => ({
+            ...current,
+            [id]: { image, uri },
+          }));
+          logVideoDiagnostic('round thumbnail decoded', { videoId: id });
+        })
+        .catch((error) => {
+          if (!active) return;
+          warnVideoDiagnostic('round thumbnail decode failed', error, {
+            videoId: id,
+          });
+        });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [videos]);
+
+  const unresolvedThumbnailIds = useMemo(
+    () =>
+      videos.flatMap((video) => {
+        const exportPreparing =
+          !isRoundVideoReadyToSave(video) && video.exportStatus !== 'failed';
+        const decodedThumbnail = loadedThumbnailImages[video.id];
+        const thumbnailReady =
+          readyThumbnailIds[video.id] ||
+          (!!video.thumbnailUri && decodedThumbnail?.uri === video.thumbnailUri);
+        return exportPreparing || thumbnailReady ? [] : [video.id];
+      }),
+    [loadedThumbnailImages, readyThumbnailIds, videos],
+  );
+  const thumbnailSetKey = useMemo(
+    () =>
+      videos
+        .map(
+          (video) =>
+            `${video.id}:${video.thumbnailUri ?? ''}:${video.exportUri ?? video.uri}:${video.exportStatus ?? ''}`,
+        )
+        .join('|'),
+    [videos],
+  );
+  const allVideoThumbnailsReady = hasLoadedVideos && unresolvedThumbnailIds.length === 0;
+  const videoThumbnailsReady =
+    allVideoThumbnailsReady || thumbnailGateBypassKey === thumbnailSetKey;
+
+  useEffect(() => {
+    if (librarySection !== 'videos' || !hasLoadedVideos || allVideoThumbnailsReady) return;
+
+    logVideoDiagnostic('round thumbnail gate waiting', {
+      unresolvedVideos: videos
+        .filter((video) => unresolvedThumbnailIds.includes(video.id))
+        .map((video) => ({
+          exportStatus: video.exportStatus ?? null,
+          hasPersistedThumbnail: !!video.thumbnailUri,
+          videoId: video.id,
+        })),
+    });
+    flushRoundDiagnostics();
+    const timeout = setTimeout(() => {
+      warnVideoDiagnostic(
+        'round thumbnail gate timed out',
+        new Error('Thumbnail readiness exceeded 3 seconds'),
+        { unresolvedVideoIds: unresolvedThumbnailIds },
+      );
+      flushRoundDiagnostics();
+      setThumbnailGateBypassKey(thumbnailSetKey);
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [
+    allVideoThumbnailsReady,
+    hasLoadedVideos,
+    librarySection,
+    thumbnailSetKey,
+    unresolvedThumbnailIds,
+    videos,
+  ]);
 
   const handleDeckSearchFocus = useCallback(() => {
     isScrollingProgrammatically.current = true;
@@ -419,9 +537,23 @@ export default function DeckLibraryScreen() {
     setVideoPendingDelete(video);
   };
 
-  const deleteFromPlayer = async (video: RoundVideo) => {
-    const next = await deleteRoundVideo(video.id);
-    setVideos(next);
+  const openRoundResults = async (video: RoundVideo) => {
+    if (!video.resultSnapshot || openingRoundResultsRef.current) return;
+    openingRoundResultsRef.current = true;
+    try {
+      const uri = await captureRef(screenRef, {
+        format: 'jpg',
+        quality: 0.95,
+        result: 'tmpfile',
+      });
+      await beginTransition({ destination: 'results', direction: 'left', uri });
+    } catch {
+      // If capture is unavailable, results still open normally.
+    }
+    router.push({
+      pathname: '/results',
+      params: { roundId: video.id },
+    });
   };
 
   const cancelDelete = () => {
@@ -623,7 +755,7 @@ export default function DeckLibraryScreen() {
       )}
       {videos.length === 0 ? (
         !isVideoFinalizing && (
-          <Text style={styles.emptyVideos}>Your last 10 round videos will appear here.</Text>
+          <Text style={styles.emptyVideos}>Your last 10 recorded rounds will appear here.</Text>
         )
       ) : (
         <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
@@ -632,40 +764,46 @@ export default function DeckLibraryScreen() {
             const videoReady = isRoundVideoReadyToSave(video);
             const exportFailed = video.exportStatus === 'failed';
             const exportPreparing = !videoReady && !exportFailed;
+            const correctCount = video.resultSnapshot?.results.filter(
+              (result) => result.outcome === 'correct',
+            ).length;
+            const passedCount = video.resultSnapshot?.results.filter(
+              (result) => result.outcome === 'passed',
+            ).length;
             return (
               <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
-                {exportPreparing ? (
-                  <View
-                    accessibilityLabel="Preparing round video"
-                    accessibilityRole="progressbar"
-                    style={[styles.video, styles.videoPreparing]}
-                  >
-                    <ActivityIndicator color="#459EFE" size="small" />
-                  </View>
-                ) : (
-                  <RoundVideoPlayer
-                    isSaving={savingVideoId === video.id}
-                    saveDisabled={!isRoundVideoReadyToSave(video)}
-                    onDelete={deleteFromPlayer}
-                    onSave={handleSave}
-                    staticThumbnail
-                    video={video}
-                    style={styles.video}
-                  />
-                )}
-                <Text numberOfLines={1} style={styles.videoDeckName}>
-                  {deck?.title ?? 'Round video'}
-                </Text>
-                <Text style={styles.videoDate}>
-                  {new Date(video.createdAt).toLocaleString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
-                </Text>
-                <View style={styles.videoActions}>
+                <View style={styles.videoFrame}>
+                  {exportPreparing ? (
+                    <View
+                      accessibilityLabel="Preparing round video"
+                      accessibilityRole="progressbar"
+                      style={[styles.video, styles.videoPreparing]}
+                    >
+                      <ActivityIndicator color="#459EFE" size="small" />
+                    </View>
+                  ) : (
+                    <RoundVideoPlayer
+                      isSaving={savingVideoId === video.id}
+                      saveDisabled={!isRoundVideoReadyToSave(video)}
+                      onThumbnailReady={() => {
+                        logVideoDiagnostic('round thumbnail view ready', {
+                          videoId: video.id,
+                        });
+                        setReadyThumbnailIds((current) =>
+                          current[video.id] ? current : { ...current, [video.id]: true },
+                        );
+                      }}
+                      onSave={handleSave}
+                      staticThumbnail
+                      thumbnailSource={
+                        loadedThumbnailImages[video.id]?.uri === video.thumbnailUri
+                          ? loadedThumbnailImages[video.id]?.image
+                          : undefined
+                      }
+                      video={video}
+                      style={styles.video}
+                    />
+                  )}
                   <Pressable
                     accessibilityLabel={
                       exportFailed
@@ -678,45 +816,129 @@ export default function DeckLibraryScreen() {
                     accessibilityState={{
                       busy: exportPreparing || savingVideoId === video.id,
                       disabled:
+                        exportPreparing ||
                         savingVideoId !== null ||
-                        exportingVideoId !== null ||
-                        exportPreparing,
+                        exportingVideoId !== null,
                     }}
                     disabled={
+                      exportPreparing ||
                       savingVideoId !== null ||
-                      exportingVideoId !== null ||
-                      exportPreparing
+                      exportingVideoId !== null
                     }
+                    hitSlop={4}
                     onPress={() =>
                       void (exportFailed
                         ? handleRetryExport(video)
                         : handlePortraitSave(video))
                     }
                     style={({ pressed }) => [
-                      styles.saveButton,
+                      styles.videoSaveButton,
                       exportPreparing && styles.disabled,
                       pressed && (videoReady || exportFailed) && styles.pressed,
                     ]}
                   >
-                    {exportPreparing ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    {exportPreparing || savingVideoId === video.id ? (
+                      <ActivityIndicator color="#334155" size="small" />
                     ) : (
-                      <Text numberOfLines={1} style={styles.saveButtonText}>
-                        {exportFailed
-                          ? 'RETRY'
-                          : savingVideoId === video.id
-                            ? 'SAVING…'
-                            : 'SAVE'}
-                      </Text>
+                      <SymbolView
+                        name={
+                          exportFailed
+                            ? { android: 'refresh', ios: 'arrow.clockwise', web: 'refresh' }
+                            : {
+                                android: 'download',
+                                ios: 'square.and.arrow.down',
+                                web: 'download',
+                              }
+                        }
+                        resizeMode="scaleAspectFit"
+                        size={22}
+                        style={styles.videoSaveIcon}
+                        tintColor="#334155"
+                        weight="bold"
+                      />
                     )}
                   </Pressable>
+                </View>
+
+                <View style={styles.videoDetails}>
                   <Pressable
+                    accessibilityHint={
+                      video.resultSnapshot
+                        ? 'Opens the video, score, and card-by-card results'
+                        : undefined
+                    }
+                    accessibilityLabel={
+                      video.resultSnapshot
+                        ? `View results for ${video.resultSnapshot.deckTitle}`
+                        : 'Results unavailable for this older recording'
+                    }
                     accessibilityRole="button"
-                    onPress={() => handleDelete(video)}
-                    style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
+                    accessibilityState={{ disabled: !video.resultSnapshot }}
+                    disabled={!video.resultSnapshot}
+                    onPress={() => void openRoundResults(video)}
+                    style={({ pressed }) => [
+                      styles.videoResultLink,
+                      !video.resultSnapshot && styles.videoResultLinkDisabled,
+                      pressed && video.resultSnapshot && styles.pressed,
+                    ]}
                   >
-                    <Text style={styles.deleteButtonText}>DELETE</Text>
+                    <Text style={styles.videoDeckName}>
+                      {video.resultSnapshot?.deckTitle ?? deck?.title ?? 'Round video'}
+                    </Text>
+                    <Text style={styles.videoScore}>
+                      {video.resultSnapshot
+                        ? `${correctCount} correct · ${passedCount} passed`
+                        : 'Video only · Results unavailable'}
+                    </Text>
+                    <Text style={styles.videoDate}>
+                      {new Date(video.createdAt).toLocaleString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </Text>
                   </Pressable>
+                  <View style={styles.videoResultActions}>
+                    <Pressable
+                      accessibilityLabel={
+                        video.resultSnapshot
+                          ? `View results for ${video.resultSnapshot.deckTitle}`
+                          : 'Results unavailable for this older recording'
+                      }
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: !video.resultSnapshot }}
+                      disabled={!video.resultSnapshot}
+                      onPress={() => void openRoundResults(video)}
+                      style={({ pressed }) => [
+                        styles.videoResultAction,
+                        pressed && video.resultSnapshot && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.videoResultLabel}>
+                        {video.resultSnapshot ? 'VIEW RESULTS ›' : 'RESULTS UNAVAILABLE'}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel="Delete round"
+                      accessibilityRole="button"
+                      hitSlop={4}
+                      onPress={() => handleDelete(video)}
+                      style={({ pressed }) => [
+                        styles.videoDeleteButton,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <SymbolView
+                        name={{ android: 'delete', ios: 'trash', web: 'delete' }}
+                        resizeMode="scaleAspectFit"
+                        size={22}
+                        tintColor="#DC2626"
+                        weight="bold"
+                      />
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             );
@@ -729,7 +951,12 @@ export default function DeckLibraryScreen() {
   if (!isPortrait) return <PortraitTransition style={styles.orientationGate} />;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView
+      ref={screenRef}
+      collapsable={false}
+      style={styles.safeArea}
+      edges={['top']}
+    >
       <ScrollView
         accessibilityElementsHidden={videoPendingDelete !== null || isSortMenuOpen}
         // StoreKit and modal dismissal can be misidentified as a keyboard frame
@@ -816,7 +1043,44 @@ export default function DeckLibraryScreen() {
                   }
                 }}
               />
-              {librarySection === 'decks' ? deckLibraryContent : videoLibraryContent}
+              <View
+                accessibilityElementsHidden={librarySection !== 'decks'}
+                importantForAccessibility={librarySection === 'decks' ? 'auto' : 'no-hide-descendants'}
+                pointerEvents={librarySection === 'decks' ? 'auto' : 'none'}
+                style={librarySection === 'decks' ? undefined : styles.hiddenLibrarySection}
+              >
+                {deckLibraryContent}
+              </View>
+              <View
+                accessibilityElementsHidden={librarySection !== 'videos'}
+                importantForAccessibility={
+                  librarySection === 'videos' ? 'auto' : 'no-hide-descendants'
+                }
+                pointerEvents={librarySection === 'videos' ? 'auto' : 'none'}
+                style={[
+                  styles.videoLibraryStage,
+                  librarySection === 'videos' ? undefined : styles.hiddenLibrarySection,
+                ]}
+              >
+                {librarySection === 'videos' && !videoThumbnailsReady && (
+                  <View
+                    accessibilityLabel="Loading round thumbnails"
+                    accessibilityRole="progressbar"
+                    style={styles.videoLibraryLoading}
+                  >
+                    <ActivityIndicator color="#459EFE" size="large" />
+                  </View>
+                )}
+                <View
+                  accessibilityElementsHidden={!videoThumbnailsReady}
+                  importantForAccessibility={
+                    videoThumbnailsReady ? 'auto' : 'no-hide-descendants'
+                  }
+                  pointerEvents={videoThumbnailsReady ? 'auto' : 'none'}
+                >
+                  {videoLibraryContent}
+                </View>
+              </View>
             </View>
           ) : (
             <View
@@ -974,16 +1238,16 @@ export default function DeckLibraryScreen() {
       <ConfirmationPrompt
         busy={isDeletingVideo}
         busyLabel="DELETING..."
-        confirmLabel="DELETE VIDEO"
+        confirmLabel="DELETE ROUND"
         destructive
         message={
           deleteError
-            ? `The video could not be deleted. ${deleteError}`
-            : 'This removes the video from WHATZ IT? on this device.'
+            ? `The round could not be deleted. ${deleteError}`
+            : 'This permanently deletes the round video, score, and card-by-card details from WHATZ IT? on this device.'
         }
         onCancel={cancelDelete}
         onConfirm={confirmDelete}
-        title={deleteError ? 'Could not delete video' : 'Delete round video?'}
+        title={deleteError ? 'Could not delete round' : 'Delete saved round?'}
         visible={videoPendingDelete !== null}
       />
       <ConfirmationPrompt
@@ -1244,7 +1508,7 @@ function MyLibraryControl({
             section === 'videos' && styles.myLibraryTabTextActive,
           ]}
         >
-          MY VIDEOS
+          MY ROUNDS
         </Text>
       </Pressable>
     </View>
@@ -1689,6 +1953,27 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   videoLibraryContent: { gap: 16 },
+  videoLibraryStage: {
+    position: 'relative',
+    minHeight: 180,
+  },
+  videoLibraryLoading: {
+    position: 'absolute',
+    zIndex: 1,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    paddingTop: 64,
+    backgroundColor: '#F6F6F6',
+  },
+  hiddenLibrarySection: {
+    position: 'absolute',
+    top: 0,
+    left: '110%',
+    width: '100%',
+  },
   pendingVideo: {
     minHeight: 52,
     flexDirection: 'row',
@@ -1699,8 +1984,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   pendingVideoText: { color: '#64748B', fontSize: 14, fontFamily: 'Inter_700Bold', fontWeight: '700' },
-  videoGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  videoGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch' },
   videoCard: {
+    flexDirection: 'column',
     overflow: 'hidden',
     borderRadius: 18,
     paddingBottom: 12,
@@ -1711,30 +1997,56 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  videoFrame: { position: 'relative' },
   video: { width: '100%', aspectRatio: 16 / 9 },
   videoPreparing: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC' },
-  videoDeckName: { color: '#111111', fontSize: 14, fontFamily: 'Inter_900Black', fontWeight: '900', marginTop: 10, marginHorizontal: 10 },
-  videoDate: { color: '#64748B', fontSize: 11, marginTop: 2, marginHorizontal: 10 },
-  videoActions: { flexDirection: 'row', gap: 7, marginTop: 10, marginHorizontal: 10 },
-  saveButton: {
+  videoDeckName: { color: '#111111', fontSize: 14, lineHeight: 18, fontFamily: 'Inter_900Black', fontWeight: '900' },
+  videoDate: { color: '#64748B', fontSize: 11, lineHeight: 15, marginTop: 3 },
+  videoScore: { color: '#459EFE', fontSize: 11, lineHeight: 15, fontFamily: 'Inter_800ExtraBold', fontWeight: '800', marginTop: 6 },
+  videoDetails: { flex: 1, marginTop: 4, marginHorizontal: 10 },
+  videoResultLink: {
+    minHeight: 72,
+    paddingTop: 6,
+  },
+  videoResultLinkDisabled: { opacity: 0.72 },
+  videoResultLabel: {
+    color: '#64748B',
+    fontSize: 9,
+    lineHeight: 13,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 0.65,
+  },
+  videoResultActions: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 'auto',
+  },
+  videoResultAction: {
+    minWidth: 0,
     flex: 1,
-    minHeight: 34,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  videoDeleteButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  videoSaveButton: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 17,
-    backgroundColor: '#459EFE',
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
   },
-  saveButtonText: { color: '#FFFFFF', fontSize: 9, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.7 },
-  deleteButton: {
-    flex: 1,
-    minHeight: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  deleteButtonText: { color: '#64748B', fontSize: 9, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.7 },
+  videoSaveIcon: { transform: [{ translateY: -1 }] },
   footerLinks: {
     minHeight: 76,
     flexDirection: 'row',

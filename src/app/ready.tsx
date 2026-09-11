@@ -5,10 +5,13 @@ import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
-import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
+import {
+  RoundReadyCountdown,
+  RoundReadyPanel,
+  RoundReadyPosition,
+} from '@/components/round-ready-panel';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
-import { RecordingIndicator } from '@/components/recording-indicator';
 import { useCatalog } from '@/catalog/catalog-provider';
 import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { canStartReadyIntro } from '@/game/ready-intro-gate';
@@ -419,17 +422,19 @@ export default function ReadyScreen() {
       <LandscapeViewport>
         <SafeAreaView edges={[]} style={styles.safeArea}>
           <StatusBar hidden animated={false} />
-          <View style={styles.panel}>
-            <View style={styles.closeButton}>
-              <CloseButton
-                accessibilityLabel="Cancel round"
-                disabled={isLeaving || !orientationSettled}
-                onPress={handleCancel}
-              />
-            </View>
-            <Text style={styles.deckName}>{deck.title}</Text>
-
-            <View style={styles.center}>
+          <RoundReadyPanel
+            closeAccessibilityLabel="Cancel round"
+            closeDisabled={isLeaving || !orientationSettled}
+            deckTitle={deck.title}
+            isRecording={isRecording}
+            notice={
+              soundLoadTimedOut || soundPreparationFailed
+                ? 'Sound is recovering. The round will continue.'
+                : undefined
+            }
+            onClose={handleCancel}
+            recordingIndicatorPosition={motionControlsUnavailable ? 'top-left' : 'bottom-left'}
+          >
               {recordingPreparation === 'error' ? (
                 <>
                   <Text style={styles.positionTitle}>CAMERA NOT READY</Text>
@@ -454,36 +459,15 @@ export default function ReadyScreen() {
               ) : positionReady ? (
                 <>
                   {introComplete ? (
-                    <Text
-                      style={[styles.count, { fontSize: countSize, lineHeight: countSize * 1.05 }]}
-                    >
-                      {/* Keep the final beat visible until Game replaces Ready. */}
-                      {Math.max(1, count)}
-                    </Text>
+                    <RoundReadyCountdown fontSize={countSize} value={count} />
                   ) : (
-                    <Text style={styles.getReady}>GET READY</Text>
+                    <RoundReadyCountdown fontSize={countSize} value="GET READY" />
                   )}
                 </>
               ) : (
-                <>
-                  <Text style={styles.positionTitle}>{getPositionMessage(foreheadStatus)}</Text>
-                  <Text style={styles.instructions}>Tilt down for correct, tilt up to pass</Text>
-                </>
+                <RoundReadyPosition title={getPositionMessage(foreheadStatus)} />
               )}
-            </View>
-            {(soundLoadTimedOut || soundPreparationFailed) && (
-              <View accessibilityLiveRegion="polite" style={styles.soundNotice}>
-                <Text style={styles.soundNoticeText}>
-                  Sound is recovering. The round will continue.
-                </Text>
-              </View>
-            )}
-            {isRecording && (
-              <RecordingIndicator
-                position={motionControlsUnavailable ? 'top-left' : 'bottom-left'}
-              />
-            )}
-          </View>
+          </RoundReadyPanel>
         </SafeAreaView>
       </LandscapeViewport>
     </View>
@@ -512,43 +496,6 @@ const styles = StyleSheet.create({
     padding: 16,
     overflow: 'hidden',
     backgroundColor: colors.surface,
-  },
-  panel: {
-    flex: 1,
-    minHeight: 0,
-    borderWidth: 6,
-    borderColor: colors.playBorder,
-    borderRadius: 28,
-    overflow: 'hidden',
-    backgroundColor: colors.play,
-  },
-  closeButton: { position: 'absolute', top: 14, left: 14, zIndex: 2 },
-  deckName: {
-    position: 'absolute',
-    top: 23,
-    right: 28,
-    color: colors.white,
-    fontSize: 18,
-    fontFamily: 'Inter_400Regular',
-    fontWeight: '400',
-    textTransform: 'uppercase',
-  },
-  center: {
-    flex: 1,
-    minHeight: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 86,
-    paddingVertical: spacing.xl,
-  },
-  count: { color: colors.white, fontFamily: 'Inter_900Black', fontWeight: '900' },
-  getReady: {
-    color: colors.white,
-    fontSize: 48,
-    lineHeight: 56,
-    fontFamily: 'Inter_900Black',
-    fontWeight: '900',
-    letterSpacing: 1,
   },
   positionTitle: {
     color: colors.white,

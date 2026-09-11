@@ -1,17 +1,9 @@
-import { preload, type AudioPlayer } from 'expo-audio';
+import type { AudioPlayer } from 'expo-audio';
 import { RoundSoundPlayback } from './round-sound-playback';
 import { traceAndroidGameplay } from '@/utils/android-gameplay-trace';
 
-import {
-  logRoundDiagnostic,
-  logVideoDiagnostic,
-  warnRoundDiagnostic,
-  warnVideoDiagnostic,
-} from '@/video/video-diagnostics';
-import {
-  CRITICAL_ROUND_SOUNDS,
-  type RoundSoundId,
-} from '@/video/round-sound-plan';
+import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
+import type { RoundSoundId } from '@/video/round-sound-plan';
 
 export type { RoundSoundId } from '@/video/round-sound-plan';
 
@@ -28,11 +20,6 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
   'round-end': require('../../assets/sounds/round-end.wav'),
 };
 
-// Prioritize the three intro resources with Expo's module-scope preload cache.
-// Gameplay players use source-at-construction, avoiding the fragile native
-// null-player replacement path while the intro receives the earliest warmup.
-const criticalPreloadPromise = preloadUniqueRoundSounds(CRITICAL_ROUND_SOUNDS);
-
 const DEFAULT_ROUND_SOUND_VOLUME = 1;
 const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
   correct: 0.4,
@@ -44,10 +31,6 @@ const playback = new RoundSoundPlayback();
 
 export function getRoundSoundSource(sound: RoundSoundId) {
   return ROUND_SOUND_SOURCES[sound];
-}
-
-export function preloadCriticalRoundSounds() {
-  return criticalPreloadPromise;
 }
 
 export async function playRoundSound(player: AudioPlayer, sound: RoundSoundId, isCurrent?: () => boolean) {
@@ -79,18 +62,4 @@ export async function rewindRoundSoundPlayer(player: AudioPlayer, sound: RoundSo
   } catch {
     return false;
   }
-}
-
-async function preloadUniqueRoundSounds(sounds: readonly RoundSoundId[]) {
-  const entries = [...new Map(sounds.map((sound) => [ROUND_SOUND_SOURCES[sound], sound])).entries()];
-  await Promise.all(
-    entries.map(async ([source, sound]) => {
-      try {
-        await preload(source);
-        logRoundDiagnostic('native audio preload completed', { sound });
-      } catch (error) {
-        warnRoundDiagnostic('native audio preload failed', error, { sound });
-      }
-    }),
-  );
 }
