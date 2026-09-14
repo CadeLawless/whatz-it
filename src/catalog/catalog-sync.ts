@@ -21,6 +21,7 @@ export type CatalogSyncOptions = {
   now?: () => Date;
   downloadRuntime?: CatalogDownloadRuntime;
   developmentPreview?: boolean;
+  allowCatalogRebase?: boolean;
 };
 
 export type CatalogDownloadRuntime = {
@@ -35,7 +36,7 @@ export type CatalogDownloadRuntime = {
 
 export type CatalogStoredMedia = CatalogArtifactReference & { localUri: string };
 
-type CatalogState = { catalog_revision: number; etag: string | null };
+type CatalogState = { catalog_revision: number; etag: string | null; source: string };
 type Installation = { deck_id: string; installed_content_version: number | null };
 type ExistingInstallation = Installation & {
   ownership_source: 'free' | 'none' | 'purchase' | 'bundle';
@@ -82,9 +83,12 @@ export async function synchronizeCatalog(
   options: CatalogSyncOptions,
 ): Promise<CatalogSyncResult> {
   const state = await database.getFirstAsync<CatalogState>(
-    'SELECT catalog_revision, etag FROM catalog_state WHERE singleton_id = 1',
+    'SELECT catalog_revision, etag, source FROM catalog_state WHERE singleton_id = 1',
   );
   if (!state) throw new CatalogSyncError('storage_error', 'The local catalog is not initialized.');
+  const adoptingIndependentLineage = options.allowCatalogRebase
+    && state.source === 'bundled'
+    && state.etag === null;
 
   const localMediaReady = state.etag
     ? await activeCatalogMediaIsReady(database, options.downloadRuntime)
@@ -121,7 +125,7 @@ export async function synchronizeCatalog(
       );
     }
   }
-  if (manifest.catalogRevision < state.catalog_revision) {
+  if (!adoptingIndependentLineage && manifest.catalogRevision < state.catalog_revision) {
     throw new CatalogSyncError(
       'stale_manifest',
       `Server revision ${manifest.catalogRevision} is older than local revision ${state.catalog_revision}.`,
@@ -140,7 +144,7 @@ export async function synchronizeCatalog(
       'SELECT bundle_id, bundle_version FROM bundles',
     ),
   ]);
-  if (!options.developmentPreview) {
+  if (!options.developmentPreview && !adoptingIndependentLineage) {
     try {
       assertMonotonicVersions(manifest, localDecks, localBundles);
     } catch (error) {

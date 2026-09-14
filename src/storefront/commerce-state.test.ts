@@ -52,7 +52,7 @@ describe('storefront commerce state', () => {
     assert.match(presentation.copy, /taking longer than usual/i);
   });
 
-  it('labels disabled commerce as unavailable without implying launch timing', () => {
+  it('labels disabled commerce in customer-friendly language', () => {
     const state = fallbackCommerceState(paidDeck);
     const presentation = commercePresentation(state, paidDeck);
 
@@ -61,8 +61,8 @@ describe('storefront commerce state', () => {
       reason: 'not_configured',
     });
     assert.equal(presentation.action, 'none');
-    assert.equal(presentation.buttonLabel, 'PURCHASING DISABLED');
-    assert.equal(presentation.title, 'Purchasing disabled');
+    assert.equal(presentation.buttonLabel, 'NOT AVAILABLE');
+    assert.equal(presentation.title, 'Purchase unavailable');
   });
 
   it('lets users retry when the App Store product request fails', () => {
@@ -85,6 +85,15 @@ describe('storefront commerce state', () => {
     assert.equal(presentation.action, 'retry');
     assert.equal(presentation.buttonLabel, 'TRY AGAIN');
     assert.match(presentation.copy, /\$1\.99/);
+  });
+
+  it('uses a clear retry label when a purchased download does not finish', () => {
+    const presentation = commercePresentation({ status: 'retry' }, paidDeck);
+
+    assert.equal(presentation.action, 'retry');
+    assert.equal(presentation.buttonLabel, 'TRY AGAIN');
+    assert.equal(presentation.title, 'Download didn’t finish');
+    assert.match(presentation.copy, /purchase went through/i);
   });
 
   it('maps local installation state without inventing entitlements', () => {

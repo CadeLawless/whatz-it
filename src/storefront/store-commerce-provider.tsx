@@ -171,7 +171,11 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
 
   const refreshCommerceConnection = useCallback(() => {
     if (!apiBaseUrl || Platform.OS !== 'ios') return Promise.resolve(false);
-    if (catalogSyncStatus === 'syncing') {
+    // The initial catalog state is `loading`, so syncStatus is null until the
+    // first server manifest has either activated or failed. Starting commerce
+    // during that window can observe bundled paid-deck rows before their
+    // protected content hashes have been hydrated from the manifest.
+    if (catalogSyncStatus === null || catalogSyncStatus === 'syncing') {
       logCommerceDiagnostic('server-refresh-deferred-for-catalog-sync');
       return Promise.resolve(false);
     }
@@ -340,7 +344,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       if (target) {
         setTargetState(target, {
           status: 'retry',
-          message: 'Your transaction is safe, but purchase verification could not start. Please retry.',
+          message: 'We couldn’t finish your purchase. Tap Try Again to continue.',
         });
       }
       if (activePurchaseRef.current?.operationId === active?.operationId) {
@@ -381,7 +385,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       if (target) {
         setTargetState(target, {
           status: 'retry',
-          message: 'The App Store responded, but purchase verification could not start. Please retry.',
+          message: 'We couldn’t finish your purchase. Tap Try Again to continue.',
         });
       }
       if (activePurchaseRef.current?.operationId === active?.operationId) {
@@ -848,28 +852,10 @@ function createCommerceOperationId() {
 }
 
 function purchaseFailureMessage(error: unknown) {
-  if (
-    process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled'
-    && error instanceof EntitledDeckPreparationError
-  ) {
-    return error.failures.map((failure) => {
-      const cause = failure.error instanceof Error
-        ? failure.error
-        : new Error(String(failure.error));
-      const code = (cause as Error & { code?: unknown }).code;
-      return `${failure.deckId}: ${cause.message}${
-        typeof code === 'string' ? ` [${code}]` : ''
-      }`;
-    }).join(' ');
-  }
   if (error instanceof CommerceApiError) {
-    if (process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled') {
-      return `${error.message} [${error.code}; HTTP ${error.status}]`;
+    if (error.code === 'network_error' || error.code === 'request_timeout') {
+      return 'Check your internet connection, then tap Try Again.';
     }
-    if (error.code === 'network_error') {
-      return 'Your transaction is safe. Reconnect and retry preparing this purchase.';
-    }
-    return error.message;
   }
-  return 'Your transaction is safe, but its offline content could not be prepared. Please retry.';
+  return 'Your purchase went through, but we couldn’t finish the download. Tap Try Again to finish.';
 }

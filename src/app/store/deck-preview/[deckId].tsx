@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
   purchaseFooter: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.xs,
+    paddingBottom: spacing.xl,
     backgroundColor: colors.surface,
   },
   purchaseArea: { gap: spacing.sm },

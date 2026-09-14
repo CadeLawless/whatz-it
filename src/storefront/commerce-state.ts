@@ -86,17 +86,17 @@ export function commercePresentation(
         ? {
             action: 'none',
             busy: false,
-            buttonLabel: 'PURCHASING DISABLED',
-            copy: `Purchasing for this ${item} is disabled in this build or environment.`,
-            title: 'Purchasing disabled',
+            buttonLabel: 'NOT AVAILABLE',
+            copy: `This ${item} isn’t available to buy right now. Please check back later.`,
+            title: 'Purchase unavailable',
             tone: 'muted',
           }
         : {
             action: 'retry',
             busy: false,
             buttonLabel: 'TRY AGAIN',
-            copy: `The App Store didn’t return a price for this ${item}. Check your connection and try again.`,
-            title: 'Couldn’t reach the App Store',
+            copy: 'Check your internet connection, then tap Try Again.',
+            title: 'Can’t connect to the App Store',
             tone: 'warning',
           };
     case 'offline':
@@ -105,9 +105,9 @@ export function commercePresentation(
         busy: false,
         buttonLabel: 'TRY AGAIN',
         copy: state.lastKnownPrice
-          ? `Reconnect to confirm the current price and purchase this ${item}, then tap Try Again if it doesn’t update automatically. Last seen: ${state.lastKnownPrice}.`
-          : `Reconnect to check the current price and purchase this ${item}, then tap Try Again if it doesn’t update automatically.`,
-        title: 'Connect to purchase',
+          ? `Connect to the internet, then tap Try Again. Last seen: ${state.lastKnownPrice}.`
+          : 'Connect to the internet, then tap Try Again.',
+        title: 'You’re offline',
         tone: 'warning',
       };
     case 'available':
@@ -166,11 +166,11 @@ export function commercePresentation(
       return {
         action: 'retry',
         busy: false,
-        buttonLabel: 'RETRY PREPARING',
+        buttonLabel: 'TRY AGAIN',
         copy:
           state.message ??
-          `Your purchase is safe, but this ${item} could not finish preparing for offline play.`,
-        title: 'Preparation interrupted',
+          `Your purchase went through, but we couldn’t finish downloading this ${item}. Tap Try Again to finish.`,
+        title: 'Download didn’t finish',
         tone: 'warning',
       };
     case 'owned':

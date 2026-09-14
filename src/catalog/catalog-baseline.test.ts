@@ -99,6 +99,37 @@ describe('bundled catalog baseline activation', () => {
     }
   });
 
+  it('does not overwrite an activated staging lineage with a newer production baseline', async () => {
+    const harness = createDatabaseHarness();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      harness.database
+        .prepare(
+          `UPDATE catalog_state
+              SET catalog_revision = ?, source = 'remote', etag = 'staging-etag'`,
+        )
+        .run(baselineRevision - 1);
+      harness.database
+        .prepare("UPDATE decks SET title = 'Staging title' WHERE deck_id = 'celebrity-shuffle'")
+        .run();
+
+      assert.equal(
+        await applyBundledCatalogBaseline(harness.adapter, bundledCatalog, {
+          preserveRemoteLineage: true,
+        }),
+        'unchanged',
+      );
+      assert.deepEqual(catalogState(harness.database), {
+        catalog_revision: baselineRevision - 1,
+        source: 'remote',
+        etag: 'staging-etag',
+      });
+      assert.equal(deckTitle(harness.database), 'Staging title');
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('atomically installs a strictly newer bundled free-content baseline', async () => {
     const harness = createDatabaseHarness();
     try {

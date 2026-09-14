@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Pressable,
   type StyleProp,
@@ -36,23 +37,43 @@ export function CommercePurchaseCard({
   target,
 }: CommercePurchaseCardProps) {
   const presentation = commercePresentation(state, target);
+  const defaultPurchaseLabel = purchaseLabel ?? `BUY ${target.kind.toUpperCase()}`;
+  const currentPurchaseLabel =
+    presentation.action === 'purchase'
+      ? purchaseLabel ?? presentation.buttonLabel
+      : null;
+  const [stablePurchaseLabel, setStablePurchaseLabel] = useState(
+    currentPurchaseLabel ?? defaultPurchaseLabel,
+  );
+  const handlePurchase =
+    currentPurchaseLabel && onPurchase
+      ? () => {
+          setStablePurchaseLabel(currentPurchaseLabel);
+          onPurchase();
+        }
+      : undefined;
+
   const onPress =
     state.status === 'owned' && onOwned
       ? onOwned
       : presentation.action === 'purchase'
-      ? onPurchase
+      ? handlePurchase
       : presentation.action === 'retry'
         ? onRetry
         : undefined;
   const disabled = onPress === undefined;
   const buttonLabel =
-    state.status === 'owned' && onOwned
-      ? target.kind === 'deck'
-        ? 'PLAY DECK'
-        : 'VIEW BUNDLE'
-      : presentation.action === 'purchase' && purchaseLabel
-        ? purchaseLabel
-      : presentation.buttonLabel;
+    state.status === 'owned'
+      ? onOwned
+        ? target.kind === 'deck'
+          ? 'PLAY DECK'
+          : 'VIEW BUNDLE'
+        : presentation.buttonLabel
+      : presentation.action === 'retry' || state.status === 'unavailable'
+        ? presentation.buttonLabel
+        : presentation.action === 'purchase' && currentPurchaseLabel
+          ? currentPurchaseLabel
+          : stablePurchaseLabel;
   const accessibilityLabel = showTargetTitle
     ? `${buttonLabel}, ${target.title}`
     : buttonLabel;

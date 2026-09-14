@@ -1,4 +1,5 @@
 export type CatalogRuntimeSource = 'bundled' | 'sqlite';
+export type CatalogEnvironment = 'production' | 'staging';
 
 function developmentBuildDefault() {
   return typeof __DEV__ !== 'undefined' && __DEV__;
@@ -47,4 +48,11 @@ export function configuredCatalogSyncEnabled(
   value = process.env.EXPO_PUBLIC_CATALOG_SYNC,
 ) {
   return value !== 'disabled';
+}
+
+export function configuredCatalogEnvironment(
+  value = process.env.EXPO_PUBLIC_CATALOG_ENVIRONMENT,
+  developmentPreview = configuredDevPreviewEnabled(),
+): CatalogEnvironment {
+  return developmentPreview || value === 'staging' ? 'staging' : 'production';
 }

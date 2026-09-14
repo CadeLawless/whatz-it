@@ -4,9 +4,14 @@ import { createCatalogSeed, type CatalogSeed, type CatalogSeedSource } from './c
 import {
   CATALOG_DATABASE_NAME,
   CATALOG_DEV_PREVIEW_DATABASE_NAME,
+  CATALOG_STAGING_DATABASE_NAME,
   migrateCatalogDatabase,
 } from './catalog-schema';
-import { configuredDevPreviewEnabled } from './catalog-feature';
+import {
+  configuredCatalogEnvironment,
+  configuredDevPreviewEnabled,
+  type CatalogEnvironment,
+} from './catalog-feature';
 
 export function createCatalogDatabaseOpener<Database>(
   initialize: () => Promise<Database>,
@@ -29,13 +34,23 @@ async function initializeCatalogDatabase() {
     import('@/data/bundles'),
   ]);
   const database = await SQLite.openDatabaseAsync(
-    configuredDevPreviewEnabled()
-      ? CATALOG_DEV_PREVIEW_DATABASE_NAME
-      : CATALOG_DATABASE_NAME,
+    configuredCatalogDatabaseName(),
   );
   await migrateCatalogDatabase(database);
-  await applyBundledCatalogBaseline(database, bundledCatalog);
+  await applyBundledCatalogBaseline(database, bundledCatalog, {
+    preserveRemoteLineage: configuredCatalogEnvironment() === 'staging',
+  });
   return database;
+}
+
+export function configuredCatalogDatabaseName(
+  developmentPreview = configuredDevPreviewEnabled(),
+  environment: CatalogEnvironment = configuredCatalogEnvironment(),
+) {
+  if (developmentPreview) return CATALOG_DEV_PREVIEW_DATABASE_NAME;
+  return environment === 'staging'
+    ? CATALOG_STAGING_DATABASE_NAME
+    : CATALOG_DATABASE_NAME;
 }
 
 export const openCatalogDatabase = createCatalogDatabaseOpener(
@@ -54,20 +69,27 @@ export type BundledBaselineResult = 'inserted' | 'updated' | 'unchanged';
 export async function applyBundledCatalogBaseline(
   database: SQLiteDatabase,
   catalog: CatalogSeedSource,
+  options: { preserveRemoteLineage?: boolean } = {},
 ): Promise<BundledBaselineResult> {
   const seed = createCatalogSeed(catalog);
   let result: BundledBaselineResult = 'unchanged';
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
-    const existing = await transaction.getFirstAsync<{ catalog_revision: number }>(
-      'SELECT catalog_revision FROM catalog_state WHERE singleton_id = 1',
+    const existing = await transaction.getFirstAsync<{
+      catalog_revision: number;
+      source: string;
+    }>(
+      'SELECT catalog_revision, source FROM catalog_state WHERE singleton_id = 1',
     );
     if (!existing) {
       await insertSeed(transaction, seed);
       result = 'inserted';
       return;
     }
-    if (existing.catalog_revision >= seed.state.catalogRevision) return;
+    if (
+      (options.preserveRemoteLineage && existing.source === 'remote')
+      || existing.catalog_revision >= seed.state.catalogRevision
+    ) return;
     await mergeSeed(transaction, seed);
     result = 'updated';
   });

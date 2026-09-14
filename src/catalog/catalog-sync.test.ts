@@ -423,6 +423,61 @@ describe('Phase 3 catalog acceptance', () => {
     }
   });
 
+  it('allows an isolated staging catalog to adopt its independent lower lineage', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    const requested: string[] = [];
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(bundledCatalog.revision - 1);
+      harness.database.prepare(
+        "UPDATE decks SET deck_version = deck_version + 10, card_content_version = card_content_version + 10",
+      ).run();
+
+      await assert.rejects(
+        () => synchronizeCatalog(harness.adapter, {
+          manifestUrl: fixture.manifestUrl,
+          downloadRuntime: acceptanceRuntime(fixture, storedFiles),
+        }),
+        (error) => error instanceof CatalogSyncError && error.code === 'stale_manifest',
+      );
+
+      const result = await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        allowCatalogRebase: true,
+        downloadRuntime: acceptanceRuntime(fixture, storedFiles, requested),
+      });
+
+      assert.equal(result.status, 'updated');
+      assert.equal(stateRevision(harness.database), bundledCatalog.revision - 1);
+      assert.equal(
+        harness.database.prepare(
+          "SELECT deck_version FROM decks WHERE deck_id = 'celebrity-shuffle'",
+        ).get()?.deck_version,
+        fixture.manifest.decks[0].deckVersion,
+      );
+      assert.equal(
+        harness.database.prepare(
+          "SELECT content_hash FROM decks WHERE deck_id = 'accents-and-impressions'",
+        ).get()?.content_hash,
+        fixture.manifest.decks[1].content.hash,
+      );
+      assert.equal(requested.includes(fixture.paidContentUrl), false);
+
+      fixture.manifest.catalogRevision -= 1;
+      await assert.rejects(
+        () => synchronizeCatalog(harness.adapter, {
+          manifestUrl: fixture.manifestUrl,
+          allowCatalogRebase: true,
+          downloadRuntime: acceptanceRuntime(fixture, storedFiles),
+        }),
+        (error) => error instanceof CatalogSyncError && error.code === 'stale_manifest',
+      );
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('keeps the last-known-good catalog when the server requires a newer app', async () => {
     const harness = createDatabaseHarness();
     const storedFiles = new Map<string, Uint8Array>();

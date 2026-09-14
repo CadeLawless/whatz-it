@@ -209,15 +209,17 @@ export default function GameScreen() {
 
     if (currentPausePhase !== 'prompt' && currentPausePhase !== 'positioning') return;
     const operation = ++portraitResumeOperation.current;
-    // Moving the phone back to the forehead is itself the resume action. Keep
-    // the card hidden while the recorder and audio players become ready.
-    portraitPausePhaseRef.current = 'positioning';
-    setPortraitPausePhase('positioning');
+    const acknowledgementEndsAt = Date.now() + RESUME_ACKNOWLEDGEMENT_MS;
+    // Stable forehead placement is itself the resume action. Acknowledge it
+    // immediately while keeping the card hidden until recording and audio are
+    // ready. The acknowledgment remains visible for at least the brief hold.
+    portraitPausePhaseRef.current = 'welcome-back';
+    setPortraitPausePhase('welcome-back');
     portraitRecordingResume.current = (async () => {
       const recordingReady = await resumeRecording({ restoreOverlay: false });
       if (
         operation !== portraitResumeOperation.current ||
-        portraitPausePhaseRef.current !== 'positioning' ||
+        portraitPausePhaseRef.current !== 'welcome-back' ||
         AppState.currentState !== 'active'
       ) {
         if (recordingReady) void pauseRecording();
@@ -226,15 +228,13 @@ export default function GameScreen() {
       await prepareForRound();
       if (
         operation !== portraitResumeOperation.current ||
-        portraitPausePhaseRef.current !== 'positioning' ||
+        portraitPausePhaseRef.current !== 'welcome-back' ||
         AppState.currentState !== 'active'
       ) {
         if (recordingReady) void pauseRecording();
         return false;
       }
-      setResumeAcknowledgementEndsAt(Date.now() + RESUME_ACKNOWLEDGEMENT_MS);
-      portraitPausePhaseRef.current = 'welcome-back';
-      setPortraitPausePhase('welcome-back');
+      setResumeAcknowledgementEndsAt(acknowledgementEndsAt);
       return recordingReady;
     })();
   }, [pauseRecording, pauseRound, prepareForRound, resumeRecording, round.status, stopAll]);
@@ -638,7 +638,7 @@ export default function GameScreen() {
               isRecording={isRecording}
               onClose={handlePortraitFinish}
             >
-              <RoundReadyMessage title="WE'RE BACK!" />
+              <RoundReadyMessage title="WE'RE SO BACK" />
             </RoundReadyPanel>
           </SafeAreaView>
         </LandscapeViewport>

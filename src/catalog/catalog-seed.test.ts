@@ -5,13 +5,18 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import {
+  configuredCatalogEnvironment,
   configuredCatalogManifestUrl,
   configuredCatalogSource,
   configuredDevPreviewEnabled,
   configuredDevPreviewKey,
 } from './catalog-feature';
+import { configuredCatalogDatabaseName } from './catalog-database';
 import { createCatalogSeed, type CatalogSeedSource } from './catalog-seed';
 import {
+  CATALOG_DATABASE_NAME,
+  CATALOG_DEV_PREVIEW_DATABASE_NAME,
+  CATALOG_STAGING_DATABASE_NAME,
   catalogSchemaSqlForTests,
   migrateCatalogDatabase,
 } from './catalog-schema';
@@ -257,6 +262,24 @@ describe('bundled SQLite catalog seed', () => {
         undefined,
       ),
       null,
+    );
+  });
+
+  it('isolates development and preview catalogs from the production database', () => {
+    assert.equal(configuredCatalogEnvironment('staging', false), 'staging');
+    assert.equal(configuredCatalogEnvironment('production', false), 'production');
+    assert.equal(configuredCatalogEnvironment(undefined, true), 'staging');
+    assert.equal(
+      configuredCatalogDatabaseName(false, 'staging'),
+      CATALOG_STAGING_DATABASE_NAME,
+    );
+    assert.equal(
+      configuredCatalogDatabaseName(false, 'production'),
+      CATALOG_DATABASE_NAME,
+    );
+    assert.equal(
+      configuredCatalogDatabaseName(true, 'staging'),
+      CATALOG_DEV_PREVIEW_DATABASE_NAME,
     );
   });
 });

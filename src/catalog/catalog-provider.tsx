@@ -15,6 +15,7 @@ import {
   SqliteCatalogRepository,
 } from './catalog-repository';
 import {
+  configuredCatalogEnvironment,
   configuredCatalogManifestUrl,
   configuredCatalogSource,
   configuredDevPreviewEnabled,
@@ -122,6 +123,7 @@ export function CatalogProvider({ children }: PropsWithChildren) {
         const catalog = await repository.load();
         const developmentPreview = releaseCapabilities.catalogUpdates
           && configuredDevPreviewEnabled();
+        const stagingCatalog = configuredCatalogEnvironment() === 'staging';
         const manifestUrl = releaseCapabilities.catalogUpdates
           ? configuredCatalogManifestUrl(
               undefined,
@@ -184,6 +186,7 @@ export function CatalogProvider({ children }: PropsWithChildren) {
               appVersion: Constants.expoConfig?.version ?? '0.0.0',
               signal: abortController.signal,
               developmentPreview,
+              allowCatalogRebase: stagingCatalog,
               downloadRuntime: developmentPreviewKey
                 ? developmentPreviewDownloadRuntime(
                     manifestUrl,
