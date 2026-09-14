@@ -4,7 +4,10 @@ import { describe, it } from 'node:test';
 import type { Purchase } from 'expo-iap';
 
 import type { CommerceEntitlements } from './commerce-api';
-import { reconcileApplePurchases } from './apple-purchase-restore';
+import {
+  collectApplePurchasesForRestore,
+  reconcileApplePurchases,
+} from './apple-purchase-restore';
 
 const entitlements: CommerceEntitlements = {
   installationId: 'installation-1',
@@ -31,6 +34,24 @@ function purchase(overrides: Partial<Purchase> = {}): Purchase {
 }
 
 describe('Apple purchase restoration', () => {
+  it('always synchronizes StoreKit before taking the restore snapshot', async () => {
+    const calls: string[] = [];
+    const purchases = [purchase()];
+
+    const result = await collectApplePurchasesForRestore({
+      synchronizeStoreKit: async () => {
+        calls.push('synchronize-storekit');
+      },
+      getPurchases: async () => {
+        calls.push('get-purchases');
+        return purchases;
+      },
+    });
+
+    assert.equal(result, purchases);
+    assert.deepEqual(calls, ['synchronize-storekit', 'get-purchases']);
+  });
+
   it('verifies each known transaction once before repairing local content', async () => {
     const calls: string[] = [];
     const result = await reconcileApplePurchases({

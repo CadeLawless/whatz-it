@@ -18,7 +18,7 @@ import { CloseButton } from '@/components/close-button';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { RecordingIndicator } from '@/components/recording-indicator';
 import {
-  RoundReadyCountdown,
+  RoundReadyMessage,
   RoundReadyPanel,
   RoundReadyPosition,
 } from '@/components/round-ready-panel';
@@ -36,13 +36,13 @@ import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnosti
 const ROUND_END_SCREEN_MS = 2495;
 const RESULTS_SCREENSHOT_TIMEOUT_MS = 2_000;
 const MANUAL_FEEDBACK_DURATION_MS = Platform.OS === 'android' ? 350 : 550;
-const RESUME_COUNTDOWN_MS = 3_000;
+const RESUME_ACKNOWLEDGEMENT_MS = 600;
 const ROUND_FRAME_INSET = 16;
 const ROUND_FRAME_BORDER_WIDTH = 6;
 const ROUND_FRAME_RADIUS = 28;
 const ROUND_PLAYING_BORDER_COLOR = '#439EFE';
 
-type PortraitPausePhase = 'prompt' | 'positioning' | 'countdown' | 'restarting' | 'finished';
+type PortraitPausePhase = 'prompt' | 'positioning' | 'welcome-back' | 'restarting' | 'finished';
 
 export default function GameScreen() {
   const focused = useIsFocused();
@@ -51,15 +51,14 @@ export default function GameScreen() {
   const { width, height } = useLandscapeDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
   const [portraitPausePhase, setPortraitPausePhase] = useState<PortraitPausePhase | null>(null);
-  const [resumeCountdownEndsAt, setResumeCountdownEndsAt] = useState<number | null>(null);
+  const [resumeAcknowledgementEndsAt, setResumeAcknowledgementEndsAt] = useState<number | null>(null);
   const roundStarted = useRef(false);
   const finishSoundPlayed = useRef(false);
   const feedbackSoundCard = useRef<number | null>(null);
   const flipSoundCard = useRef<number | null>(null);
   const timerPausedForBackground = useRef(false);
   const recordingPausedForBackground = useRef(false);
-  const pausedResumeCountdownRemaining = useRef<number | null>(null);
-  const lastResumeCountdownCue = useRef<number | null>(null);
+  const pausedResumeAcknowledgementRemaining = useRef<number | null>(null);
   const portraitPausePhaseRef = useRef<PortraitPausePhase | null>(null);
   const portraitResumeOperation = useRef(0);
   const portraitRecordingResume = useRef<Promise<boolean> | null>(null);
@@ -182,12 +181,11 @@ export default function GameScreen() {
         void pauseRecording();
         return;
       }
-      if (currentPausePhase === 'countdown' || currentPausePhase === 'restarting') {
+      if (currentPausePhase === 'welcome-back' || currentPausePhase === 'restarting') {
         portraitResumeOperation.current += 1;
         portraitRecordingResume.current = null;
         stopAll();
-        lastResumeCountdownCue.current = null;
-        setResumeCountdownEndsAt(null);
+        setResumeAcknowledgementEndsAt(null);
         portraitPausePhaseRef.current = 'positioning';
         setPortraitPausePhase('positioning');
         void pauseRecording();
@@ -196,7 +194,7 @@ export default function GameScreen() {
       if (currentPausePhase !== null) return;
       if (round.status !== 'playing' && round.status !== 'feedback') return;
       setFinishPromptVisible(false);
-      setResumeCountdownEndsAt(null);
+      setResumeAcknowledgementEndsAt(null);
       portraitPausePhaseRef.current = 'prompt';
       setPortraitPausePhase('prompt');
       recordingPausedForBackground.current = false;
@@ -209,11 +207,12 @@ export default function GameScreen() {
       return;
     }
 
-    if (currentPausePhase !== 'positioning') return;
+    if (currentPausePhase !== 'prompt' && currentPausePhase !== 'positioning') return;
     const operation = ++portraitResumeOperation.current;
-    // Initial round start finishes recorder and audio preparation before its
-    // visible 3-2-1. Mirror that ordering here, using the placement screen in
-    // place of Get Ready, so every countdown beat stays on its exact timeline.
+    // Moving the phone back to the forehead is itself the resume action. Keep
+    // the card hidden while the recorder and audio players become ready.
+    portraitPausePhaseRef.current = 'positioning';
+    setPortraitPausePhase('positioning');
     portraitRecordingResume.current = (async () => {
       const recordingReady = await resumeRecording({ restoreOverlay: false });
       if (
@@ -233,10 +232,9 @@ export default function GameScreen() {
         if (recordingReady) void pauseRecording();
         return false;
       }
-      lastResumeCountdownCue.current = null;
-      setResumeCountdownEndsAt(Date.now() + RESUME_COUNTDOWN_MS);
-      portraitPausePhaseRef.current = 'countdown';
-      setPortraitPausePhase('countdown');
+      setResumeAcknowledgementEndsAt(Date.now() + RESUME_ACKNOWLEDGEMENT_MS);
+      portraitPausePhaseRef.current = 'welcome-back';
+      setPortraitPausePhase('welcome-back');
       return recordingReady;
     })();
   }, [pauseRecording, pauseRound, prepareForRound, resumeRecording, round.status, stopAll]);
@@ -263,8 +261,7 @@ export default function GameScreen() {
   }, [finishRound]);
 
   const handleKeepPlaying = useCallback(() => {
-    lastResumeCountdownCue.current = null;
-    setResumeCountdownEndsAt(null);
+    setResumeAcknowledgementEndsAt(null);
     portraitPausePhaseRef.current = 'positioning';
     setPortraitPausePhase('positioning');
   }, []);
@@ -272,32 +269,16 @@ export default function GameScreen() {
   const handlePortraitFinish = useCallback(() => {
     portraitResumeOperation.current += 1;
     portraitRecordingResume.current = null;
-    setResumeCountdownEndsAt(null);
+    setResumeAcknowledgementEndsAt(null);
     portraitPausePhaseRef.current = 'finished';
     setPortraitPausePhase('finished');
     finishRound();
   }, [finishRound]);
 
-  const handleResumeCountdownSecond = useCallback(
-    (remaining: number) => {
-      if (remaining < 1 || remaining > 3) return;
-      if (lastResumeCountdownCue.current === remaining) return;
-      lastResumeCountdownCue.current = remaining;
-      const sound = remaining === 3 ? 'count-3' : remaining === 2 ? 'count-2' : 'count-1';
-      void triggerRoundHaptic('initial-countdown', {
-        cameraActive: false,
-        countdownValue: remaining as 1 | 2 | 3,
-      });
-      void playSound(sound, () =>
-        portraitPausePhaseRef.current === 'countdown' && AppState.currentState === 'active');
-    },
-    [playSound],
-  );
-
-  const handleResumeCountdownExpire = useCallback(async () => {
-    if (portraitPausePhaseRef.current !== 'countdown') return;
+  const handleResumeAcknowledgementExpire = useCallback(async () => {
+    if (portraitPausePhaseRef.current !== 'welcome-back') return;
     const operation = ++portraitResumeOperation.current;
-    setResumeCountdownEndsAt(null);
+    setResumeAcknowledgementEndsAt(null);
     portraitPausePhaseRef.current = 'restarting';
     setPortraitPausePhase('restarting');
 
@@ -332,11 +313,10 @@ export default function GameScreen() {
     });
   }, [pauseRecording, playSound, resumeRecording, resumeRound, round.currentCardIndex, round.pausedStatus]);
 
-  const resumeCountdownSeconds = useRoundTimer({
-    endsAt: resumeCountdownEndsAt,
-    active: focused && appActive && portraitPausePhase === 'countdown',
-    onExpire: handleResumeCountdownExpire,
-    onSecond: handleResumeCountdownSecond,
+  useRoundTimer({
+    endsAt: resumeAcknowledgementEndsAt,
+    active: focused && appActive && portraitPausePhase === 'welcome-back',
+    onExpire: handleResumeAcknowledgementExpire,
   });
 
   useEffect(() => {
@@ -472,14 +452,13 @@ export default function GameScreen() {
       if (leftForeground) {
         if (
           portraitPausePhaseRef.current === 'positioning' ||
-          portraitPausePhaseRef.current === 'countdown' ||
+          portraitPausePhaseRef.current === 'welcome-back' ||
           portraitPausePhaseRef.current === 'restarting'
         ) {
           portraitResumeOperation.current += 1;
           portraitRecordingResume.current = null;
-          lastResumeCountdownCue.current = null;
-          pausedResumeCountdownRemaining.current = null;
-          setResumeCountdownEndsAt(null);
+          pausedResumeAcknowledgementRemaining.current = null;
+          setResumeAcknowledgementEndsAt(null);
           portraitPausePhaseRef.current = 'positioning';
           setPortraitPausePhase('positioning');
           void pauseRecording();
@@ -490,11 +469,11 @@ export default function GameScreen() {
           pauseRound();
         }
         if (
-          resumeCountdownEndsAt !== null &&
+          resumeAcknowledgementEndsAt !== null &&
           portraitPausePhaseRef.current !== 'positioning'
         ) {
-          pausedResumeCountdownRemaining.current = Math.max(0, resumeCountdownEndsAt - Date.now());
-          setResumeCountdownEndsAt(null);
+          pausedResumeAcknowledgementRemaining.current = Math.max(0, resumeAcknowledgementEndsAt - Date.now());
+          setResumeAcknowledgementEndsAt(null);
         }
         recordingPausedForBackground.current = portraitPausePhaseRef.current === null;
         if (recordingPausedForBackground.current) void pauseRecording();
@@ -504,9 +483,9 @@ export default function GameScreen() {
           timerPausedForBackground.current = false;
           resumeRound();
         }
-        if (pausedResumeCountdownRemaining.current !== null) {
-          setResumeCountdownEndsAt(Date.now() + pausedResumeCountdownRemaining.current);
-          pausedResumeCountdownRemaining.current = null;
+        if (pausedResumeAcknowledgementRemaining.current !== null) {
+          setResumeAcknowledgementEndsAt(Date.now() + pausedResumeAcknowledgementRemaining.current);
+          pausedResumeAcknowledgementRemaining.current = null;
         }
         if (recordingPausedForBackground.current && portraitPausePhaseRef.current === null) {
           recordingPausedForBackground.current = false;
@@ -515,7 +494,7 @@ export default function GameScreen() {
       }
     });
     return () => subscription.remove();
-  }, [pauseRecording, pauseRound, resumeCountdownEndsAt, resumeRound, round.status]);
+  }, [pauseRecording, pauseRound, resumeAcknowledgementEndsAt, resumeRound, round.status]);
 
   useEffect(() => {
     if (foregroundResumeGeneration === 0) return;
@@ -575,7 +554,7 @@ export default function GameScreen() {
               Take a breather
             </Text>
             <Text style={styles.portraitPauseBody}>
-              The answer is hidden and the timer is stopped.
+              The answer is hidden and the timer is stopped. Put the phone back on your forehead to resume automatically.
             </Text>
           </View>
 
@@ -647,7 +626,7 @@ export default function GameScreen() {
     );
   }
 
-  if (portraitPausePhase === 'countdown' || portraitPausePhase === 'restarting') {
+  if (portraitPausePhase === 'welcome-back' || portraitPausePhase === 'restarting') {
     return (
       <View style={styles.captureRoot}>
         <LandscapeViewport>
@@ -659,10 +638,7 @@ export default function GameScreen() {
               isRecording={isRecording}
               onClose={handlePortraitFinish}
             >
-              <RoundReadyCountdown
-                fontSize={Math.max(92, Math.min(138, height * 0.34))}
-                value={portraitPausePhase === 'restarting' ? 1 : resumeCountdownSeconds}
-              />
+              <RoundReadyMessage title="WE'RE BACK!" />
             </RoundReadyPanel>
           </SafeAreaView>
         </LandscapeViewport>
@@ -886,7 +862,7 @@ function getCardFontSize(text: string, width: number, height: number) {
 }
 
 function getBylineFontSize(width: number, height: number) {
-  return Math.round(Math.max(18, Math.min(28, height * 0.075, width * 0.04)));
+  return Math.round(Math.max(34, Math.min(38, height * 0.1, width * 0.055)));
 }
 
 function waitForNextPaint() {
@@ -1126,11 +1102,11 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     flexShrink: 1,
     color: colors.play,
-    fontFamily: 'Inter_600SemiBold',
-    fontWeight: '600',
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
     letterSpacing: 0.2,
     textAlign: 'center',
-    opacity: 0.72,
+    opacity: 0.82,
   },
   controlsDock: {
     position: 'absolute',

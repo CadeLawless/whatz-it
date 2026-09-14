@@ -148,6 +148,30 @@ describe('owned deck installation recovery', () => {
       harness.database.close();
     }
   });
+
+  it('makes missing catalog artifact metadata retryable after restart', async () => {
+    const harness = createHarness(null, null);
+    try {
+      await assert.rejects(
+        () => installEntitledDeck(
+          harness.adapter,
+          'https://example.test',
+          identity,
+          'paid-deck',
+          'purchase',
+          unavailableDownload,
+        ),
+        /no published content artifact/,
+      );
+      assert.deepEqual(installation(harness.database), {
+        installed_content_version: null,
+        status: 'failed',
+        last_error_code: 'preparation_failed',
+      });
+    } finally {
+      harness.database.close();
+    }
+  });
 });
 
 const identity = {
@@ -163,7 +187,7 @@ const unavailableDownload = {
 
 function createHarness(
   installedContentVersion: number | null,
-  contentBytes = 100,
+  contentBytes: number | null = 100,
   failCardInsert = false,
 ) {
   const database = new DatabaseSync(':memory:');

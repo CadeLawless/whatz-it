@@ -29,13 +29,14 @@ export async function installEntitledDeck(
        FROM decks WHERE deck_id = ? AND lifecycle_status = 'active'`,
     deckId,
   );
-  if (!row || !row.content_hash || !row.content_bytes) {
-    throw new Error(`Deck ${deckId} has no published content artifact.`);
-  }
   const installed = await database.getFirstAsync<{ installed_content_version: number | null }>(
     'SELECT installed_content_version FROM deck_installations WHERE deck_id = ?',
     deckId,
   );
+  if (!row || !row.content_hash || !row.content_bytes) {
+    await markPreparationFailed(database, deckId, installed?.installed_content_version ?? null);
+    throw new Error(`Deck ${deckId} has no published content artifact.`);
+  }
   if (installed?.installed_content_version === row.card_content_version) {
     await database.runAsync(
       `UPDATE deck_installations SET ownership_source = ?, status = 'installed',
@@ -102,15 +103,25 @@ export async function installEntitledDeck(
       );
     });
   } catch (error) {
-    await database.runAsync(
-      `UPDATE deck_installations
-          SET status = ?, last_error_code = 'preparation_failed'
-        WHERE deck_id = ?`,
-      installed?.installed_content_version === null || installed === null
-        ? 'failed'
-        : 'installed',
+    await markPreparationFailed(
+      database,
       deckId,
+      installed?.installed_content_version ?? null,
     );
     throw error;
   }
+}
+
+async function markPreparationFailed(
+  database: SQLiteDatabase,
+  deckId: string,
+  installedContentVersion: number | null,
+) {
+  await database.runAsync(
+    `UPDATE deck_installations
+        SET status = ?, last_error_code = 'preparation_failed'
+      WHERE deck_id = ?`,
+    installedContentVersion === null ? 'failed' : 'installed',
+    deckId,
+  );
 }

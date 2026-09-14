@@ -35,7 +35,6 @@ export default function ResultsScreen() {
     round,
     roundDeck,
     configureRound,
-    deleteCurrentVideo,
     resetRound,
     retryCurrentVideoExport,
   } = useRound();
@@ -55,6 +54,7 @@ export default function ResultsScreen() {
     message: string;
   } | null>(null);
   const screenRef = useRef<View>(null);
+  const deletingArchivedRoundRef = useRef(false);
   const isPortrait = usePortraitScreen();
   const { beginTransition, revealTransition } = useScreenshotTransition();
   const deck = roundDeck;
@@ -86,7 +86,7 @@ export default function ResultsScreen() {
 
     let active = true;
     const updateArchivedVideo = (videos: RoundVideo[]) => {
-      if (!active) return;
+      if (!active || deletingArchivedRoundRef.current) return;
       const video = videos.find((item) => item.id === roundId) ?? null;
       setArchivedVideoState({
         roundId,
@@ -279,7 +279,7 @@ export default function ResultsScreen() {
   };
 
   const requestDeleteRound = () => {
-    if (!displayedVideo) return;
+    if (!isArchivedRound || !displayedVideo) return;
     setDeleteError(null);
     setDeletePromptVisible(true);
   };
@@ -291,7 +291,8 @@ export default function ResultsScreen() {
   };
 
   const confirmDeleteRound = async () => {
-    if (!displayedVideo || isDeletingRound) return;
+    if (!isArchivedRound || !displayedVideo || isDeletingRound) return;
+    deletingArchivedRoundRef.current = true;
     setIsDeletingRound(true);
     setDeleteError(null);
     let transitionUri: string | null = null;
@@ -306,8 +307,7 @@ export default function ResultsScreen() {
         // Deletion and navigation still complete if capture is unavailable.
       }
 
-      if (isArchivedRound) await deleteRoundVideo(displayedVideo.id);
-      else await deleteCurrentVideo();
+      await deleteRoundVideo(displayedVideo.id);
 
       if (transitionUri) {
         await beginTransition({
@@ -317,9 +317,9 @@ export default function ResultsScreen() {
         });
       }
       setDeletePromptVisible(false);
-      if (!isArchivedRound) resetRound();
       returnHome();
     } catch (error) {
+      deletingArchivedRoundRef.current = false;
       setDeleteError(error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setIsDeletingRound(false);
@@ -333,53 +333,53 @@ export default function ResultsScreen() {
       style={styles.safeArea}
       edges={['top', 'bottom']}
     >
-      <View style={styles.topBar}>
-        <Pressable
-          accessibilityLabel={isArchivedRound ? 'Back to My Rounds' : 'Back to Decks'}
-          accessibilityRole="button"
-          disabled={isLeaving || isDeletingRound}
-          onPress={() => void handleHome()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.backButtonPressed,
-          ]}
-        >
-          <SymbolView
-            accessibilityElementsHidden
-            name={{
-              android: 'arrow_back_ios_new',
-              ios: 'chevron.left',
-              web: 'arrow_back_ios_new',
-            }}
-            size={18}
-            style={styles.backIcon}
-            tintColor="#000000"
-          />
-          <Text style={styles.backButtonText}>
-            {isArchivedRound ? 'Back to My Rounds' : 'Back to Decks'}
-          </Text>
-        </Pressable>
-        {displayedVideo ? (
+      {isArchivedRound && (
+        <View style={styles.topBar}>
           <Pressable
-            accessibilityLabel="Delete saved round"
+            accessibilityLabel="Back to My Rounds"
             accessibilityRole="button"
             disabled={isLeaving || isDeletingRound}
-            onPress={requestDeleteRound}
-            style={({ pressed }) => [styles.topDeleteButton, pressed && styles.pressed]}
+            onPress={() => void handleHome()}
+            style={({ pressed }) => [
+              styles.backButton,
+              pressed && styles.backButtonPressed,
+            ]}
           >
             <SymbolView
               accessibilityElementsHidden
-              name={{ android: 'delete', ios: 'trash', web: 'delete' }}
-              size={24}
-              style={styles.topDeleteIcon}
-              tintColor="#DC2626"
-              weight="bold"
+              name={{
+                android: 'arrow_back_ios_new',
+                ios: 'chevron.left',
+                web: 'arrow_back_ios_new',
+              }}
+              size={18}
+              style={styles.backIcon}
+              tintColor="#000000"
             />
+            <Text style={styles.backButtonText}>Back to My Rounds</Text>
           </Pressable>
-        ) : (
-          <View style={styles.topBarSpacer} />
-        )}
-      </View>
+          {displayedVideo ? (
+            <Pressable
+              accessibilityLabel="Delete saved round"
+              accessibilityRole="button"
+              disabled={isLeaving || isDeletingRound}
+              onPress={requestDeleteRound}
+              style={({ pressed }) => [styles.topDeleteButton, pressed && styles.pressed]}
+            >
+              <SymbolView
+                accessibilityElementsHidden
+                name={{ android: 'delete', ios: 'trash', web: 'delete' }}
+                size={24}
+                style={styles.topDeleteIcon}
+                tintColor="#DC2626"
+                weight="bold"
+              />
+            </Pressable>
+          ) : (
+            <View style={styles.topBarSpacer} />
+          )}
+        </View>
+      )}
       <FlatList
         data={displayedResults}
         style={styles.list}
@@ -496,6 +496,15 @@ export default function ResultsScreen() {
         >
           <Text style={styles.primaryButtonText}>PLAY AGAIN</Text>
         </Pressable>
+        {!isArchivedRound && (
+          <Pressable
+            disabled={isLeaving}
+            onPress={() => void handleHome()}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.secondaryButtonText}>BACK TO DECKS</Text>
+          </Pressable>
+        )}
       </View>
       <ConfirmationPrompt
         busy={isDeletingRound}
@@ -649,6 +658,7 @@ const styles = StyleSheet.create({
   noCards: { ...typography.body, color: colors.muted, textAlign: 'center', padding: spacing.xl },
   actions: {
     flexShrink: 0,
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
@@ -665,6 +675,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   primaryButtonText: { color: colors.white, fontSize: 14, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.2 },
+  secondaryButton: {
+    minHeight: 54,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryButtonText: { color: colors.ink, fontSize: 13, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.1 },
   pressed: { transform: [{ scale: 0.99 }], opacity: 0.88 },
   disabled: { opacity: 0.55 },
 });

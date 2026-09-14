@@ -36,8 +36,8 @@ export const DEFAULT_ROUND_POSTURE_CONFIG: RoundPostureDetectorConfig = {
   portraitDominanceRatio: 1.35,
   portraitMaximumDepthGravity: 9.2,
   portraitConfirmationMs: 350,
-  // Returning to the forehead is intentionally slower so the 3-2-1 cannot
-  // start while the player is still moving the phone into place.
+  // Returning to the forehead is intentionally slower so the round cannot
+  // resume while the player is still moving the phone into place.
   landscapeMinimumGravity: 6.5,
   landscapeDominanceRatio: 1.35,
   landscapeMaximumDepthGravity: 6.5,

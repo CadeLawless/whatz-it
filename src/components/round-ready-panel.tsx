@@ -56,6 +56,10 @@ export function RoundReadyPosition({ title }: { title: string }) {
   );
 }
 
+export function RoundReadyMessage({ title }: { title: string }) {
+  return <Text style={styles.message}>{title}</Text>;
+}
+
 export function RoundReadyCountdown({
   fontSize,
   value,
@@ -113,6 +117,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 1,
+  },
+  message: {
+    color: colors.white,
+    fontSize: 48,
+    lineHeight: 56,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 1,
+    textAlign: 'center',
   },
   positionTitle: {
     color: colors.white,

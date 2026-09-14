@@ -56,12 +56,23 @@ export function CommercePurchaseCard({
   const accessibilityLabel = showTargetTitle
     ? `${buttonLabel}, ${target.title}`
     : buttonLabel;
+  const showWarningCopy = presentation.tone === 'warning';
 
   return (
     <View
       accessibilityLiveRegion="polite"
       style={style}
     >
+      {showWarningCopy && (
+        <View style={styles.warningCopy}>
+          <Text selectable style={styles.warningTitle}>
+            {presentation.title}
+          </Text>
+          <Text selectable style={styles.warningBody}>
+            {presentation.copy}
+          </Text>
+        </View>
+      )}
       <Pressable
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
@@ -88,6 +99,26 @@ export function CommercePurchaseCard({
 }
 
 const styles = StyleSheet.create({
+  warningCopy: {
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  warningTitle: {
+    color: colors.ink,
+    fontSize: 15,
+    lineHeight: 19,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  warningBody: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: 'Inter_500Medium',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   button: {
     minHeight: 48,
     alignItems: 'center',

@@ -8,6 +8,17 @@ export type AppleRestoreResult = {
   verifiedTransactionCount: number;
 };
 
+export async function collectApplePurchasesForRestore({
+  synchronizeStoreKit,
+  getPurchases,
+}: {
+  synchronizeStoreKit: () => Promise<unknown>;
+  getPurchases: () => Promise<Purchase[]>;
+}) {
+  await synchronizeStoreKit();
+  return getPurchases();
+}
+
 export async function reconcileApplePurchases({
   purchases,
   knownProductIds,

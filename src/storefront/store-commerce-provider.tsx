@@ -15,7 +15,10 @@ import {
   type CommerceEntitlements,
   verifyApplePurchase,
 } from './commerce-api';
-import { reconcileApplePurchases } from './apple-purchase-restore';
+import {
+  collectApplePurchasesForRestore,
+  reconcileApplePurchases,
+} from './apple-purchase-restore';
 import {
   CommerceProvider,
   type CommerceAdapter,
@@ -640,25 +643,27 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     });
     setRestoreState({ status: 'restoring' });
     try {
-      let purchases: Purchase[] = [];
       if (ownedBeforeRestore.size > 0) {
         logCommerceDiagnostic('restore.known-entitlements-repair-started', {
           productCount: ownedBeforeRestore.size,
         });
-      } else {
-        await restoreStorePurchases({ alsoPublishToEventListenerIOS: false });
-        logCommerceDiagnostic('restore.store-sync-completed', {
-          elapsedMs: Date.now() - startedAt,
-        });
-        purchases = await getAvailablePurchases({
+      }
+      const purchases = await collectApplePurchasesForRestore({
+        synchronizeStoreKit: async () => {
+          await restoreStorePurchases({ alsoPublishToEventListenerIOS: false });
+          logCommerceDiagnostic('restore.store-sync-completed', {
+            elapsedMs: Date.now() - startedAt,
+          });
+        },
+        getPurchases: () => getAvailablePurchases({
           alsoPublishToEventListenerIOS: false,
           onlyIncludeActiveItemsIOS: true,
-        });
-        logCommerceDiagnostic('restore.purchase-snapshot-received', {
-          elapsedMs: Date.now() - startedAt,
-          purchaseCount: purchases.length,
-        });
-      }
+        }),
+      });
+      logCommerceDiagnostic('restore.purchase-snapshot-received', {
+        elapsedMs: Date.now() - startedAt,
+        purchaseCount: purchases.length,
+      });
       const result = await reconcileApplePurchases({
         purchases,
         knownProductIds: new Set(appleProducts.keys()),
@@ -703,7 +708,9 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       }, 'warn');
       setRestoreState({
         status: 'error',
-        message: 'Your purchases are safe, but restoration could not finish. Please try again.',
+        message: process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled'
+          ? purchaseFailureMessage(error)
+          : 'Your purchases are safe, but restoration could not finish. Please try again.',
       });
     } finally {
       restoreInFlight.current = false;
@@ -734,8 +741,11 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       await prepareEntitledDecks(entitlements, identity);
       setTargetState(target);
       setServerReachable(true);
-    } catch {
-      setTargetState(target, { status: 'retry' });
+    } catch (error) {
+      setTargetState(target, {
+        status: 'retry',
+        message: purchaseFailureMessage(error),
+      });
     }
   }, [apiBaseUrl, identity, persistEntitlements, prepareEntitledDecks, processPurchase, setTargetState]);
 
@@ -838,6 +848,20 @@ function createCommerceOperationId() {
 }
 
 function purchaseFailureMessage(error: unknown) {
+  if (
+    process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled'
+    && error instanceof EntitledDeckPreparationError
+  ) {
+    return error.failures.map((failure) => {
+      const cause = failure.error instanceof Error
+        ? failure.error
+        : new Error(String(failure.error));
+      const code = (cause as Error & { code?: unknown }).code;
+      return `${failure.deckId}: ${cause.message}${
+        typeof code === 'string' ? ` [${code}]` : ''
+      }`;
+    }).join(' ');
+  }
   if (error instanceof CommerceApiError) {
     if (process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled') {
       return `${error.message} [${error.code}; HTTP ${error.status}]`;
