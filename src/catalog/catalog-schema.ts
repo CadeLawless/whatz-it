@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 export const CATALOG_DATABASE_NAME = 'whatz-it-catalog.db';
 export const CATALOG_STAGING_DATABASE_NAME = 'whatz-it-staging-catalog.db';
 export const CATALOG_DEV_PREVIEW_DATABASE_NAME = 'whatz-it-dev-preview-catalog.db';
-export const CATALOG_DATABASE_VERSION = 5;
+export const CATALOG_DATABASE_VERSION = 6;
 
 const CREATE_SCHEMA_SQL = `
 CREATE TABLE catalog_state (
@@ -40,6 +40,7 @@ CREATE TABLE decks (
   thumbnail_bytes INTEGER,
   thumbnail_url TEXT,
   apple_product_id TEXT,
+  google_product_id TEXT,
   lifecycle_status TEXT NOT NULL DEFAULT 'active'
     CHECK (lifecycle_status IN ('active', 'retired'))
 );
@@ -53,6 +54,9 @@ CREATE TABLE bundles (
   price_minor_units INTEGER,
   sort_order INTEGER NOT NULL,
   apple_product_id TEXT,
+  google_product_id TEXT,
+  apple_discount_product_ids_json TEXT NOT NULL DEFAULT '{}',
+  google_discount_product_ids_json TEXT NOT NULL DEFAULT '{}',
   lifecycle_status TEXT NOT NULL DEFAULT 'active'
     CHECK (lifecycle_status IN ('active', 'retired'))
 );
@@ -108,6 +112,11 @@ CREATE TABLE commerce_entitlements (
   product_id TEXT PRIMARY KEY NOT NULL,
   target_type TEXT NOT NULL CHECK (target_type IN ('deck', 'bundle')),
   target_id TEXT NOT NULL,
+  verified_at TEXT NOT NULL
+);
+
+CREATE TABLE commerce_deck_entitlements (
+  deck_id TEXT PRIMARY KEY NOT NULL,
   verified_at TEXT NOT NULL
 );
 
@@ -211,6 +220,21 @@ export async function migrateCatalogDatabase(database: SQLiteDatabase) {
       await transaction.execAsync(`
         ALTER TABLE decks ADD COLUMN featured_cards_json TEXT NOT NULL DEFAULT '[]';
         PRAGMA user_version = 5;
+      `);
+    });
+  }
+  if (currentVersion <= 5 && currentVersion !== 0) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(`
+        ALTER TABLE decks ADD COLUMN google_product_id TEXT;
+        ALTER TABLE bundles ADD COLUMN google_product_id TEXT;
+        ALTER TABLE bundles ADD COLUMN apple_discount_product_ids_json TEXT NOT NULL DEFAULT '{}';
+        ALTER TABLE bundles ADD COLUMN google_discount_product_ids_json TEXT NOT NULL DEFAULT '{}';
+        CREATE TABLE commerce_deck_entitlements (
+          deck_id TEXT PRIMARY KEY NOT NULL,
+          verified_at TEXT NOT NULL
+        );
+        PRAGMA user_version = 6;
       `);
     });
   }

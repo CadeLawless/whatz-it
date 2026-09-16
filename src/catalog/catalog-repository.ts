@@ -145,10 +145,15 @@ export class SqliteCatalogRepository implements CatalogRepository {
       ...(row.thumbnail_uri ? { thumbnailUri: row.thumbnail_uri } : {}),
       ...(row.thumbnail_url ? { thumbnailUrl: row.thumbnail_url } : {}),
       installationStatus: row.installation_status,
-      ...(row.apple_product_id
+      ...(row.apple_product_id || row.google_product_id
         ? {
             storeProducts: {
-              apple: { productId: row.apple_product_id, status: 'available' as const },
+              ...(row.apple_product_id
+                ? { apple: { productId: row.apple_product_id, status: 'available' as const } }
+                : {}),
+              ...(row.google_product_id
+                ? { google: { productId: row.google_product_id, status: 'available' as const } }
+                : {}),
             },
           }
         : {}),
@@ -178,11 +183,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
           : { price: row.price_minor_units / 100 }),
         version: row.bundle_version,
         ...(row.apple_product_id
-          ? {
-              storeProducts: {
-                apple: { productId: row.apple_product_id, status: 'available' as const },
-              },
-            }
+          || row.google_product_id
+          || row.apple_discount_product_ids_json !== '{}'
+          || row.google_discount_product_ids_json !== '{}'
+          ? { storeProducts: bundleStoreProducts(row) }
           : {}),
         deckIds: memberships.get(row.bundle_id) ?? [],
       })),
@@ -250,6 +254,7 @@ type DeckRow = {
   installation_status: CatalogDeck['installationStatus'];
   installed_content_version: number | null;
   apple_product_id: string | null;
+  google_product_id: string | null;
 };
 
 function parseFeaturedCards(value: string): Card[] {
@@ -283,6 +288,49 @@ type BundleRow = {
   price_minor_units: number | null;
   sort_order: number;
   apple_product_id: string | null;
+  google_product_id: string | null;
+  apple_discount_product_ids_json: string;
+  google_discount_product_ids_json: string;
 };
 type MembershipRow = { bundle_id: string; deck_id: string; position: number };
 type OrderRow = { scope: DeckAccess; deck_id: string; position: number };
+
+function bundleStoreProducts(row: BundleRow) {
+  return Object.fromEntries(
+    (['apple', 'google'] as const).flatMap((platform) => {
+      const productId = row[`${platform}_product_id`];
+      if (!productId) return [];
+      const tiers = parseProductIdMap(row[`${platform}_discount_product_ids_json`]);
+      return [[platform, {
+        productId,
+        status: 'available' as const,
+        ...(Object.keys(tiers).length > 0
+          ? {
+              ownedDeckCountProducts: Object.fromEntries(
+                Object.entries(tiers).map(([count, tierProductId]) => [
+                  count,
+                  { productId: tierProductId, status: 'available' as const },
+                ]),
+              ),
+            }
+          : {}),
+      }]];
+    }),
+  );
+}
+
+function parseProductIdMap(value: string) {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return Object.fromEntries(
+        Object.entries(parsed).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      );
+    }
+  } catch {
+    // Invalid catalog rows fail closed by exposing no discount products.
+  }
+  return {};
+}

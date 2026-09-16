@@ -21,9 +21,11 @@ const MANUAL_PAUSE_MS = 12_000;
 
 export function BundleCoverCarousel({
   decks,
+  ownedDeckIds,
   onDeckPress,
 }: {
   decks: CatalogDeck[];
+  ownedDeckIds?: ReadonlySet<string>;
   onDeckPress: (deck: CatalogDeck) => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
@@ -94,7 +96,7 @@ export function BundleCoverCarousel({
         {decks.map((deck, index) => (
           <Pressable
             accessibilityHint="Opens a deck preview"
-            accessibilityLabel={`${deck.title}, deck ${index + 1} of ${decks.length}`}
+            accessibilityLabel={`${deck.title}, deck ${index + 1} of ${decks.length}${ownedDeckIds?.has(deck.id) ? ', owned' : ''}`}
             accessibilityRole="button"
             key={deck.id}
             onPress={() => onDeckPress(deck)}
@@ -111,6 +113,13 @@ export function BundleCoverCarousel({
               ) : (
                 <View style={styles.coverFallback}>
                   <Text style={styles.coverFallbackText}>{deck.title}</Text>
+                </View>
+              )}
+              {ownedDeckIds?.has(deck.id) && (
+                <View accessibilityElementsHidden style={styles.ownedOverlay}>
+                  <View style={styles.ownedBadge}>
+                    <Text style={styles.ownedBadgeText}>OWNED</Text>
+                  </View>
                 </View>
               )}
             </View>
@@ -176,6 +185,31 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontFamily: 'Inter_900Black',
     fontWeight: '900',
+  },
+  ownedOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.57)',
+  },
+  ownedBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.white,
+    borderRadius: 99,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+  },
+  ownedBadgeText: {
+    color: colors.white,
+    fontSize: 13,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   motionNote: { color: colors.muted, fontSize: 12, lineHeight: 17 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },

@@ -284,7 +284,6 @@ export default function DeckDetailsScreen() {
             backLabel={returnToRoundId ? 'Back to Results' : 'Back to Decks'}
             deck={deck}
             onBack={handleBack}
-            showCarousel={false}
           />
 
           <Text style={styles.sectionLabel}>ROUND LENGTH</Text>

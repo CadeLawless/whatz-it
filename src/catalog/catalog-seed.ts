@@ -58,6 +58,9 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
       appleProductId: deck.storeProducts?.apple?.status === 'available'
         ? deck.storeProducts.apple.productId
         : null,
+      googleProductId: deck.storeProducts?.google?.status === 'available'
+        ? deck.storeProducts.google.productId
+        : null,
     };
   });
 
@@ -75,6 +78,11 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
       appleProductId: bundle.storeProducts?.apple?.status === 'available'
         ? bundle.storeProducts.apple.productId
         : null,
+      googleProductId: bundle.storeProducts?.google?.status === 'available'
+        ? bundle.storeProducts.google.productId
+        : null,
+      appleDiscountProductIdsJson: availableDiscountProducts(bundle.storeProducts?.apple),
+      googleDiscountProductIdsJson: availableDiscountProducts(bundle.storeProducts?.google),
     };
   });
 
@@ -119,7 +127,7 @@ export function createCatalogSeed(catalog: CatalogSeedSource) {
 
   return {
     state: {
-      localSchemaVersion: 5,
+      localSchemaVersion: 6,
       catalogSchemaVersion: catalog.schemaVersion,
       catalogRevision: catalog.revision,
       source: 'bundled' as const,
@@ -141,4 +149,14 @@ function toMinorUnits(price: number | undefined) {
     throw new Error(`Invalid catalog price: ${price}`);
   }
   return minorUnits;
+}
+
+function availableDiscountProducts(
+  mapping: StoreProductMappings['apple'] | StoreProductMappings['google'] | undefined,
+) {
+  return JSON.stringify(Object.fromEntries(
+    Object.entries(mapping?.ownedDeckCountProducts ?? {})
+      .filter(([, tier]) => tier.status === 'available')
+      .map(([ownedCount, tier]) => [ownedCount, tier.productId]),
+  ));
 }

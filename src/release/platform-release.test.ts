@@ -4,11 +4,11 @@ import { describe, it } from 'node:test';
 import { platformReleaseCapabilities } from './platform-release';
 
 describe('platform release capabilities', () => {
-  it('ships Android as a frozen free edition', () => {
+  it('enables the catalog, storefront, and Google Play commerce on Android', () => {
     assert.deepEqual(platformReleaseCapabilities('android'), {
-      catalogUpdates: false,
-      nativeStoreCommerce: false,
-      storefront: false,
+      catalogUpdates: true,
+      nativeStoreCommerce: true,
+      storefront: true,
     });
   });
 

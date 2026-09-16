@@ -15,6 +15,7 @@ export async function resetLocalPaidOwnership(database: SQLiteDatabase) {
       WHERE deck_id IN (SELECT deck_id FROM decks WHERE access = 'paid');
 
       DELETE FROM commerce_entitlements;
+      DELETE FROM commerce_deck_entitlements;
       DELETE FROM commerce_state;
     `);
   });

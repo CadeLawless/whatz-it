@@ -13698,6 +13698,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.lift_your_voice",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.lift_your_voice",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -13755,6 +13759,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.worship_icons",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.worship_icons",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -13803,6 +13811,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.bible_characters",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.bible_characters",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -13855,6 +13867,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.growing_up_christian",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.growing_up_christian",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -13916,6 +13932,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.accents_and_impressions",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.accents_and_impressions",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -13972,6 +13992,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.rom_com",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.rom_com",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -14022,6 +14046,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.commercial_classics",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.commercial_classics",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -14079,6 +14107,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.movie_musicals",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.movie_musicals",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -14133,6 +14165,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.action_movies",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.action_movies",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -14187,6 +14223,10 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.dramas",
                     "status": "available"
+                },
+                "google": {
+                    "productId": "wz.deck.dramas",
+                    "status": "draft"
                 }
             },
             "cards": []
@@ -14229,7 +14269,21 @@ const bundleCatalog: PortableCatalog =
             "storeProducts": {
                 "apple": {
                     "productId": "com.cadelawless.whatzit.bundle.christianity",
-                    "status": "available"
+                    "status": "available",
+                    "ownedDeckCountProducts": {
+                        "1": { "productId": "com.cadelawless.whatzit.bundle.christianity.owned_1", "status": "draft" },
+                        "2": { "productId": "com.cadelawless.whatzit.bundle.christianity.owned_2", "status": "draft" },
+                        "3": { "productId": "com.cadelawless.whatzit.bundle.christianity.owned_3", "status": "draft" }
+                    }
+                },
+                "google": {
+                    "productId": "wz.bundle.christianity",
+                    "status": "draft",
+                    "ownedDeckCountProducts": {
+                        "1": { "productId": "wz.bundle.christianity.owned_1", "status": "draft" },
+                        "2": { "productId": "wz.bundle.christianity.owned_2", "status": "draft" },
+                        "3": { "productId": "wz.bundle.christianity.owned_3", "status": "draft" }
+                    }
                 }
             },
             "deckIds": [
@@ -14250,7 +14304,21 @@ const bundleCatalog: PortableCatalog =
             "storeProducts": {
                 "apple": {
                     "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen",
-                    "status": "available"
+                    "status": "available",
+                    "ownedDeckCountProducts": {
+                        "1": { "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_1", "status": "draft" },
+                        "2": { "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_2", "status": "draft" },
+                        "3": { "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_3", "status": "draft" }
+                    }
+                },
+                "google": {
+                    "productId": "wz.bundle.on_the_big_screen",
+                    "status": "draft",
+                    "ownedDeckCountProducts": {
+                        "1": { "productId": "wz.bundle.on_the_big_screen.owned_1", "status": "draft" },
+                        "2": { "productId": "wz.bundle.on_the_big_screen.owned_2", "status": "draft" },
+                        "3": { "productId": "wz.bundle.on_the_big_screen.owned_3", "status": "draft" }
+                    }
                 }
             },
             "deckIds": [

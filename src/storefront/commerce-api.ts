@@ -53,11 +53,30 @@ export function configuredCommerceApiBaseUrl(
 export async function registerInstallation(
   baseUrl: string,
   identity: InstallationIdentity,
+  platform: 'apple' | 'google' = 'apple',
 ) {
-  await apiRequest(baseUrl, '/api/v1/installations/apple', {
+  await apiRequest(baseUrl, `/api/v1/installations/${platform}`, {
     method: 'POST',
     body: JSON.stringify(identity),
   });
+}
+
+export async function verifyGooglePurchase(
+  baseUrl: string,
+  identity: InstallationIdentity,
+  purchase: { productId: string; purchaseToken: string; packageName: string },
+  reason: 'purchase' | 'restore',
+) {
+  try {
+    return await verifyGoogleTransaction(baseUrl, identity, purchase, reason);
+  } catch (error) {
+    if (
+      reason !== 'purchase'
+      || !(error instanceof CommerceApiError)
+      || error.code !== 'purchase_restore_required'
+    ) throw error;
+    return verifyGoogleTransaction(baseUrl, identity, purchase, 'restore');
+  }
 }
 
 export function fetchEntitlements(baseUrl: string, identity: InstallationIdentity) {
@@ -119,6 +138,22 @@ function verifyAppleTransaction(
       : '/api/v1/purchases/apple/restore',
     identity,
     { method: 'POST', body: JSON.stringify({ signedTransaction }) },
+  );
+}
+
+function verifyGoogleTransaction(
+  baseUrl: string,
+  identity: InstallationIdentity,
+  purchase: { productId: string; purchaseToken: string; packageName: string },
+  reason: 'purchase' | 'restore',
+) {
+  return authenticatedRequest(
+    baseUrl,
+    reason === 'purchase'
+      ? '/api/v1/purchases/google/verify'
+      : '/api/v1/purchases/google/restore',
+    identity,
+    { method: 'POST', body: JSON.stringify(purchase) },
   );
 }
 

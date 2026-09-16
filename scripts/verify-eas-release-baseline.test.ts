@@ -15,7 +15,7 @@ describe('EAS production release baseline verification', () => {
     assert.equal(called, false);
   });
 
-  it('keeps the Android production release on its frozen free catalog', async () => {
+  it('verifies the Android production catalog like iOS', async () => {
     let called = false;
     const result = await verifyEasReleaseBaseline(
       {
@@ -26,12 +26,12 @@ describe('EAS production release baseline verification', () => {
       '/repository',
       async () => {
         called = true;
-        return { current: false, revision: 67 };
+        return { current: true, revision: 67 };
       },
     );
 
-    assert.deepEqual(result, { status: 'skipped' });
-    assert.equal(called, false);
+    assert.deepEqual(result, { status: 'current', revision: 67 });
+    assert.equal(called, true);
   });
 
   it('requires the production manifest when the gate is enabled', async () => {

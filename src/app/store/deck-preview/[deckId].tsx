@@ -25,7 +25,8 @@ import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
 import { CircularCloseButton } from '@/components/circular-close-button';
 import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
-import { useCommerceProduct } from '@/storefront/commerce-provider';
+import { bundleOwnershipLabel, bundleRemainingDeckLabel } from '@/storefront/bundle-offer';
+import { localizedCommercePrice, useBundleOffer, useCommerceProduct } from '@/storefront/commerce-provider';
 import { colors, spacing } from '@/theme';
 
 export default function DeckPreviewSheet() {
@@ -83,6 +84,11 @@ export default function DeckPreviewSheet() {
       };
   const deckCommerce = useCommerceProduct(deckCommerceTarget);
   const bundleCommerce = useCommerceProduct(bundleCommerceTarget);
+  const bundleOffer = useBundleOffer(bundleCommerceTarget.id);
+  const bundleOwnership = bundleOwnershipLabel(bundleOffer);
+  const deckPrice = localizedCommercePrice(deckCommerce.state);
+  const bundlePrice = localizedCommercePrice(bundleCommerce.state);
+  const bundlePurchaseHint = bundlePrice ? bundleRemainingDeckLabel(bundleOffer) : null;
 
   const showDeckAtIndex = useCallback(
     (targetIndex: number) => {
@@ -181,9 +187,14 @@ export default function DeckPreviewSheet() {
         {deck ? (
           <>
             <View style={styles.sheetHeader}>
-              <Text numberOfLines={2} style={styles.sheetTitle}>
-                {bundle?.title ?? 'Deck Preview'}
-              </Text>
+              <View style={styles.sheetHeaderCopy}>
+                <Text numberOfLines={2} style={styles.sheetTitle}>
+                  {bundle?.title ?? 'Deck Preview'}
+                </Text>
+                {bundleOwnership && (
+                  <Text style={styles.bundleOwnershipBadge}>{bundleOwnership}</Text>
+                )}
+              </View>
               <CircularCloseButton
                 accessibilityLabel="Close preview"
                 appearance="sheet"
@@ -220,7 +231,8 @@ export default function DeckPreviewSheet() {
                             deck={carouselDeck}
                             onBack={() => router.back()}
                             showBackButton={false}
-                            isBundleDeck={true}
+                            stackActive={index === visibleCarouselIndex}
+                            stackInteraction="tap"
                           />
                         </View>
                       ))}
@@ -284,6 +296,7 @@ export default function DeckPreviewSheet() {
               <View style={styles.purchaseFooter}>
                 <View style={styles.purchaseArea}>
                   <CommercePurchaseCard
+                    key={deck.id}
                     onOwned={() =>
                       router.dismissTo({
                         pathname: '/deck/[deckId]',
@@ -292,13 +305,14 @@ export default function DeckPreviewSheet() {
                     }
                     onPurchase={deckCommerce.purchase}
                     onRetry={deckCommerce.retry}
-                    purchaseLabel="BUY DECK"
+                    purchaseLabel={deckPrice ? `BUY DECK • ${deckPrice}` : 'BUY DECK'}
                     showTargetTitle
                     state={deckCommerce.state}
                     target={deckCommerceTarget}
                   />
                   {bundle && bundleCommerce.state.status !== 'owned' && (
                     <CommercePurchaseCard
+                      comparisonPrice={bundlePurchaseHint ? bundleOffer?.comparisonPrice : null}
                       onOwned={() =>
                         router.replace({
                           pathname: '/store/bundle/[bundleId]',
@@ -307,7 +321,8 @@ export default function DeckPreviewSheet() {
                       }
                       onPurchase={bundleCommerce.purchase}
                       onRetry={bundleCommerce.retry}
-                      purchaseLabel="BUY BUNDLE"
+                      purchaseLabel={bundlePrice ? `BUY BUNDLE • ${bundlePrice}` : 'BUY BUNDLE'}
+                      purchaseHint={bundlePurchaseHint}
                       showTargetTitle
                       state={bundleCommerce.state}
                       target={bundleCommerceTarget}
@@ -348,10 +363,22 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
   },
+  sheetHeaderCopy: { flex: 1, alignItems: 'flex-start', gap: 6 },
   sheetTitle: {
     color: colors.ink,
     fontSize: 22,
     lineHeight: 26,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+  },
+  bundleOwnershipBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 99,
+    backgroundColor: '#EAF4FF',
+    color: colors.play,
+    fontSize: 12,
+    lineHeight: 16,
     fontFamily: 'Inter_900Black',
     fontWeight: '900',
   },

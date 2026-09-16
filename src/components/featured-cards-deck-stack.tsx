@@ -1,16 +1,20 @@
 import { Image } from 'expo-image';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
   Easing,
+  ReduceMotion,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withRepeat,
+  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import type { CatalogDeck } from '@/catalog/catalog-snapshot';
 import { colors, radius, spacing } from '@/theme';
@@ -24,16 +28,21 @@ const HOLD_END = HOLD_DURATION / STEP_DURATION;
 const SWIPE_END = (HOLD_DURATION + SWIPE_DURATION) / STEP_DURATION;
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1).factory();
 const EASE_IN_OUT = Easing.bezier(0.77, 0, 0.175, 1).factory();
+const CARD_DRAG_DISTANCE = 0.82;
 
 type StackItem =
   | { key: string; kind: 'cover' }
   | { card: Card; key: string; kind: 'featured-card' };
 
 export function FeaturedCardsDeckStack({
+  active = true,
   deck,
+  interaction = 'swipe',
   width,
 }: {
+  active?: boolean;
   deck: CatalogDeck;
+  interaction?: 'swipe' | 'tap';
   width: number;
 }) {
   const featuredCards = deck.featuredCards ?? [];
@@ -47,17 +56,20 @@ export function FeaturedCardsDeckStack({
   ];
   const reduceMotion = useReducedMotion();
   const progress = useSharedValue(0);
+  const interactive = useSharedValue(false);
+  const dragStart = useSharedValue(0);
+  const settleTarget = useSharedValue(0);
   const itemKey = items.map(({ key }) => key).join(':');
 
-  useEffect(() => {
-    cancelAnimation(progress);
-    progress.set(0);
-
+  const restartAutoplay = useCallback((step: number) => {
+    if (!active) return;
+    progress.set(step);
+    settleTarget.set(step);
+    interactive.set(false);
     if (reduceMotion || items.length < 2) return;
-
     progress.set(
       withRepeat(
-        withTiming(items.length, {
+        withTiming(step + items.length, {
           duration: items.length * STEP_DURATION,
           easing: Easing.linear,
         }),
@@ -65,9 +77,100 @@ export function FeaturedCardsDeckStack({
         false,
       ),
     );
+  }, [active, interactive, items.length, progress, reduceMotion, settleTarget]);
+
+  useEffect(() => {
+    cancelAnimation(progress);
+    restartAutoplay(0);
 
     return () => cancelAnimation(progress);
-  }, [itemKey, items.length, progress, reduceMotion]);
+  }, [itemKey, progress, restartAutoplay]);
+
+  const tapGesture = useMemo(() => Gesture.Tap()
+    .enabled(active && items.length > 1)
+    .onEnd(() => {
+      const current = beginInteraction(progress, interactive);
+      const target = Math.max(Math.floor(current) + 1, settleTarget.get() + 1);
+      settleTarget.set(target);
+      progress.set(withSpring(target, {
+        duration: 400,
+        dampingRatio: 1,
+        reduceMotion: reduceMotion ? ReduceMotion.Always : ReduceMotion.Never,
+      }, (finished) => {
+        if (finished) scheduleOnRN(restartAutoplay, target);
+      }));
+    }), [active, interactive, items.length, progress, reduceMotion, restartAutoplay, settleTarget]);
+
+  const advanceForAccessibility = useCallback(() => {
+    if (!active || items.length < 2) return;
+    const current = progress.get();
+    cancelAnimation(progress);
+    let manualProgress = current;
+    if (!interactive.get()) {
+      const step = Math.floor(current);
+      manualProgress = step + Math.max(0, (current - step - HOLD_END) / (1 - HOLD_END));
+      interactive.set(true);
+      progress.set(manualProgress);
+    }
+    const target = Math.max(Math.floor(manualProgress) + 1, settleTarget.get() + 1);
+    settleTarget.set(target);
+    progress.set(withSpring(target, {
+      duration: 400,
+      dampingRatio: 1,
+      reduceMotion: reduceMotion ? ReduceMotion.Always : ReduceMotion.Never,
+    }, (finished) => {
+      if (finished) scheduleOnRN(restartAutoplay, target);
+    }));
+  }, [active, interactive, items.length, progress, reduceMotion, restartAutoplay, settleTarget]);
+
+  const panGesture = useMemo(() => Gesture.Pan()
+    .enabled(active && interaction === 'swipe' && items.length > 1)
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-18, 18])
+    .onStart(() => {
+      dragStart.set(beginInteraction(progress, interactive));
+    })
+    .onUpdate(({ translationX }) => {
+      const start = dragStart.get();
+      const base = Math.floor(start);
+      progress.set(Math.max(base - 1, Math.min(base + 1,
+        start + translationX / (width * CARD_DRAG_DISTANCE))));
+    })
+    .onEnd(({ velocityX }) => {
+      const projected = progress.get() + velocityX * 0.12 / (width * CARD_DRAG_DISTANCE);
+      const base = Math.floor(dragStart.get());
+      const target = Math.max(
+        base - 1,
+        Math.min(base + 1, Math.round(projected)),
+      );
+      settleTarget.set(target);
+      progress.set(withSpring(target, {
+        duration: 400,
+        dampingRatio: 0.8,
+        overshootClamping: true,
+        velocity: velocityX / (width * CARD_DRAG_DISTANCE),
+        reduceMotion: reduceMotion ? ReduceMotion.Always : ReduceMotion.Never,
+      }, (finished) => {
+        if (finished) scheduleOnRN(restartAutoplay, target);
+      }));
+    })
+    .onFinalize((_event, success) => {
+      if (success || !interactive.get()) return;
+      const target = Math.round(progress.get());
+      settleTarget.set(target);
+      progress.set(withSpring(target, {
+        duration: 400,
+        dampingRatio: 1,
+        reduceMotion: reduceMotion ? ReduceMotion.Always : ReduceMotion.Never,
+      }, (finished) => {
+        if (finished) scheduleOnRN(restartAutoplay, target);
+      }));
+    }), [active, dragStart, interaction, interactive, items.length, progress, reduceMotion, restartAutoplay, settleTarget, width]);
+
+  const gesture = useMemo(
+    () => interaction === 'tap' ? tapGesture : Gesture.Exclusive(panGesture, tapGesture),
+    [interaction, panGesture, tapGesture],
+  );
 
   const accessibilityLabel = featuredCards.length
     ? `Deck cover and featured card previews. ${featuredCards
@@ -76,25 +179,50 @@ export function FeaturedCardsDeckStack({
     : `Deck cover for ${deck.title}`;
 
   return (
-    <View
-      accessibilityLabel={accessibilityLabel}
-      accessible
-      style={[styles.stack, { width }]}
-    >
-      {items.map((item, index) => (
-        <DeckStackItem
-          deck={deck}
-          index={index}
-          item={item}
-          itemCount={items.length}
-          key={item.key}
-          progress={progress}
-          reduceMotion={reduceMotion}
-          width={width}
-        />
-      ))}
-    </View>
+    <GestureDetector gesture={gesture}>
+      <View
+        accessibilityActions={[{ name: 'activate' }]}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={interaction === 'tap'
+          ? 'Double tap to show the next card'
+          : 'Swipe right for the next card or left for the previous card. Double tap to advance.'}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !active || items.length < 2 }}
+        accessible
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === 'activate') advanceForAccessibility();
+        }}
+        style={[styles.stack, { width }]}
+      >
+        {items.map((item, index) => (
+          <DeckStackItem
+            deck={deck}
+            index={index}
+            item={item}
+            itemCount={items.length}
+            key={item.key}
+            progress={progress}
+            interactive={interactive}
+            reduceMotion={reduceMotion}
+            width={width}
+          />
+        ))}
+      </View>
+    </GestureDetector>
   );
+}
+
+function beginInteraction(progress: SharedValue<number>, interactive: SharedValue<boolean>) {
+  'worklet';
+  const current = progress.get();
+  cancelAnimation(progress);
+  if (interactive.get()) return current;
+  const step = Math.floor(current);
+  const phase = current - step;
+  const manualProgress = step + Math.max(0, (phase - HOLD_END) / (1 - HOLD_END));
+  interactive.set(true);
+  progress.set(manualProgress);
+  return manualProgress;
 }
 
 function DeckStackItem({
@@ -103,6 +231,7 @@ function DeckStackItem({
   item,
   itemCount,
   progress,
+  interactive,
   reduceMotion,
   width,
 }: {
@@ -111,13 +240,18 @@ function DeckStackItem({
   item: StackItem;
   itemCount: number;
   progress: SharedValue<number>;
+  interactive: SharedValue<boolean>;
   reduceMotion: boolean;
   width: number;
 }) {
   const animatedStyle = useAnimatedStyle(() => {
     const rawProgress = progress.get();
-    const step = Math.floor(rawProgress) % itemCount;
-    const phase = rawProgress - Math.floor(rawProgress);
+    const wholeStep = Math.floor(rawProgress);
+    const step = ((wholeStep % itemCount) + itemCount) % itemCount;
+    const fraction = rawProgress - wholeStep;
+    const phase = interactive.get()
+      ? HOLD_END + fraction * (1 - HOLD_END)
+      : fraction;
     const distanceFromFront = (index - step + itemCount) % itemCount;
 
     if (distanceFromFront === 0) {

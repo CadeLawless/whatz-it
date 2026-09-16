@@ -9,9 +9,14 @@ export type DeckAccess = 'free' | 'paid';
 
 export type StoreProductStatus = 'draft' | 'available' | 'retired';
 
-export type StoreProductMapping = {
+export type StoreProductTierMapping = {
   productId: string;
   status: StoreProductStatus;
+};
+
+export type StoreProductMapping = StoreProductTierMapping & {
+  /** Bundle-only products keyed by the number of current member decks already owned. */
+  ownedDeckCountProducts?: Record<string, StoreProductTierMapping>;
 };
 
 export type StoreProductMappings = {

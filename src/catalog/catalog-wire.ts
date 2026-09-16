@@ -18,6 +18,11 @@ export type CatalogProductIds = {
   google: string | null;
 };
 
+export type CatalogDiscountProductIds = {
+  apple: Record<string, string>;
+  google: Record<string, string>;
+};
+
 export type CatalogManifestDeck = {
   id: string;
   order: number;
@@ -48,6 +53,7 @@ export type CatalogManifestBundle = {
   bundleVersion: number;
   deckIds: string[];
   productIds: CatalogProductIds;
+  discountProductIds: CatalogDiscountProductIds;
 };
 
 export type CatalogManifest = {
@@ -197,6 +203,11 @@ export function parseCatalogManifest(
       bundleVersion: positiveInteger(bundle.bundleVersion, `${path}.bundleVersion`),
       deckIds: deckReferences,
       productIds: productIdsValue(bundle.productIds, `${path}.productIds`),
+      discountProductIds: discountProductIdsValue(
+        bundle.discountProductIds ?? { apple: {}, google: {} },
+        `${path}.discountProductIds`,
+        deckReferences.length,
+      ),
     } satisfies CatalogManifestBundle;
   });
   const orderObject = objectValue(root.deckOrders, 'deckOrders');
@@ -424,14 +435,49 @@ function productIdsValue(value: unknown, path: string): CatalogProductIds {
   const products = objectValue(value, path);
   return {
     apple: nullableProductId(products.apple, `${path}.apple`),
-    google: nullableProductId(products.google, `${path}.google`),
+    google: nullableGoogleProductId(products.google, `${path}.google`),
   };
+}
+
+function discountProductIdsValue(
+  value: unknown,
+  path: string,
+  deckCount: number,
+): CatalogDiscountProductIds {
+  const platforms = objectValue(value, path);
+  return {
+    apple: discountTierIds(platforms.apple, `${path}.apple`, deckCount),
+    google: discountTierIds(platforms.google, `${path}.google`, deckCount, true),
+  };
+}
+
+function discountTierIds(value: unknown, path: string, deckCount: number, google = false) {
+  const tiers = objectValue(value, path);
+  const result: Record<string, string> = {};
+  for (const [ownedCount, productId] of Object.entries(tiers)) {
+    if (!/^[1-9]\d*$/.test(ownedCount) || Number(ownedCount) >= deckCount) {
+      throw new Error(`${path}.${ownedCount} must identify a partial ownership count.`);
+    }
+    const parsed = google
+      ? nullableGoogleProductId(productId, `${path}.${ownedCount}`)
+      : nullableProductId(productId, `${path}.${ownedCount}`);
+    if (parsed === null) throw new Error(`${path}.${ownedCount} must be a product ID.`);
+    result[ownedCount] = parsed;
+  }
+  return result;
 }
 function nullableProductId(value: unknown, path: string): string | null {
   if (value === null) return null;
   const result = stringValue(value, path);
   if (!/^[A-Za-z0-9._-]{1,100}$/.test(result)) {
     throw new Error(`${path} is not a valid store product ID.`);
+  }
+  return result;
+}
+function nullableGoogleProductId(value: unknown, path: string): string | null {
+  const result = nullableProductId(value, path);
+  if (result !== null && !/^[a-z0-9][a-z0-9._]{0,39}$/.test(result)) {
+    throw new Error(`${path} is not a valid Google Play product ID.`);
   }
   return result;
 }

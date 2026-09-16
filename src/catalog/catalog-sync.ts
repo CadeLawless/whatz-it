@@ -338,9 +338,9 @@ export async function applyPreparedCatalog(
           access, price_minor_units, tags_json, card_count, featured_cards_json,
           content_hash, content_bytes, content_url,
           cover_hash, cover_bytes, cover_url,
-          thumbnail_hash, thumbnail_bytes, thumbnail_url, apple_product_id,
+          thumbnail_hash, thumbnail_bytes, thumbnail_url, apple_product_id, google_product_id,
           lifecycle_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(deck_id) DO UPDATE SET
           deck_version = excluded.deck_version,
           card_content_version = excluded.card_content_version,
@@ -361,6 +361,7 @@ export async function applyPreparedCatalog(
           thumbnail_bytes = excluded.thumbnail_bytes,
           thumbnail_url = excluded.thumbnail_url,
           apple_product_id = excluded.apple_product_id,
+          google_product_id = excluded.google_product_id,
           lifecycle_status = excluded.lifecycle_status`,
         deck.id,
         deck.deckVersion,
@@ -382,6 +383,7 @@ export async function applyPreparedCatalog(
         deck.thumbnail.bytes,
         deck.thumbnail.url,
         deck.productIds.apple,
+        deck.productIds.google,
         deck.status,
       );
 
@@ -447,8 +449,10 @@ export async function applyPreparedCatalog(
       await transaction.runAsync(
         `INSERT INTO bundles (
           bundle_id, bundle_version, title, description, access,
-          price_minor_units, sort_order, apple_product_id, lifecycle_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          price_minor_units, sort_order, apple_product_id, google_product_id,
+          apple_discount_product_ids_json, google_discount_product_ids_json,
+          lifecycle_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(bundle_id) DO UPDATE SET
           bundle_version = excluded.bundle_version,
           title = excluded.title,
@@ -457,6 +461,9 @@ export async function applyPreparedCatalog(
           price_minor_units = excluded.price_minor_units,
           sort_order = excluded.sort_order,
           apple_product_id = excluded.apple_product_id,
+          google_product_id = excluded.google_product_id,
+          apple_discount_product_ids_json = excluded.apple_discount_product_ids_json,
+          google_discount_product_ids_json = excluded.google_discount_product_ids_json,
           lifecycle_status = excluded.lifecycle_status`,
         bundle.id,
         bundle.bundleVersion,
@@ -466,6 +473,9 @@ export async function applyPreparedCatalog(
         toMinorUnits(bundle.price),
         bundle.order,
         bundle.productIds.apple,
+        bundle.productIds.google,
+        JSON.stringify(bundle.discountProductIds.apple),
+        JSON.stringify(bundle.discountProductIds.google),
         bundle.status,
       );
       for (const [position, deckId] of bundle.deckIds.entries()) {

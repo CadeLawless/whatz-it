@@ -16,10 +16,12 @@ import {
 } from '@/storefront/commerce-state';
 
 type CommercePurchaseCardProps = {
+  comparisonPrice?: string | null;
   onOwned?: () => void;
   onPurchase?: () => void;
   onRetry?: () => void;
   purchaseLabel?: string;
+  purchaseHint?: string | null;
   state: CommerceProductState;
   showTargetTitle?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -27,10 +29,12 @@ type CommercePurchaseCardProps = {
 };
 
 export function CommercePurchaseCard({
+  comparisonPrice,
   onOwned,
   onPurchase,
   onRetry,
   purchaseLabel,
+  purchaseHint,
   state,
   showTargetTitle = false,
   style,
@@ -78,6 +82,11 @@ export function CommercePurchaseCard({
     ? `${buttonLabel}, ${target.title}`
     : buttonLabel;
   const showWarningCopy = presentation.tone === 'warning';
+  const showPurchaseOffer = presentation.action === 'purchase' && Boolean(comparisonPrice && purchaseHint);
+  const priceSuffix = showPurchaseOffer && state.status === 'available'
+    ? state.localizedPrice
+    : null;
+  const visibleButtonLabel = priceSuffix ? `BUY ${target.kind.toUpperCase()}` : buttonLabel;
 
   return (
     <View
@@ -94,8 +103,11 @@ export function CommercePurchaseCard({
           </Text>
         </View>
       )}
+      {showPurchaseOffer && (
+        <Text style={styles.purchaseHint}>{purchaseHint}</Text>
+      )}
       <Pressable
-        accessibilityLabel={accessibilityLabel}
+        accessibilityLabel={priceSuffix ? `${visibleButtonLabel}, regular price ${comparisonPrice}, now ${priceSuffix}${showTargetTitle ? `, ${target.title}` : ''}` : accessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ busy: presentation.busy, disabled }}
         disabled={disabled}
@@ -108,7 +120,17 @@ export function CommercePurchaseCard({
           pressed && !disabled && styles.pressed,
         ]}
       >
-        <Text style={styles.buttonText}>{buttonLabel}</Text>
+        {priceSuffix ? (
+          <View style={styles.offerButtonContent}>
+            <Text style={styles.buttonText}>{visibleButtonLabel}</Text>
+            <View style={styles.offerPrices}>
+              <Text style={styles.comparisonPrice}>{comparisonPrice}</Text>
+              <Text style={styles.buttonText}>{priceSuffix}</Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.buttonText}>{buttonLabel}</Text>
+        )}
         {showTargetTitle && (
           <Text numberOfLines={1} style={styles.targetTitle}>
             {target.title}
@@ -120,6 +142,15 @@ export function CommercePurchaseCard({
 }
 
 const styles = StyleSheet.create({
+  purchaseHint: {
+    color: colors.play,
+    fontSize: 14,
+    lineHeight: 19,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
   warningCopy: {
     gap: spacing.xs,
     marginBottom: spacing.sm,
@@ -163,6 +194,27 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_900Black',
     fontWeight: '900',
     letterSpacing: 0.8,
+  },
+  offerButtonContent: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: spacing.sm,
+    rowGap: 2,
+  },
+  offerPrices: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  comparisonPrice: {
+    color: '#C5D9EE',
+    fontSize: 14,
+    lineHeight: 18,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+    textDecorationLine: 'line-through',
   },
   targetTitle: {
     maxWidth: '90%',

@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef } from 'react';
 import {
@@ -12,8 +11,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
+import { CatalogCoverImage } from '@/components/catalog-cover-image';
 import { CircularCloseButton } from '@/components/circular-close-button';
 import { colors, radius, spacing } from '@/theme';
+
+const FAN_WIDTH = 96;
+const FAN_CARD_WIDTH = 48;
+const FAN_SPREAD = 8;
 
 export default function BundlesForDeckSheet() {
   const { catalog } = useCatalog();
@@ -53,7 +57,9 @@ export default function BundlesForDeckSheet() {
           showsVerticalScrollIndicator={false}
         >
           {bundles.map((bundle) => {
-            const previewDeck = bundle.decks[0];
+            const previewDecks = bundle.decks.slice(0, 4);
+            const fanCenter = (previewDecks.length - 1) / 2;
+            const fanStart = (FAN_WIDTH - (FAN_CARD_WIDTH + (previewDecks.length - 1) * FAN_SPREAD)) / 2;
             return (
               <Pressable
                 accessibilityHint="Opens bundle details"
@@ -67,18 +73,34 @@ export default function BundlesForDeckSheet() {
                 }
                 style={({ pressed }) => [styles.bundleRow, pressed && styles.pressed]}
               >
-                <View style={styles.bundleCover}>
-                  {previewDeck?.coverUri || previewDeck?.coverImage ? (
-                    <Image
-                      accessibilityLabel={`${bundle.title} bundle preview`}
-                      cachePolicy="memory-disk"
-                      contentFit="cover"
-                      source={previewDeck.coverUri || previewDeck.coverImage}
-                      style={StyleSheet.absoluteFill}
-                    />
-                  ) : (
-                    <View style={styles.coverFallback} />
-                  )}
+                <View accessibilityElementsHidden style={styles.bundleFanFrame}>
+                  <View style={[styles.bundleFan, { transform: [{ rotate: `${-fanCenter * 8}deg` }] }]}>
+                    {previewDecks.map((previewDeck, index) => {
+                      const fanIndex = previewDecks.length - 1 - index;
+                      return (
+                        <View
+                          key={previewDeck.id}
+                          style={[
+                            styles.fanCard,
+                            {
+                              left: fanStart + fanIndex * FAN_SPREAD,
+                              top: 9 + Math.abs(fanIndex - fanCenter) * 2.5,
+                              transform: [{ rotate: `${(fanIndex - fanCenter) * 8}deg` }],
+                              zIndex: previewDecks.length - index,
+                            },
+                          ]}
+                        >
+                          <CatalogCoverImage
+                            cachePolicy="memory-disk"
+                            contentFit="cover"
+                            deck={previewDeck}
+                            fallback={<View style={styles.coverFallback} />}
+                            style={StyleSheet.absoluteFill}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
                 </View>
                 <View style={styles.bundleCopy}>
                   <Text style={styles.bundleTitle}>{bundle.title}</Text>
@@ -129,12 +151,18 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     backgroundColor: colors.background,
   },
-  bundleCover: {
-    width: 68,
+  bundleFanFrame: { width: FAN_WIDTH, height: 92, justifyContent: 'center', alignItems: 'center' },
+  bundleFan: { width: FAN_WIDTH, height: 92 },
+  fanCard: {
+    width: FAN_CARD_WIDTH,
     aspectRatio: 2 / 3,
+    position: 'absolute',
     overflow: 'hidden',
-    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    borderRadius: 6,
     backgroundColor: colors.playSoft,
+    boxShadow: '0 3px 7px rgba(15, 23, 42, 0.20)',
   },
   coverFallback: { flex: 1, backgroundColor: colors.playSoft },
   bundleCopy: { flex: 1, gap: 6 },

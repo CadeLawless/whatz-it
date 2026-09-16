@@ -143,8 +143,11 @@ export function buildBaselineCatalog(
         tags: [...deck.tags],
         access: deck.access,
         ...(deck.price === null ? {} : { price: deck.price }),
-        ...(deck.productIds.apple
-          ? { storeProducts: { apple: { productId: deck.productIds.apple, status: 'available' as const } } }
+        ...((deck.productIds.apple || deck.productIds.google)
+          ? { storeProducts: {
+              ...(deck.productIds.apple ? { apple: { productId: deck.productIds.apple, status: 'available' as const } } : {}),
+              ...(deck.productIds.google ? { google: { productId: deck.productIds.google, status: 'available' as const } } : {}),
+            } }
           : {}),
         cards: verifiedArtifact?.cards.map((card) => ({ ...card })) ?? [],
       };
@@ -159,8 +162,26 @@ export function buildBaselineCatalog(
       access: bundle.access,
       ...(bundle.price === null ? {} : { price: bundle.price }),
       version: bundle.bundleVersion,
-      ...(bundle.productIds.apple
-        ? { storeProducts: { apple: { productId: bundle.productIds.apple, status: 'available' as const } } }
+      ...((bundle.productIds.apple || bundle.productIds.google)
+        ? { storeProducts: Object.fromEntries(
+            (['apple', 'google'] as const).flatMap((platform) => {
+              const productId = bundle.productIds[platform];
+              if (!productId) return [];
+              const tiers = bundle.discountProductIds[platform];
+              return [[platform, {
+                productId,
+                status: 'available' as const,
+                ...(Object.keys(tiers).length > 0 ? {
+                  ownedDeckCountProducts: Object.fromEntries(
+                    Object.entries(tiers).map(([count, tierProductId]) => [count, {
+                      productId: tierProductId,
+                      status: 'available' as const,
+                    }]),
+                  ),
+                } : {}),
+              }]];
+            }),
+          ) }
         : {}),
       deckIds: bundle.deckIds.filter((deckId) => activeDeckIds.has(deckId)),
     }));

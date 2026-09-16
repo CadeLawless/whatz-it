@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import {
@@ -10,7 +9,6 @@ import {
 } from 'react-native';
 
 import type { CatalogDeck } from '@/catalog/catalog-snapshot';
-import { FeaturedCardsCarousel } from '@/components/featured-cards-carousel';
 import { FeaturedCardsDeckStack } from '@/components/featured-cards-deck-stack';
 import { colors, radius, spacing } from '@/theme';
 
@@ -19,15 +17,15 @@ export function DeckDetailsHeader({
   deck,
   onBack,
   showBackButton = true,
-  showCarousel = true,
-  isBundleDeck = false,
+  stackActive = true,
+  stackInteraction = 'swipe',
 }: {
   backLabel: string;
   deck: CatalogDeck;
   onBack: () => void;
   showBackButton?: boolean;
-  showCarousel?: boolean;
-  isBundleDeck?: boolean;
+  stackActive?: boolean;
+  stackInteraction?: 'swipe' | 'tap';
 }) {
   const { width } = useWindowDimensions();
   const posterWidth = Math.min(156, Math.max(126, width * 0.36));
@@ -76,10 +74,6 @@ export function DeckDetailsHeader({
           </View>
 
           <View
-            accessibilityElementsHidden={showCarousel}
-            importantForAccessibility={
-              showCarousel ? 'no-hide-descendants' : 'auto'
-            }
             style={[
               styles.posterPositioner,
               {
@@ -87,34 +81,15 @@ export function DeckDetailsHeader({
               },
             ]}
           >
-            {showCarousel ? (
-              <View
-                style={[
-                  styles.poster,
-                  {
-                    width: posterWidth,
-                  },
-                ]}
-              >
-                {deck.coverUri || deck.coverImage ? (
-                  <Image
-                    contentFit="cover"
-                    source={deck.coverUri || deck.coverImage}
-                    style={styles.posterImage}
-                  />
-                ) : (
-                  <View style={styles.posterFallback}>
-                    <Text style={styles.posterFallbackText}>{deck.title}</Text>
-                  </View>
-                )}
-              </View>
-            ) : (
-              <FeaturedCardsDeckStack deck={deck} width={posterWidth} />
-            )}
+            <FeaturedCardsDeckStack
+              active={stackActive}
+              deck={deck}
+              interaction={stackInteraction}
+              width={posterWidth}
+            />
           </View>
         </View>
       </View>
-      {showCarousel && <FeaturedCardsCarousel cards={deck.featuredCards} isBundleDeck={isBundleDeck} />}
     </>
   );
 }
@@ -331,39 +306,5 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     justifyContent: 'center',
-  },
-  poster: {
-    aspectRatio: 2 / 3,
-    borderRadius: 7,
-    backgroundColor: colors.surface,
-    transform: [{ rotate: '-10deg' }],
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: -10,
-      height: 8,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 9,
-    elevation: 9,
-  },
-  posterImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 7,
-  },
-  posterFallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.md,
-    backgroundColor: colors.playSoft,
-  },
-  posterFallbackText: {
-    color: colors.ink,
-    fontSize: 16,
-    lineHeight: 20,
-    fontFamily: 'Inter_900Black',
-    textAlign: 'center',
-    textTransform: 'uppercase',
   },
 });

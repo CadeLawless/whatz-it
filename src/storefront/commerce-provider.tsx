@@ -5,9 +5,12 @@ import {
   type CommerceProductState,
   type CommerceTarget,
 } from './commerce-state';
+import type { BundleOffer } from './bundle-offer';
 
 export type CommerceAdapter = {
   getProductState: (target: CommerceTarget) => CommerceProductState;
+  getBundleOffer?: (bundleId: string) => BundleOffer | null;
+  getOwnedDeckIds?: () => ReadonlySet<string>;
   purchase?: (target: CommerceTarget) => void | Promise<void>;
   restorePurchases?: () => void | Promise<void>;
   restoreState?: CommerceRestoreState;
@@ -73,6 +76,24 @@ export function useCommerceProduct(target: CommerceTarget) {
           : undefined,
     state,
   };
+}
+
+export function localizedCommercePrice(state: CommerceProductState) {
+  if (state.status === 'available' || state.status === 'purchasing') {
+    return state.localizedPrice;
+  }
+  if (state.status === 'offline') return state.lastKnownPrice;
+  return undefined;
+}
+
+export function useBundleOffer(bundleId: string) {
+  return use(CommerceContext).getBundleOffer?.(bundleId) ?? null;
+}
+
+const noOwnedDeckIds: ReadonlySet<string> = new Set();
+
+export function useOwnedDeckIds() {
+  return use(CommerceContext).getOwnedDeckIds?.() ?? noOwnedDeckIds;
 }
 
 export function useRestorePurchases() {
