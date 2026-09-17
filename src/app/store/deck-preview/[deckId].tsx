@@ -25,7 +25,7 @@ import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
 import { CircularCloseButton } from '@/components/circular-close-button';
 import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
-import { bundleOwnershipLabel, bundleRemainingDeckLabel } from '@/storefront/bundle-offer';
+import { bundlePurchaseHint as bundlePurchaseHintForOffer } from '@/storefront/bundle-offer';
 import { localizedCommercePrice, useBundleOffer, useCommerceProduct } from '@/storefront/commerce-provider';
 import { colors, spacing } from '@/theme';
 
@@ -85,10 +85,9 @@ export default function DeckPreviewSheet() {
   const deckCommerce = useCommerceProduct(deckCommerceTarget);
   const bundleCommerce = useCommerceProduct(bundleCommerceTarget);
   const bundleOffer = useBundleOffer(bundleCommerceTarget.id);
-  const bundleOwnership = bundleOwnershipLabel(bundleOffer);
   const deckPrice = localizedCommercePrice(deckCommerce.state);
   const bundlePrice = localizedCommercePrice(bundleCommerce.state);
-  const bundlePurchaseHint = bundlePrice ? bundleRemainingDeckLabel(bundleOffer) : null;
+  const bundlePurchaseHint = bundlePrice ? bundlePurchaseHintForOffer(bundleOffer) : null;
 
   const showDeckAtIndex = useCallback(
     (targetIndex: number) => {
@@ -191,9 +190,6 @@ export default function DeckPreviewSheet() {
                 <Text numberOfLines={2} style={styles.sheetTitle}>
                   {bundle?.title ?? 'Deck Preview'}
                 </Text>
-                {bundleOwnership && (
-                  <Text style={styles.bundleOwnershipBadge}>{bundleOwnership}</Text>
-                )}
               </View>
               <CircularCloseButton
                 accessibilityLabel="Close preview"
@@ -313,6 +309,7 @@ export default function DeckPreviewSheet() {
                   {bundle && bundleCommerce.state.status !== 'owned' && (
                     <CommercePurchaseCard
                       comparisonPrice={bundlePurchaseHint ? bundleOffer?.comparisonPrice : null}
+                      comparisonKind={bundleOffer?.comparisonKind}
                       onOwned={() =>
                         router.replace({
                           pathname: '/store/bundle/[bundleId]',
@@ -368,17 +365,6 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 22,
     lineHeight: 26,
-    fontFamily: 'Inter_900Black',
-    fontWeight: '900',
-  },
-  bundleOwnershipBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 99,
-    backgroundColor: '#EAF4FF',
-    color: colors.play,
-    fontSize: 12,
-    lineHeight: 16,
     fontFamily: 'Inter_900Black',
     fontWeight: '900',
   },

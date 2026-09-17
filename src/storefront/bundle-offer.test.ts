@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { bundleOffer, bundleOwnershipLabel, bundleRemainingDeckLabel } from './bundle-offer';
+import {
+  bundleOffer,
+  bundlePurchaseHint,
+  bundleRemainingDeckLabel,
+  bundleRemainingDeckSavingsLabel,
+} from './bundle-offer';
 
 const deckIds = ['a', 'b', 'c', 'd'];
 const bundle = {
@@ -54,21 +59,37 @@ describe('bundle offer', () => {
     assert.equal(bundleRemainingDeckLabel(bundleOffer(bundle, new Set(deckIds), 'apple', prices)), null);
     assert.equal(bundleRemainingDeckLabel({ ...bundleOffer(bundle, new Set(['a', 'b']), 'apple', prices), comparisonPrice: null }), null);
   });
-  it('shows the owned-deck badge only for partial ownership', () => {
-    assert.equal(bundleOwnershipLabel(bundleOffer(bundle, new Set(), 'apple', prices)), null);
-    assert.equal(
-      bundleOwnershipLabel(bundleOffer(bundle, new Set(['a', 'b']), 'apple', prices)),
-      '2/4 decks owned',
-    );
-    assert.equal(bundleOwnershipLabel(bundleOffer(bundle, new Set(deckIds), 'apple', prices)), null);
+  it('shows bundle savings copy for a new buyer with a comparison', () => {
+    assert.equal(bundlePurchaseHint(bundleOffer(bundle, new Set(), 'apple', prices)), 'Save more by bundling.');
+    assert.equal(bundlePurchaseHint(bundleOffer(bundle, new Set(['a', 'b']), 'apple', prices)), 'Buy the last 2 decks');
+    const expensiveBundle = new Map(prices);
+    expensiveBundle.set('bundle.full', { currency: 'USD', price: 9.99 });
+    assert.equal(bundlePurchaseHint(bundleOffer(bundle, new Set(), 'apple', expensiveBundle)), null);
+    assert.equal(bundlePurchaseHint(null), null);
   });
+  it('claims savings on remaining decks only when the tier beats their separate prices', () => {
+    assert.equal(bundleRemainingDeckSavingsLabel(bundleOffer(bundle, new Set(['a', 'b']), 'apple', prices)), 'Pay less for the last 2 decks!');
+    assert.equal(bundleRemainingDeckSavingsLabel(bundleOffer(bundle, new Set(['a', 'b', 'c']), 'apple', prices)), null);
 
+    const expensiveTier = new Map(prices);
+    expensiveTier.set('bundle.owned_2', { currency: 'USD', price: 4.99 });
+    assert.equal(bundleRemainingDeckSavingsLabel(bundleOffer(bundle, new Set(['a', 'b']), 'apple', expensiveTier)), null);
+
+    const missingRemainingPrice = new Map(prices);
+    missingRemainingPrice.delete('deck.c');
+    assert.equal(bundleRemainingDeckSavingsLabel(bundleOffer(bundle, new Set(['a', 'b']), 'apple', missingRemainingPrice)), null);
+
+    const missingTier = new Map(prices);
+    missingTier.delete('bundle.owned_2');
+    assert.equal(bundleRemainingDeckSavingsLabel(bundleOffer(bundle, new Set(['a', 'b']), 'apple', missingTier)), null);
+  });
   it('compares the live bundle product with all individually priced decks', () => {
     assert.deepEqual(bundleOffer(bundle, new Set(), 'apple', prices), {
       alreadyOwnedDeckCount: 0,
       totalDeckCount: 4,
       comparisonPrice: roundedSeparateTotal,
       comparisonKind: 'individual-decks',
+      savesVersusRemainingDecks: false,
     });
   });
 
@@ -97,6 +118,7 @@ describe('bundle offer', () => {
       totalDeckCount: 4,
       comparisonPrice: fullBundlePrice,
       comparisonKind: 'bundle',
+      savesVersusRemainingDecks: true,
     });
   });
 
@@ -158,6 +180,7 @@ describe('bundle offer', () => {
       totalDeckCount: 4,
       comparisonPrice: null,
       comparisonKind: null,
+      savesVersusRemainingDecks: false,
     });
   });
 });

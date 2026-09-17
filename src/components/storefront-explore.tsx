@@ -27,7 +27,7 @@ import {
 import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { CatalogCoverImage } from '@/components/catalog-cover-image';
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
-import { bundleOwnershipLabel } from '@/storefront/bundle-offer';
+import { bundleRemainingDeckSavingsLabel } from '@/storefront/bundle-offer';
 import {
   localizedCommercePrice,
   useBundleOffer,
@@ -36,6 +36,7 @@ import {
   useRestorePurchases,
 } from '@/storefront/commerce-provider';
 import { successfulRestoreNotice } from '@/storefront/restore-purchases-notice';
+import { colors } from '@/theme';
 
 const PAGE_SIZE = 24;
 
@@ -365,6 +366,10 @@ export const StorefrontExplore = forwardRef<
         )}
       </View>
 
+      {section === 'bundles' && search.trim().length === 0 && (
+        <Text style={styles.bundleSavingsIntro}>Save more when you buy decks as a bundle!</Text>
+      )}
+
       <Animated.View
         entering={reduceMotion ? undefined : FadeInUp.duration(200)}
         key={section}
@@ -558,7 +563,9 @@ function BundleBrowseCard({
   const bundleStatus = commerce.state.status === 'owned'
     ? 'OWNED'
     : localizedPrice;
-  const ownedLabel = bundleOwnershipLabel(offer);
+  const remainingSavingsLabel = localizedPrice
+    ? bundleRemainingDeckSavingsLabel(offer)
+    : null;
   const comparisonPrice = localizedPrice ? offer?.comparisonPrice : null;
   const comparisonDescription = offer?.comparisonKind === 'bundle' ? 'regular bundle price' : 'separately';
   const decks = useMemo(
@@ -568,7 +575,7 @@ function BundleBrowseCard({
   return (
     <Pressable
       accessibilityHint="Opens bundle details"
-      accessibilityLabel={`${bundle.title}, ${bundle.deckIds.length} decks${ownedLabel ? `, ${ownedLabel}` : ''}${comparisonPrice ? `, ${comparisonPrice} ${comparisonDescription}` : ''}${bundleStatus ? `, bundle ${bundleStatus}` : ''}`}
+      accessibilityLabel={`${bundle.title}, ${bundle.deckIds.length} decks${bundleStatus ? `, bundle ${bundleStatus}` : ''}${comparisonPrice ? `, compared with ${comparisonPrice} ${comparisonDescription}` : ''}${remainingSavingsLabel ? `, ${remainingSavingsLabel}` : ''}`}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
@@ -576,66 +583,86 @@ function BundleBrowseCard({
         pressed && styles.cardPressed,
       ]}
     >
-      <View
-        style={[
-          styles.bundleCopy,
-          fanSide === 'left' ? styles.bundleCopyRight : styles.bundleCopyLeft,
-        ]}
-      >
-        <Text numberOfLines={2} style={styles.bundleTitle}>{bundle.title}</Text>
-        <Text numberOfLines={3} style={styles.bundleDescription}>{bundle.description || `${bundle.deckIds.length} decks in one collection.`}</Text>
-        <View style={styles.bundleMetaRow}>
+      <View style={styles.bundleBody}>
+        <View
+          style={[
+            styles.bundleCopy,
+            fanSide === 'left' ? styles.bundleCopyRight : styles.bundleCopyLeft,
+          ]}
+        >
+          <Text numberOfLines={2} style={styles.bundleTitle}>{bundle.title}</Text>
+          <Text numberOfLines={3} style={styles.bundleDescription}>{bundle.description || `${bundle.deckIds.length} decks in one collection.`}</Text>
+        </View>
+        <View
+          accessibilityElementsHidden
+          style={[
+            styles.fan,
+            fanSide === 'left' ? styles.fanLeft : styles.fanRight,
+          ]}
+        >
+          {decks.map((deck, index) => {
+            const fanIndex = decks.length - 1 - index;
+            return (
+              <View
+                key={deck!.id}
+                style={[
+                  styles.fanCard,
+                  {
+                    ...(fanSide === 'left'
+                      ? { right: 13 + fanIndex * 14 }
+                      : { left: 13 + fanIndex * 14 }),
+                    transform: [
+                      {
+                        rotate: `${(fanIndex - (decks.length - 1) / 2) * 8 * (fanSide === 'left' ? -1 : 1)}deg`,
+                      },
+                      { translateY: Math.abs(fanIndex - (decks.length - 1) / 2) * 4 },
+                    ],
+                    zIndex: decks.length - index,
+                  },
+                ]}
+              >
+                <CatalogCoverImage
+                  cachePolicy="memory-disk"
+                  contentFit="cover"
+                  deck={deck!}
+                  fallback={<View style={styles.fanFallback} />}
+                  localOnly
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+            );
+          })}
+        </View>
+      </View>
+      <View style={styles.bundlePriceFooter}>
+        {fanSide === 'left' && (
           <Text style={styles.bundleMeta}>{bundle.deckIds.length} DECKS</Text>
-          {bundleStatus && (
-            <View style={styles.bundlePriceBadge}>
-              {comparisonPrice && (
+        )}
+        {bundleStatus && (
+          <View style={styles.bundlePriceBadge}>
+            <View style={[
+              styles.bundlePriceRow,
+              fanSide === 'left' && styles.bundlePriceRowRight,
+            ]}>
+              {fanSide === 'left' && comparisonPrice && (
                 <Text style={styles.bundleComparisonPrice}>{comparisonPrice}</Text>
               )}
               <Text style={styles.bundlePrice}>{bundleStatus}</Text>
+              {fanSide === 'right' && comparisonPrice && (
+                <Text style={styles.bundleComparisonPrice}>{comparisonPrice}</Text>
+              )}
             </View>
-          )}
-        </View>
-        {ownedLabel && <Text style={styles.bundleOwnedBadge}>{ownedLabel}</Text>}
-      </View>
-      <View
-        accessibilityElementsHidden
-        style={[
-          styles.fan,
-          fanSide === 'left' ? styles.fanLeft : styles.fanRight,
-        ]}
-      >
-        {decks.map((deck, index) => {
-          const fanIndex = decks.length - 1 - index;
-          return (
-            <View
-              key={deck!.id}
-              style={[
-                styles.fanCard,
-                {
-                  ...(fanSide === 'left'
-                    ? { right: 13 + fanIndex * 14 }
-                    : { left: 13 + fanIndex * 14 }),
-                  transform: [
-                    {
-                      rotate: `${(fanIndex - (decks.length - 1) / 2) * 8 * (fanSide === 'left' ? -1 : 1)}deg`,
-                    },
-                    { translateY: Math.abs(fanIndex - (decks.length - 1) / 2) * 4 },
-                  ],
-                  zIndex: decks.length - index,
-                },
-              ]}
-            >
-              <CatalogCoverImage
-                cachePolicy="memory-disk"
-                contentFit="cover"
-                deck={deck!}
-                fallback={<View style={styles.fanFallback} />}
-                localOnly
-                style={StyleSheet.absoluteFill}
-              />
-            </View>
-          );
-        })}
+            {remainingSavingsLabel && (
+              <Text style={[
+                styles.bundleSavingsLabel,
+                fanSide === 'left' && styles.bundleSavingsLabelRight,
+              ]}>{remainingSavingsLabel}</Text>
+            )}
+          </View>
+        )}
+        {fanSide === 'right' && (
+          <Text style={styles.bundleMeta}>{bundle.deckIds.length} DECKS</Text>
+        )}
       </View>
     </Pressable>
   );
@@ -717,22 +744,27 @@ const styles = StyleSheet.create({
   clearSearch: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#E2E8F0' },
   clearSearchText: { color: '#475569', fontSize: 23, lineHeight: 25, fontFamily: 'Inter_700Bold', fontWeight: '700', marginTop: -2 },
   resultSurface: { gap: 14 },
+  bundleSavingsIntro: { color: '#475569', fontSize: 13, lineHeight: 18, fontFamily: 'Inter_600SemiBold', fontWeight: '600' },
   bundleList: { gap: 16 },
-  bundleCard: { minHeight: 190, position: 'relative', justifyContent: 'center', overflow: 'hidden', padding: 22, borderWidth: 1, borderColor: '#DCE8F5', borderRadius: 26, backgroundColor: '#FFFFFF', boxShadow: '0 5px 16px rgba(71, 85, 105, 0.10)' },
-  bundleCopy: { width: '57%', gap: 8, zIndex: 10 },
+  bundleCard: { minHeight: 190, overflow: 'hidden', gap: 12, padding: 22, borderWidth: 1, borderColor: '#DCE8F5', borderRadius: 26, backgroundColor: '#FFFFFF', boxShadow: '0 5px 16px rgba(71, 85, 105, 0.10)' },
+  bundlePriceFooter: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, zIndex: 3 },
+  bundleBody: { minHeight: 170, position: 'relative', justifyContent: 'center' },
+  bundleCopy: { width: '62%', gap: 8, zIndex: 10 },
   bundleCopyLeft: { alignSelf: 'flex-start' },
-  bundleCopyRight: { alignSelf: 'flex-end' },
+  bundleCopyRight: { alignSelf: 'flex-end', width: '60%' },
   bundleTitle: { color: '#111827', fontSize: 21, lineHeight: 25, fontFamily: 'Inter_900Black', fontWeight: '900' },
   bundleDescription: { color: '#64748B', fontSize: 13, lineHeight: 18 },
-  bundleMeta: { color: '#459EFE', fontSize: 11, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.7 },
-  bundleMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 9 },
-  bundlePriceBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, backgroundColor: '#EFF6FF' },
+  bundleMeta: { color: '#459EFE', fontSize: 11, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.7, paddingTop: 9 },
+  bundlePriceBadge: { maxWidth: '78%', flexShrink: 1, gap: 2, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: '#FFF1E8' },
+  bundlePriceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  bundlePriceRowRight: { justifyContent: 'flex-end' },
   bundleComparisonPrice: { color: '#64748B', fontSize: 11, fontFamily: 'Inter_600SemiBold', fontWeight: '600', textDecorationLine: 'line-through' },
-  bundlePrice: { color: '#111827', fontSize: 12, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.3 },
-  bundleOwnedBadge: { alignSelf: 'flex-start', color: '#1D4ED8', fontSize: 11, fontFamily: 'Inter_700Bold', fontWeight: '700', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, backgroundColor: '#DBEAFE' },
-  fan: { width: 150, height: 150, position: 'absolute', top: '50%', marginTop: -57, zIndex: 2 },
-  fanLeft: { left: -30, transform: [{ rotate: '12deg' }] },
-  fanRight: { right: -30, transform: [{ rotate: '-12deg' }] },
+  bundlePrice: { color: colors.pass, fontSize: 17, lineHeight: 21, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.2 },
+  bundleSavingsLabel: { color: '#B4470D', fontSize: 11, lineHeight: 15, fontFamily: 'Inter_700Bold', fontWeight: '700' },
+  bundleSavingsLabelRight: { textAlign: 'right' },
+  fan: { width: 150, height: 150, position: 'absolute', top: '50%', marginTop: -75, zIndex: 2 },
+  fanLeft: { left: -52, transform: [{ rotate: '12deg' }] },
+  fanRight: { right: -52, transform: [{ rotate: '-12deg' }] },
   fanCard: { width: 82, aspectRatio: 2 / 3, position: 'absolute', top: 10, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 9, backgroundColor: '#DCE5EF', boxShadow: '0 5px 12px rgba(15, 23, 42, 0.24)' },
   fanFallback: { flex: 1, backgroundColor: '#BFDBFE' },
   deckList: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },

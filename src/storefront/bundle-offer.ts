@@ -1,5 +1,5 @@
-import { selectBundleProduct, type StorePlatform } from './bundle-product-selection';
 import type { StoreProductMappings } from '@/types/deck';
+import { selectBundleProduct, type StorePlatform } from './bundle-product-selection';
 
 type PricedDeck = { id: string; storeProducts?: StoreProductMappings };
 type PricedBundle = {
@@ -15,16 +15,8 @@ export type BundleOffer = {
   /** The regular bundle price for an ownership discount, or the separate-deck total for a new buyer. */
   comparisonPrice: string | null;
   comparisonKind: 'bundle' | 'individual-decks' | null;
+  savesVersusRemainingDecks: boolean;
 };
-
-export function bundleOwnershipLabel(offer: BundleOffer | null): string | null {
-  if (
-    !offer
-    || offer.alreadyOwnedDeckCount <= 0
-    || offer.alreadyOwnedDeckCount >= offer.totalDeckCount
-  ) return null;
-  return `${offer.alreadyOwnedDeckCount}/${offer.totalDeckCount} decks owned`;
-}
 
 export function bundleRemainingDeckLabel(offer: BundleOffer | null): string | null {
   if (
@@ -36,6 +28,21 @@ export function bundleRemainingDeckLabel(offer: BundleOffer | null): string | nu
   ) return null;
   const remaining = offer.totalDeckCount - offer.alreadyOwnedDeckCount;
   return remaining === 1 ? 'Buy the last deck' : `Buy the last ${remaining} decks`;
+}
+
+export function bundlePurchaseHint(offer: BundleOffer | null): string | null {
+  if (offer?.comparisonKind === 'individual-decks' && offer.comparisonPrice) {
+    return 'Save more by bundling!';
+  }
+  return bundleRemainingDeckLabel(offer);
+}
+
+export function bundleRemainingDeckSavingsLabel(offer: BundleOffer | null): string | null {
+  if (!offer?.savesVersusRemainingDecks || offer.alreadyOwnedDeckCount <= 0) return null;
+  const remaining = offer.totalDeckCount - offer.alreadyOwnedDeckCount;
+  return remaining === 1
+    ? 'Pay less for the last deck!'
+    : `Pay less for the last ${remaining} decks!`;
 }
 
 export function bundleOffer(
@@ -54,6 +61,7 @@ export function bundleOffer(
     totalDeckCount: bundle.deckIds.length,
     comparisonPrice: null,
     comparisonKind: null,
+    savesVersusRemainingDecks: false,
   };
   if (!platform || !selection?.productId || bundle.decks.length !== bundle.deckIds.length) {
     return base;
@@ -64,6 +72,25 @@ export function bundleOffer(
 
   if (alreadyOwnedDeckCount > 0) {
     if (selection.usedFullPriceFallback) return base;
+    let remainingDeckTotal = 0;
+    let hasAllRemainingPrices = true;
+    for (const deck of bundle.decks) {
+      if (ownedDeckIds.has(deck.id)) continue;
+      const mapping = deck.storeProducts?.[platform];
+      const individual = mapping?.status === 'available'
+        ? storePrices.get(mapping.productId)
+        : undefined;
+      if (!individual || individual.currency !== selected.currency || !validPrice(individual.price)) {
+        hasAllRemainingPrices = false;
+        break;
+      }
+      remainingDeckTotal += individual.price;
+    }
+    const partialBase = {
+      ...base,
+      savesVersusRemainingDecks:
+        hasAllRemainingPrices && remainingDeckTotal > selected.price + 0.0001,
+    };
     const fullProduct = bundle.storeProducts?.[platform];
     const fullPrice = fullProduct?.status === 'available'
       ? storePrices.get(fullProduct.productId)
@@ -73,15 +100,15 @@ export function bundleOffer(
       || fullPrice.currency !== selected.currency
       || !validPrice(fullPrice.price)
       || fullPrice.price <= selected.price + 0.0001
-    ) return base;
+    ) return partialBase;
     try {
       return {
-        ...base,
+        ...partialBase,
         comparisonPrice: formatComparisonPrice(fullPrice.price, selected.currency),
         comparisonKind: 'bundle',
       };
     } catch {
-      return base;
+      return partialBase;
     }
   }
 

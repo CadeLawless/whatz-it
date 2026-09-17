@@ -13,7 +13,7 @@ import { BundleCoverCarousel } from '@/components/bundle-cover-carousel';
 import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
-import { bundleOwnershipLabel, bundleRemainingDeckLabel } from '@/storefront/bundle-offer';
+import { bundlePurchaseHint } from '@/storefront/bundle-offer';
 import { colors, radius, spacing, typography } from '@/theme';
 import { localizedCommercePrice, useBundleOffer, useCommerceProduct, useOwnedDeckIds } from '@/storefront/commerce-provider';
 
@@ -43,10 +43,9 @@ export default function BundleDetailsScreen() {
     };
   const commerce = useCommerceProduct(resolvedCommerceTarget);
   const offer = useBundleOffer(bundleId);
-  const ownershipLabel = bundleOwnershipLabel(offer);
   const ownedDeckIds = useOwnedDeckIds();
   const purchaseHint = localizedCommercePrice(commerce.state)
-    ? bundleRemainingDeckLabel(offer)
+    ? bundlePurchaseHint(offer)
     : null;
   const sourceDeck = fromDeckId ? catalog.getDeckById(fromDeckId) : undefined;
   const backLabel = sourceDeck ? `Back to ${sourceDeck.title}` : 'Back to Explore';
@@ -87,9 +86,6 @@ export default function BundleDetailsScreen() {
             <Text style={styles.eyebrow}>BUNDLE</Text>
             <Text style={styles.title}>{bundle.title}</Text>
             <Text style={styles.description}>{bundle.description}</Text>
-            {ownershipLabel && (
-              <Text style={styles.ownershipBadge}>{ownershipLabel}</Text>
-            )}
           </View>
 
           <BundleCoverCarousel
@@ -107,6 +103,7 @@ export default function BundleDetailsScreen() {
         <View style={styles.purchaseFooter}>
           <CommercePurchaseCard
             comparisonPrice={purchaseHint ? offer?.comparisonPrice : null}
+            comparisonKind={offer?.comparisonKind}
             onPurchase={commerce.purchase}
             onRetry={commerce.retry}
             purchaseHint={purchaseHint}
@@ -171,19 +168,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   description: { color: colors.white, fontSize: 15, lineHeight: 21 },
-  ownershipBadge: {
-    alignSelf: 'flex-start',
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    color: colors.play,
-    fontSize: 12,
-    lineHeight: 17,
-    fontFamily: 'Inter_900Black',
-    fontWeight: '900',
-  },
   purchaseFooter: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

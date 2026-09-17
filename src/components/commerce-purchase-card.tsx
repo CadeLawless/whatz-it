@@ -16,6 +16,7 @@ import {
 } from '@/storefront/commerce-state';
 
 type CommercePurchaseCardProps = {
+  comparisonKind?: 'bundle' | 'individual-decks' | null;
   comparisonPrice?: string | null;
   onOwned?: () => void;
   onPurchase?: () => void;
@@ -29,6 +30,7 @@ type CommercePurchaseCardProps = {
 };
 
 export function CommercePurchaseCard({
+  comparisonKind,
   comparisonPrice,
   onOwned,
   onPurchase,
@@ -87,6 +89,9 @@ export function CommercePurchaseCard({
     ? state.localizedPrice
     : null;
   const visibleButtonLabel = priceSuffix ? `BUY ${target.kind.toUpperCase()}` : buttonLabel;
+  const comparisonDescription = comparisonKind === 'individual-decks'
+    ? 'for decks bought separately'
+    : 'for the regular bundle';
 
   return (
     <View
@@ -107,7 +112,7 @@ export function CommercePurchaseCard({
         <Text style={styles.purchaseHint}>{purchaseHint}</Text>
       )}
       <Pressable
-        accessibilityLabel={priceSuffix ? `${visibleButtonLabel}, regular price ${comparisonPrice}, now ${priceSuffix}${showTargetTitle ? `, ${target.title}` : ''}` : accessibilityLabel}
+        accessibilityLabel={priceSuffix ? `${visibleButtonLabel}, ${comparisonPrice} ${comparisonDescription}, now ${priceSuffix}${showTargetTitle ? `, ${target.title}` : ''}` : accessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ busy: presentation.busy, disabled }}
         disabled={disabled}
