@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import {
@@ -17,6 +18,7 @@ export function DeckDetailsHeader({
   deck,
   onBack,
   showBackButton = true,
+  showFeaturedStack = true,
   stackActive = true,
   stackInteraction = 'swipe',
 }: {
@@ -24,6 +26,7 @@ export function DeckDetailsHeader({
   deck: CatalogDeck;
   onBack: () => void;
   showBackButton?: boolean;
+  showFeaturedStack?: boolean;
   stackActive?: boolean;
   stackInteraction?: 'swipe' | 'tap';
 }) {
@@ -81,12 +84,28 @@ export function DeckDetailsHeader({
               },
             ]}
           >
-            <FeaturedCardsDeckStack
-              active={stackActive}
-              deck={deck}
-              interaction={stackInteraction}
-              width={posterWidth}
-            />
+            {showFeaturedStack ? (
+              <FeaturedCardsDeckStack
+                active={stackActive}
+                deck={deck}
+                interaction={stackInteraction}
+                width={posterWidth}
+              />
+            ) : (
+              <View style={[styles.poster, { width: posterWidth }]}>
+                {deck.coverUri || deck.coverImage ? (
+                  <Image
+                    contentFit="cover"
+                    source={deck.coverUri || deck.coverImage}
+                    style={styles.posterImage}
+                  />
+                ) : (
+                  <View style={styles.posterFallback}>
+                    <Text style={styles.posterFallbackText}>{deck.title}</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
         </View>
       </View>
@@ -306,5 +325,32 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     justifyContent: 'center',
+  },
+  poster: {
+    aspectRatio: 2 / 3,
+    borderRadius: 7,
+    backgroundColor: colors.surface,
+    transform: [{ rotate: '-10deg' }],
+    shadowColor: '#000000',
+    shadowOffset: { width: -10, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 9,
+    elevation: 9,
+  },
+  posterImage: { width: '100%', height: '100%', borderRadius: 7 },
+  posterFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+    backgroundColor: colors.playSoft,
+  },
+  posterFallbackText: {
+    color: colors.ink,
+    fontSize: 16,
+    lineHeight: 20,
+    fontFamily: 'Inter_900Black',
+    textAlign: 'center',
+    textTransform: 'uppercase',
   },
 });

@@ -150,7 +150,6 @@ export default function DeckLibraryScreen() {
   const screenRef = useRef<View>(null);
   const openingRoundResultsRef = useRef(false);
   const deckSearchInputRef = useRef<TextInput>(null);
-  const isScrollingProgrammatically = useRef(false);
   const currentScrollOffset = useRef(0);
   const exploreRef = useRef<{ blurSearch: () => void }>(null);
   const libraryTop = useRef(0);
@@ -469,7 +468,6 @@ export default function DeckLibraryScreen() {
   ]);
 
   const handleDeckSearchFocus = useCallback(() => {
-    isScrollingProgrammatically.current = true;
     deckSearchInputRef.current?.measureInWindow((x, screenY, width, height) => {
       const targetScreenY = 80; // Position it 80px from top
       const newScrollOffset = currentScrollOffset.current + (screenY - targetScreenY);
@@ -478,10 +476,6 @@ export default function DeckLibraryScreen() {
         animated: true,
         y: Math.max(0, newScrollOffset),
       });
-
-      setTimeout(() => {
-        isScrollingProgrammatically.current = false;
-      }, 500);
     });
   }, []);
 
@@ -976,20 +970,21 @@ export default function DeckLibraryScreen() {
         ref={scrollViewRef}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => {
+          // Result filtering can scroll this view as its content shrinks.
+          // Only a user drag should dismiss an active search field.
+          deckSearchInputRef.current?.blur();
+          exploreRef.current?.blurSearch();
+
+          if (isDeckSearchOpen && !deckSearch.trim()) {
+            setIsDeckSearchOpen(false);
+          }
+        }}
         onScroll={(e) => {
           currentScrollOffset.current = e.nativeEvent.contentOffset.y;
 
           if (isSortMenuOpen) {
             setIsSortMenuOpen(false);
-          }
-
-          if (!isScrollingProgrammatically.current) {
-            deckSearchInputRef.current?.blur();
-            exploreRef.current?.blurSearch();
-
-            if (isDeckSearchOpen && !deckSearch.trim()) {
-              setIsDeckSearchOpen(false);
-            }
           }
         }}
         scrollEventThrottle={16}
@@ -1026,7 +1021,13 @@ export default function DeckLibraryScreen() {
           style={[styles.library, { width: pageWidth, paddingHorizontal: horizontalPadding }]}
         >
           {releaseCapabilities.storefront && (
-            <HomeModeControl mode={homeMode} onChange={setHomeMode} />
+            <HomeModeControl
+              mode={homeMode}
+              onChange={(mode) => {
+                if (mode === 'my-decks') setLibrarySection('decks');
+                setHomeMode(mode);
+              }}
+            />
           )}
 
           {!releaseCapabilities.storefront || homeMode === 'my-decks' ? (
@@ -1340,8 +1341,6 @@ function DeckLibraryToolbar({
           ]}
         >
           <View style={styles.deckSortArea}>
-            <Text style={styles.deckSortLabel}>SORT BY</Text>
-
             <View style={styles.deckSortDropdownWrapper}>
               <Pressable
                 accessibilityLabel={`Sort decks by ${DECK_SORT_LABELS[sort]}`}
@@ -1706,13 +1705,6 @@ const styles = StyleSheet.create({
     left: '62.5%',
   },
   deckLibraryContent: { gap: 14, marginTop: -10 },
-  deckSortLabel: {
-    color: '#64748B',
-    fontSize: 10,
-    fontFamily: 'Inter_900Black',
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
   deckToolbarContainer: {
     height: 48,
     marginTop: 10,

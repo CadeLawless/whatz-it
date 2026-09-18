@@ -127,14 +127,9 @@ export const StorefrontExplore = forwardRef<
   const restoreNoticePending = useRef(false);
   const [testingPrompt, setTestingPrompt] = useState<'new-device' | 'reset-ownership' | null>(null);
   const searchInputRef = useRef<TextInput>(null);
-  const isScrollingProgrammatically = useRef(false);
 
   useImperativeHandle(ref, () => ({
-    blurSearch: () => {
-      if (!isScrollingProgrammatically.current) {
-        searchInputRef.current?.blur();
-      }
-    },
+    blurSearch: () => searchInputRef.current?.blur(),
   }), []);
   const [section, setSection] = useState<ExploreSection>('bundles');
   const [search, setSearch] = useState('');
@@ -340,13 +335,7 @@ export const StorefrontExplore = forwardRef<
           autoCapitalize="none"
           autoCorrect={false}
           onChangeText={setSearch}
-          onFocus={() => {
-            isScrollingProgrammatically.current = true;
-            onBrowseFocus?.(searchOffset);
-            setTimeout(() => {
-              isScrollingProgrammatically.current = false;
-            }, 500);
-          }}
+          onFocus={() => onBrowseFocus?.(searchOffset)}
           placeholder={section === 'bundles' ? 'Search bundles or included decks' : 'Search decks'}
           placeholderTextColor="#94A3B8"
           ref={searchInputRef}

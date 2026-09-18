@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCatalog } from '@/catalog/catalog-provider';
 import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
+import { FeaturedCardsCarousel } from '@/components/featured-cards-carousel';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { useCommerceProduct } from '@/storefront/commerce-provider';
@@ -76,7 +77,9 @@ export default function StoreDeckDetailsScreen() {
             backLabel="Back to Explore"
             deck={deck}
             onBack={() => router.back()}
+            showFeaturedStack={false}
           />
+          <FeaturedCardsCarousel cards={deck.featuredCards} isBundleDeck={false} />
 
           <View style={styles.copy}>
             {bundles.length > 0 && (

@@ -1,9 +1,9 @@
+import { traceAndroidGameplay } from '@/utils/android-gameplay-trace';
 import type { AudioPlayer } from 'expo-audio';
 import { RoundSoundPlayback } from './round-sound-playback';
-import { traceAndroidGameplay } from '@/utils/android-gameplay-trace';
 
-import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 import type { RoundSoundId } from '@/video/round-sound-plan';
+import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
 export type { RoundSoundId } from '@/video/round-sound-plan';
 
@@ -22,10 +22,11 @@ const ROUND_SOUND_SOURCES: Record<RoundSoundId, number> = {
 
 const DEFAULT_ROUND_SOUND_VOLUME = 1;
 const ROUND_SOUND_VOLUMES: Partial<Record<RoundSoundId, number>> = {
-  correct: 0.4,
-  flip: 0.7,
-  'round-start': 0.65,
-  'final-tick': 0.8,
+  correct: 0.3,
+  pass: 0.8,
+  flip: 0.65,
+  'round-start': 0.7,
+  'final-tick': 0.65
 };
 const playback = new RoundSoundPlayback();
 

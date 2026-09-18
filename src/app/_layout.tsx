@@ -212,6 +212,8 @@ function RootLayoutContent() {
           <Stack.Screen
             name="store/deck/[deckId]"
             options={{
+              gestureEnabled: true,
+              fullScreenGestureEnabled: false,
               headerShown: false,
               orientation: 'portrait',
               title: 'Deck details',

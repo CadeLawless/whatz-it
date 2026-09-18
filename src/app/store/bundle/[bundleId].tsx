@@ -114,6 +114,7 @@ export default function BundleDetailsScreen() {
             onPurchase={commerce.purchase}
             onRetry={commerce.retry}
             purchaseHint={purchaseHint}
+            purchaseHintColor="blue"
             state={commerce.state}
             target={resolvedCommerceTarget}
           />

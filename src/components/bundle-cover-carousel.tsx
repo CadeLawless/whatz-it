@@ -16,8 +16,8 @@ import { colors, spacing } from '@/theme';
 
 const CARD_WIDTH = 138;
 const CARD_GAP = 14;
-const AUTO_ADVANCE_MS = 5_500;
-const MANUAL_PAUSE_MS = 12_000;
+const AUTO_ADVANCE_MS = 4_000;
+const MANUAL_PAUSE_MS = 5_000;
 
 export function BundleCoverCarousel({
   decks,

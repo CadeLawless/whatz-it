@@ -23,6 +23,7 @@ type CommercePurchaseCardProps = {
   onRetry?: () => void;
   purchaseLabel?: string;
   purchaseHint?: string | null;
+  purchaseHintColor?: 'brand' | 'blue';
   primaryColor?: 'brand' | 'blue';
   state: CommerceProductState;
   showTargetTitle?: boolean;
@@ -38,6 +39,7 @@ export function CommercePurchaseCard({
   onRetry,
   purchaseLabel,
   purchaseHint,
+  purchaseHintColor = 'brand',
   primaryColor = 'brand',
   state,
   showTargetTitle = false,
@@ -111,7 +113,9 @@ export function CommercePurchaseCard({
         </View>
       )}
       {showPurchaseOffer && (
-        <Text style={styles.purchaseHint}>{purchaseHint}</Text>
+        <Text style={[styles.purchaseHint, purchaseHintColor === 'blue' && styles.bluePurchaseHint]}>
+          {purchaseHint}
+        </Text>
       )}
       <Pressable
         accessibilityLabel={priceSuffix ? `${visibleButtonLabel}, ${comparisonPrice} ${comparisonDescription}, now ${priceSuffix}${showTargetTitle ? `, ${target.title}` : ''}` : accessibilityLabel}
@@ -159,6 +163,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.sm,
   },
+  bluePurchaseHint: { color: colors.play },
   warningCopy: {
     gap: spacing.xs,
     marginBottom: spacing.sm,
@@ -193,7 +198,7 @@ const styles = StyleSheet.create({
   mutedButton: { backgroundColor: '#CBD5E1' },
   primaryButton: { backgroundColor: colors.pass },
   bluePrimaryButton: { backgroundColor: colors.play },
-  successButton: { backgroundColor: colors.correctText },
+  successButton: { backgroundColor: '#4BCDFD' },
   warningButton: { backgroundColor: colors.pass },
   disabledButton: { opacity: 0.72 },
   buttonText: {

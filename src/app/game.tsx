@@ -750,10 +750,10 @@ export default function GameScreen() {
                       name={{ android: 'check', ios: 'checkmark', web: 'check' }}
                       size={26}
                       style={styles.controlCheckIcon}
-                      tintColor="#000000"
+                      tintColor="#FFFFFF"
                     />
                     <Text
-                      style={[styles.controlText, { fontSize: manualControlFontSize }]}
+                      style={[styles.controlText, styles.correctControlText, { fontSize: manualControlFontSize }]}
                     >
                       CORRECT
                     </Text>
@@ -1130,7 +1130,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   passButton: { backgroundColor: colors.pass, borderColor: colors.passBorder },
-  correctButton: { backgroundColor: colors.correct, borderColor: colors.correctBorder },
+  correctButton: { backgroundColor: '#4BCDFD', borderColor: colors.play },
+  correctControlText: { color: colors.white },
   controlPressed: { transform: [{ scale: 0.98 }], opacity: 0.86 },
   controlIcon: { color: '#000000', fontSize: 26, fontFamily: 'Inter_900Black', fontWeight: '900', lineHeight: 28 },
   controlCheckIcon: { width: 26, height: 26 },
