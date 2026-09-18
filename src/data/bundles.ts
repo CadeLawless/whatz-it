@@ -27,8 +27,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 69,
-    "updatedAt": "2026-09-01T22:25:13Z",
+    "revision": 75,
+    "updatedAt": "2026-09-18T14:18:35Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -36,9 +36,9 @@ const bundleCatalog: PortableCatalog =
             "title": "Celebrity Shuffle",
             "description": "Hollywood Legends, famous musicians, sports heroes, and internet superstars.",
             "coverImage": "assets/images/decks/baseline/89c808874ae09c7d307861505979ac2061cb1f61d4af80d393daf8670c965629.webp",
-            "version": 13,
-            "cardContentVersion": 4,
-            "cardCount": 304,
+            "version": 14,
+            "cardContentVersion": 5,
+            "cardCount": 303,
             "featuredCards": [
                 {
                     "id": "star-023",
@@ -1261,10 +1261,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Bon Jovi"
                 },
                 {
-                    "id": "star-349",
-                    "text": "Ryan Trahan"
-                },
-                {
                     "id": "star-350",
                     "text": "Emma Chamberlain"
                 },
@@ -1296,9 +1292,9 @@ const bundleCatalog: PortableCatalog =
             "title": "Fast Food",
             "description": "America's favorite fast food places.",
             "coverImage": "assets/images/decks/baseline/eca760c7804715f0369076179a041e2fa46aa307cff0d269aa9f7fcbf0661a1a.webp",
-            "version": 3,
-            "cardContentVersion": 2,
-            "cardCount": 106,
+            "version": 4,
+            "cardContentVersion": 3,
+            "cardCount": 105,
             "featuredCards": [
                 {
                     "id": "fast-food-001",
@@ -1725,10 +1721,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Crazy Bread"
                 },
                 {
-                    "id": "fast-food-192",
-                    "text": "Chicken Fries"
-                },
-                {
                     "id": "fast-food-202",
                     "text": "Egg McMuffin"
                 },
@@ -1757,8 +1749,8 @@ const bundleCatalog: PortableCatalog =
                     "text": "Little Caesars Hot-N-Ready Pizza"
                 },
                 {
-                    "id": "fast-food-293",
-                    "text": "Dairy Queen Dilly Bar"
+                    "id": "dilly-bar",
+                    "text": "Dilly Bar"
                 }
             ]
         },
@@ -6167,9 +6159,9 @@ const bundleCatalog: PortableCatalog =
             "title": "Road Trip",
             "description": "Everything to do with an American road trip.",
             "coverImage": "assets/images/decks/baseline/4f900c020a2bb93242b3475fe27e0480ed705d193f54bdf1e7b24f5393c4ac9c.webp",
-            "version": 3,
-            "cardContentVersion": 2,
-            "cardCount": 189,
+            "version": 4,
+            "cardContentVersion": 3,
+            "cardCount": 177,
             "featuredCards": [
                 {
                     "id": "road-002",
@@ -6512,10 +6504,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Welcome Center"
                 },
                 {
-                    "id": "road-088",
-                    "text": "Road Atlas"
-                },
-                {
                     "id": "road-089",
                     "text": "GPS"
                 },
@@ -6548,10 +6536,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Tent"
                 },
                 {
-                    "id": "road-097",
-                    "text": "Cooler"
-                },
-                {
                     "id": "road-098",
                     "text": "Suitcase"
                 },
@@ -6574,10 +6558,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "road-103",
                     "text": "Sunglasses"
-                },
-                {
-                    "id": "road-104",
-                    "text": "Flip Flops"
                 },
                 {
                     "id": "road-105",
@@ -6728,10 +6708,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Alligator"
                 },
                 {
-                    "id": "road-143",
-                    "text": "Roadrunner"
-                },
-                {
                     "id": "road-144",
                     "text": "General Store"
                 },
@@ -6768,10 +6744,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Love's Travel Stop"
                 },
                 {
-                    "id": "road-154",
-                    "text": "Cracker Barrel"
-                },
-                {
                     "id": "road-155",
                     "text": "Waffle House"
                 },
@@ -6782,10 +6754,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "road-157",
                     "text": "IHOP"
-                },
-                {
-                    "id": "road-158",
-                    "text": "Subway"
                 },
                 {
                     "id": "road-159",
@@ -6808,16 +6776,8 @@ const bundleCatalog: PortableCatalog =
                     "text": "Potato Chips"
                 },
                 {
-                    "id": "road-164",
-                    "text": "Gummy Bears"
-                },
-                {
                     "id": "road-165",
                     "text": "Beef Sticks"
-                },
-                {
-                    "id": "road-166",
-                    "text": "Fountain Soda"
                 },
                 {
                     "id": "road-167",
@@ -6830,10 +6790,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "road-169",
                     "text": "Sunflower Seeds"
-                },
-                {
-                    "id": "road-170",
-                    "text": "Peanuts"
                 },
                 {
                     "id": "road-173",
@@ -6864,20 +6820,8 @@ const bundleCatalog: PortableCatalog =
                     "text": "Campfire"
                 },
                 {
-                    "id": "road-185",
-                    "text": "S'mores"
-                },
-                {
                     "id": "road-186",
                     "text": "Picnic Table"
-                },
-                {
-                    "id": "road-187",
-                    "text": "Fishing Dock"
-                },
-                {
-                    "id": "road-188",
-                    "text": "Kayak Rental"
                 },
                 {
                     "id": "road-189",
@@ -7763,9 +7707,9 @@ const bundleCatalog: PortableCatalog =
             "title": "Animal Antics",
             "description": "Lions, tigers, and bears, oh my!",
             "coverImage": "assets/images/decks/baseline/fa3c1b43e049506aa24597868f5bce44ae3db0a0d7078145d6b3773bc345a560.webp",
-            "version": 2,
-            "cardContentVersion": 2,
-            "cardCount": 187,
+            "version": 3,
+            "cardContentVersion": 3,
+            "cardCount": 181,
             "featuredCards": [
                 {
                     "id": "animal-010",
@@ -8116,14 +8060,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Hawk"
                 },
                 {
-                    "id": "animal-088",
-                    "text": "Falcon"
-                },
-                {
-                    "id": "animal-089",
-                    "text": "Vulture"
-                },
-                {
                     "id": "animal-090",
                     "text": "Parrot"
                 },
@@ -8142,10 +8078,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "animal-094",
                     "text": "Pigeon"
-                },
-                {
-                    "id": "animal-095",
-                    "text": "Crow"
                 },
                 {
                     "id": "animal-096",
@@ -8170,10 +8102,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "animal-105",
                     "text": "Puffin"
-                },
-                {
-                    "id": "animal-106",
-                    "text": "Albatross"
                 },
                 {
                     "id": "animal-109",
@@ -8282,10 +8210,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "animal-140",
                     "text": "Salmon"
-                },
-                {
-                    "id": "animal-142",
-                    "text": "Clownfish"
                 },
                 {
                     "id": "animal-143",
@@ -8510,10 +8434,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "animal-224",
                     "text": "Blue Jay"
-                },
-                {
-                    "id": "animal-223",
-                    "text": "Robin"
                 },
                 {
                     "id": "animal-211",
@@ -9703,9 +9623,9 @@ const bundleCatalog: PortableCatalog =
             "title": "Gone Viral",
             "description": "Internet legends, memes, trends, and viral moments.",
             "coverImage": "assets/images/decks/baseline/fbba3caf2280a856a7ca0fdba37b7e8e18d0197495227ca641aa037ce6b8d47e.webp",
-            "version": 2,
-            "cardContentVersion": 2,
-            "cardCount": 145,
+            "version": 3,
+            "cardContentVersion": 3,
+            "cardCount": 136,
             "featuredCards": [
                 {
                     "id": "internet-001",
@@ -10164,38 +10084,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "GIF"
                 },
                 {
-                    "id": "internet-145",
-                    "text": "Grumpy Catz Meme"
-                },
-                {
-                    "id": "internet-149",
-                    "text": "Distracted Boyfriend Meme"
-                },
-                {
-                    "id": "internet-150",
-                    "text": "Woman Yelling at a Cat Meme"
-                },
-                {
-                    "id": "internet-151",
-                    "text": "Drake Hotline Bling Meme"
-                },
-                {
-                    "id": "internet-152",
-                    "text": "This Is Fine Meme"
-                },
-                {
-                    "id": "internet-157",
-                    "text": "Salt Bae Meme"
-                },
-                {
-                    "id": "internet-159",
-                    "text": "Bernie Sanders Mittens Meme"
-                },
-                {
-                    "id": "internet-162",
-                    "text": "Kermit Drinking Tea"
-                },
-                {
                     "id": "internet-163",
                     "text": "Spider-Man Pointing"
                 },
@@ -10286,10 +10174,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "internet-260",
                     "text": "Doomscrolling"
-                },
-                {
-                    "id": "internet-277",
-                    "text": "Woman Pointing at Math Meme"
                 },
                 {
                     "id": "internet-295",
@@ -11170,8 +11054,8 @@ const bundleCatalog: PortableCatalog =
             "order": 13,
             "title": "History Buff",
             "description": "Legendary people, places, and moments that shaped history.",
-            "coverImage": "assets/images/decks/baseline/a6e18142ae3178eff5f0600fc0964f7fb8ff7ae743d286e2f5ea055919c75c18.webp",
-            "version": 2,
+            "coverImage": "assets/images/decks/baseline/da258ee14f1d0e068798b565afee968ad15973f276a5d73572d3129d3dfe1e80.webp",
+            "version": 3,
             "cardContentVersion": 2,
             "cardCount": 200,
             "featuredCards": [
@@ -12855,9 +12739,9 @@ const bundleCatalog: PortableCatalog =
             "title": "Snack Attack",
             "description": "Your pantry's greatest hits.",
             "coverImage": "assets/images/decks/baseline/6c7413e5705c1e405b081a5b5730559727ec58ba8a3f123653f4205a8c00e856.webp",
-            "version": 2,
-            "cardContentVersion": 2,
-            "cardCount": 184,
+            "version": 3,
+            "cardContentVersion": 3,
+            "cardCount": 180,
             "featuredCards": [
                 {
                     "id": "snack-001",
@@ -12930,10 +12814,6 @@ const bundleCatalog: PortableCatalog =
                 {
                     "id": "snack-010",
                     "text": "Mixed Nuts"
-                },
-                {
-                    "id": "snack-011",
-                    "text": "Peanuts"
                 },
                 {
                     "id": "snack-012",
@@ -13352,10 +13232,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Yogurt"
                 },
                 {
-                    "id": "snack-117",
-                    "text": "Greek Yogurt"
-                },
-                {
                     "id": "snack-118",
                     "text": "Pudding"
                 },
@@ -13556,14 +13432,6 @@ const bundleCatalog: PortableCatalog =
                     "text": "Fruit Cup"
                 },
                 {
-                    "id": "snack-190",
-                    "text": "Chocolate Pudding"
-                },
-                {
-                    "id": "snack-191",
-                    "text": "Vanilla Pudding"
-                },
-                {
                     "id": "snack-195",
                     "text": "Ice Cream Sandwich"
                 },
@@ -13634,8 +13502,8 @@ const bundleCatalog: PortableCatalog =
             "order": 16,
             "title": "Lift Your Voice",
             "description": "From church classics to today's worship favorites!",
-            "coverImage": "assets/images/decks/baseline/2d12e61a90d603bf485b5dddb6a32df0ca37e368f7d95de9fce3182cada3808a.webp",
-            "version": 5,
+            "coverImage": "assets/images/decks/baseline/950a9ce007f57d4e6790d484d367bc43ba1379dc40ea55114ae3db2160ece889.webp",
+            "version": 6,
             "cardContentVersion": 3,
             "cardCount": 203,
             "featuredCards": [
@@ -13698,10 +13566,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.lift_your_voice",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.lift_your_voice",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -13759,10 +13623,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.worship_icons",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.worship_icons",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -13811,10 +13671,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.bible_characters",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.bible_characters",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -13824,10 +13680,10 @@ const bundleCatalog: PortableCatalog =
             "order": 19,
             "title": "Growing Up Christian",
             "description": "The church kid experience in one deck.",
-            "coverImage": "assets/images/decks/baseline/5d2cdd7585b6d212b3cf5ef61d923ecb6ac9c52cf4fa8faa972fd5435e3729df.webp",
-            "version": 5,
-            "cardContentVersion": 3,
-            "cardCount": 169,
+            "coverImage": "assets/images/decks/baseline/ecb6cfc317f49863cac66dcd68557c1b54ae7b261afe1b1907823d0bea98381e.webp",
+            "version": 7,
+            "cardContentVersion": 4,
+            "cardCount": 156,
             "featuredCards": [
                 {
                     "id": "the-ten-commandments",
@@ -13867,10 +13723,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.growing_up_christian",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.growing_up_christian",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -13881,9 +13733,9 @@ const bundleCatalog: PortableCatalog =
             "title": "Accents & Impressions",
             "description": "Put your impression skills to the test!",
             "coverImage": "assets/images/decks/baseline/6718fbe9d2484e1edd674ed474eba6e76661cd4556a2af5fc0cb1c598bcbaa2a.webp",
-            "version": 5,
-            "cardContentVersion": 3,
-            "cardCount": 85,
+            "version": 6,
+            "cardContentVersion": 4,
+            "cardCount": 80,
             "featuredCards": [
                 {
                     "id": "boston",
@@ -13932,10 +13784,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.accents_and_impressions",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.accents_and_impressions",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -13943,10 +13791,10 @@ const bundleCatalog: PortableCatalog =
         {
             "id": "rom-com",
             "order": 21,
-            "title": "ROM-COM",
+            "title": "Rom-Com",
             "description": "The best romantic comedies of all time.",
-            "coverImage": "assets/images/decks/baseline/088d2d8bbe7ec2abfb1e0e80eaceccf0c37ac535895af7857fc3feab49815bbe.webp",
-            "version": 4,
+            "coverImage": "assets/images/decks/baseline/8e9ec67baccebcd1562c3ace73c90ff6dabe7467e5d7f9e06c89f33f7620a520.webp",
+            "version": 5,
             "cardContentVersion": 2,
             "cardCount": 105,
             "featuredCards": [
@@ -13992,10 +13840,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.rom_com",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.rom_com",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -14005,10 +13849,10 @@ const bundleCatalog: PortableCatalog =
             "order": 22,
             "title": "Commercial Classics",
             "description": "Classic slogans, catchphrases, and commercials as seen on TV.",
-            "coverImage": "assets/images/decks/baseline/8f7be9f5f87a4e6ecebc3279207bab47152dd068b7507b64b2b71a09077ca5d7.webp",
-            "version": 5,
-            "cardContentVersion": 2,
-            "cardCount": 69,
+            "coverImage": "assets/images/decks/baseline/b21d005ca2afc120208f2b071221174800e6a3bacb709fe74b682a64496cbc1a.webp",
+            "version": 7,
+            "cardContentVersion": 3,
+            "cardCount": 66,
             "featuredCards": [
                 {
                     "id": "i-ve-fallen-and-i-can-t-get-up",
@@ -14046,10 +13890,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.commercial_classics",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.commercial_classics",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -14059,8 +13899,8 @@ const bundleCatalog: PortableCatalog =
             "order": 23,
             "title": "Movie Musicals",
             "description": "The greatest musicals ever shown on the big screen.",
-            "coverImage": "assets/images/decks/baseline/1c04eb5ee9f26a1d7a35ecda723c0c83297f5694a9b1c44993c58de01aefa097.webp",
-            "version": 4,
+            "coverImage": "assets/images/decks/baseline/6bd07c9bbbde662aa2eb5b8ef1450d3b82095f5f479e33e4c2d7e41b99d74e67.webp",
+            "version": 5,
             "cardContentVersion": 2,
             "cardCount": 69,
             "featuredCards": [
@@ -14107,10 +13947,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.movie_musicals",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.movie_musicals",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -14165,10 +14001,6 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.action_movies",
                     "status": "available"
-                },
-                "google": {
-                    "productId": "wz.deck.action_movies",
-                    "status": "draft"
                 }
             },
             "cards": []
@@ -14223,10 +14055,557 @@ const bundleCatalog: PortableCatalog =
                 "apple": {
                     "productId": "com.cadelawless.whatzit.deck.dramas",
                     "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "halloween",
+            "order": 26,
+            "title": "Halloween",
+            "description": "A mix of Halloween movies, monsters, traditions, treats, and spooky favorites!",
+            "coverImage": "assets/images/decks/baseline/a91c1ae4d93d4454cf9576811e0b89843175dd5f90b44ca854708d91337a94d1.webp",
+            "version": 1,
+            "cardContentVersion": 1,
+            "cardCount": 122,
+            "featuredCards": [
+                {
+                    "id": "hocus-pocus",
+                    "text": "Hocus Pocus"
                 },
-                "google": {
-                    "productId": "wz.deck.dramas",
-                    "status": "draft"
+                {
+                    "id": "trick-or-treating",
+                    "text": "Trick-or-Treating"
+                },
+                {
+                    "id": "pumpkin-spice",
+                    "text": "Pumpkin Spice"
+                },
+                {
+                    "id": "wednesday-addams",
+                    "text": "Wednesday Addams"
+                },
+                {
+                    "id": "black-cat",
+                    "text": "Black Cat"
+                }
+            ],
+            "tags": [
+                "Season",
+                "halloween",
+                "october",
+                "fall",
+                "autumn",
+                "holiday"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.halloween",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "fall-favorties",
+            "order": 27,
+            "title": "Fall Favorties",
+            "description": "Pumpkin Spice and everything Fall!",
+            "coverImage": "assets/images/decks/baseline/10ebcc882e3dd32c678085295641bb776cd38243c3f0fe5c9b9ab455b6ae41f0.webp",
+            "version": 1,
+            "cardContentVersion": 1,
+            "cardCount": 110,
+            "featuredCards": [
+                {
+                    "id": "pumpkin-spice",
+                    "text": "Pumpkin Spice"
+                },
+                {
+                    "id": "bonfire",
+                    "text": "Bonfire"
+                },
+                {
+                    "id": "hocus-pocus",
+                    "text": "Hocus Pocus"
+                },
+                {
+                    "id": "chili",
+                    "text": "Chili"
+                },
+                {
+                    "id": "mums",
+                    "text": "Mums"
+                }
+            ],
+            "tags": [
+                "Seasons",
+                "holidays",
+                "fall",
+                "autumn",
+                "halloween"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.fall_favorties",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "thanksgiving",
+            "order": 28,
+            "title": "Thanksgiving",
+            "description": "Turkey, pie, football, family, and all the Thanksgiving favorites!",
+            "coverImage": "assets/images/decks/baseline/dbedf08c6035b174fa1927afa55edfd4bd44710955f2a520a70666aa7d9390d6.webp",
+            "version": 1,
+            "cardContentVersion": 1,
+            "cardCount": 81,
+            "featuredCards": [
+                {
+                    "id": "turkey",
+                    "text": "Turkey"
+                },
+                {
+                    "id": "football",
+                    "text": "Football"
+                },
+                {
+                    "id": "food-coma",
+                    "text": "Food coma"
+                },
+                {
+                    "id": "november",
+                    "text": "November"
+                },
+                {
+                    "id": "pecan-pie",
+                    "text": "Pecan pie"
+                }
+            ],
+            "tags": [
+                "holiday",
+                "season",
+                "thanksgiving",
+                "fall",
+                "autumn",
+                "halloween",
+                "november"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.thanksgiving",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "horror-movies",
+            "order": 29,
+            "title": "Horror Movies",
+            "description": "A mix of iconic horror movies in one deck.",
+            "coverImage": "assets/images/decks/baseline/a2e0e4980499440b697543493c1b581030eabbc24bae813ff02c67834a09d25c.webp",
+            "version": 1,
+            "cardContentVersion": 1,
+            "cardCount": 131,
+            "featuredCards": [
+                {
+                    "id": "halloween",
+                    "text": "Halloween"
+                },
+                {
+                    "id": "friday-the-13th",
+                    "text": "Friday the 13th"
+                },
+                {
+                    "id": "paranormal-activity",
+                    "text": "Paranormal Activity"
+                },
+                {
+                    "id": "cujo",
+                    "text": "Cujo"
+                },
+                {
+                    "id": "scary-stories-to-tell-in-the-dark",
+                    "text": "Scary Stories to Tell in the Dark"
+                }
+            ],
+            "tags": [
+                "movies",
+                "actors",
+                "fall",
+                "autumn",
+                "halloween",
+                "horror",
+                "scary movies"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.horror_movies",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "around-the-world",
+            "order": 30,
+            "title": "Around the World",
+            "description": "World traveler or geography fanatic? This deck is for you!",
+            "coverImage": "assets/images/decks/baseline/b01947704f292e52c164584a8ffa1a3b682370bd6029785926ee86902326d101.webp",
+            "version": 1,
+            "cardContentVersion": 1,
+            "cardCount": 165,
+            "featuredCards": [
+                {
+                    "id": "eiffel-tower",
+                    "text": "Eiffel Tower"
+                },
+                {
+                    "id": "bora-bora",
+                    "text": "Bora Bora"
+                },
+                {
+                    "id": "amazon-rainforest",
+                    "text": "Amazon Rainforest"
+                },
+                {
+                    "id": "empire-state-building",
+                    "text": "Empire State Building"
+                },
+                {
+                    "id": "antarctica",
+                    "text": "Antarctica"
+                }
+            ],
+            "tags": [
+                "Travel",
+                "Geography",
+                "places",
+                "road trip",
+                "global",
+                "america",
+                "landmarks"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.around_the_world",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "villians",
+            "order": 31,
+            "title": "Villians",
+            "description": "Evil plans, big egos, iconic villains. Think you know them all?",
+            "coverImage": "assets/images/decks/baseline/598cb805c9a5dd035fd21bcb4aaf187a1d89ff1c9dc6f492c0f6fc6383585d48.webp",
+            "version": 2,
+            "cardContentVersion": 2,
+            "cardCount": 70,
+            "featuredCards": [
+                {
+                    "id": "darth-vader",
+                    "text": "Darth Vader"
+                },
+                {
+                    "id": "voldemort",
+                    "text": "Voldemort"
+                },
+                {
+                    "id": "venom",
+                    "text": "Venom"
+                },
+                {
+                    "id": "cruella-de-vil",
+                    "text": "Cruella de Vil"
+                },
+                {
+                    "id": "vecna",
+                    "text": "Vecna"
+                }
+            ],
+            "tags": [
+                "Movies",
+                "actors",
+                "genre",
+                "heros",
+                "villians",
+                "action",
+                "characters",
+                "shows"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.villians",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "heroes",
+            "order": 32,
+            "title": "Heroes",
+            "description": "Saving the day never goes out of style. Guess these iconic heroes!",
+            "coverImage": "assets/images/decks/baseline/e64c29e0e905e90ba205db0812119ab9896965a8482b40f456b1abf9b4f31776.webp",
+            "version": 3,
+            "cardContentVersion": 3,
+            "cardCount": 89,
+            "featuredCards": [
+                {
+                    "id": "superman",
+                    "text": "Superman"
+                },
+                {
+                    "id": "luke-skywalker",
+                    "text": "Luke Skywalker"
+                },
+                {
+                    "id": "buzz-lightyear",
+                    "text": "Buzz Lightyear"
+                },
+                {
+                    "id": "katniss-everdeen",
+                    "text": "Katniss Everdeen"
+                },
+                {
+                    "id": "frodo-baggins",
+                    "text": "Frodo Baggins"
+                }
+            ],
+            "tags": [
+                "Movies",
+                "actors",
+                "heros",
+                "villians",
+                "action",
+                "shows",
+                "superhero"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.heroes",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "superhero-movies",
+            "order": 33,
+            "title": "Superhero Movies",
+            "description": "The most iconic superhero movies of all time.",
+            "coverImage": "assets/images/decks/baseline/f8c637bb6bc411f31dab31de118948fc7d8a42a1e64bd90d7baccb906858b485.webp",
+            "version": 2,
+            "cardContentVersion": 2,
+            "cardCount": 66,
+            "featuredCards": [
+                {
+                    "id": "spider-man",
+                    "text": "Spider-Man"
+                },
+                {
+                    "id": "the-dark-knight",
+                    "text": "The Dark Knight"
+                },
+                {
+                    "id": "the-incredibles",
+                    "text": "The Incredibles"
+                },
+                {
+                    "id": "teenage-mutant-ninja-turtles",
+                    "text": "Teenage Mutant Ninja Turtles"
+                },
+                {
+                    "id": "x-men",
+                    "text": "X-Men"
+                }
+            ],
+            "tags": [
+                "movies",
+                "heros",
+                "villians",
+                "superheros",
+                "superhero movies",
+                "action",
+                "actors"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.superhero_movies",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "international-cuisine",
+            "order": 34,
+            "title": "International Cuisine",
+            "description": "Put your culinary knowledge to the test with iconic dishes from across the globe.",
+            "coverImage": "assets/images/decks/baseline/5f1c4a3647b08ceb7321ba2d690f355e739492323f64c3ab4151ea559c94feee.webp",
+            "version": 2,
+            "cardContentVersion": 2,
+            "cardCount": 117,
+            "featuredCards": [
+                {
+                    "id": "sushi",
+                    "text": "Sushi"
+                },
+                {
+                    "id": "tacos",
+                    "text": "Tacos"
+                },
+                {
+                    "id": "gnocchi",
+                    "text": "Gnocchi"
+                },
+                {
+                    "id": "fish-and-chips",
+                    "text": "Fish and Chips"
+                },
+                {
+                    "id": "mochi",
+                    "text": "Mochi"
+                },
+                {
+                    "id": "tzatziki",
+                    "text": "Tzatziki"
+                }
+            ],
+            "tags": [
+                "food",
+                "fast food",
+                "culture",
+                "international",
+                "cuisine",
+                "global"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.international_cuisine",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "name-that-brand",
+            "order": 35,
+            "title": "Name That Brand",
+            "description": "From fast food to automobiles, can you name that brand?",
+            "coverImage": "assets/images/decks/baseline/43527d67510b77bf4580d5ebe35926aba0dcc57c5b6eff043cc6d6dd56d9ce4c.webp",
+            "version": 1,
+            "cardContentVersion": 1,
+            "cardCount": 151,
+            "featuredCards": [
+                {
+                    "id": "nike",
+                    "text": "Nike"
+                },
+                {
+                    "id": "mcdonald-s",
+                    "text": "McDonald's"
+                },
+                {
+                    "id": "cheez-it",
+                    "text": "Cheez-It"
+                },
+                {
+                    "id": "target",
+                    "text": "Target"
+                },
+                {
+                    "id": "porsche",
+                    "text": "Porsche"
+                },
+                {
+                    "id": "chick-fil-a",
+                    "text": "Chick-fil-A"
+                }
+            ],
+            "tags": [
+                "brands",
+                "name that brand"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.name_that_brand",
+                    "status": "available"
+                }
+            },
+            "cards": []
+        },
+        {
+            "id": "game-night",
+            "order": 36,
+            "title": "Game Night",
+            "description": "Board games, card games, and game night favorites.",
+            "coverImage": "assets/images/decks/baseline/a625064f77684496ed63761d90e89970a432d7666a62a8febb4bee80144c7a6e.webp",
+            "version": 1,
+            "cardContentVersion": 1,
+            "cardCount": 79,
+            "featuredCards": [
+                {
+                    "id": "monopoly",
+                    "text": "Monopoly"
+                },
+                {
+                    "id": "the-game-of-life",
+                    "text": "The Game of Life"
+                },
+                {
+                    "id": "blackjack",
+                    "text": "Blackjack"
+                },
+                {
+                    "id": "mahjong",
+                    "text": "Mahjong"
+                },
+                {
+                    "id": "pictionary",
+                    "text": "Pictionary"
+                },
+                {
+                    "id": "codenames",
+                    "text": "Codenames"
+                }
+            ],
+            "tags": [
+                "games",
+                "cards",
+                "card games",
+                "board games"
+            ],
+            "access": "paid",
+            "price": 1.99,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.deck.game_night",
+                    "status": "available"
                 }
             },
             "cards": []
@@ -14271,18 +14650,18 @@ const bundleCatalog: PortableCatalog =
                     "productId": "com.cadelawless.whatzit.bundle.christianity",
                     "status": "available",
                     "ownedDeckCountProducts": {
-                        "1": { "productId": "com.cadelawless.whatzit.bundle.christianity.owned_1", "status": "draft" },
-                        "2": { "productId": "com.cadelawless.whatzit.bundle.christianity.owned_2", "status": "draft" },
-                        "3": { "productId": "com.cadelawless.whatzit.bundle.christianity.owned_3", "status": "draft" }
-                    }
-                },
-                "google": {
-                    "productId": "wz.bundle.christianity",
-                    "status": "draft",
-                    "ownedDeckCountProducts": {
-                        "1": { "productId": "wz.bundle.christianity.owned_1", "status": "draft" },
-                        "2": { "productId": "wz.bundle.christianity.owned_2", "status": "draft" },
-                        "3": { "productId": "wz.bundle.christianity.owned_3", "status": "draft" }
+                        "1": {
+                            "productId": "com.cadelawless.whatzit.bundle.christianity.owned_1",
+                            "status": "available"
+                        },
+                        "2": {
+                            "productId": "com.cadelawless.whatzit.bundle.christianity.owned_2",
+                            "status": "available"
+                        },
+                        "3": {
+                            "productId": "com.cadelawless.whatzit.bundle.christianity.owned_3",
+                            "status": "available"
+                        }
                     }
                 }
             },
@@ -14299,25 +14678,29 @@ const bundleCatalog: PortableCatalog =
             "title": "On The Big Screen",
             "description": "Lights. Camera. Action! Think you know your movies? Grab all of our movie decks together in one bundle.",
             "access": "paid",
-            "price": 12.99,
-            "version": 1,
+            "price": 8.99,
+            "version": 2,
             "storeProducts": {
                 "apple": {
                     "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen",
                     "status": "available",
                     "ownedDeckCountProducts": {
-                        "1": { "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_1", "status": "draft" },
-                        "2": { "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_2", "status": "draft" },
-                        "3": { "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_3", "status": "draft" }
-                    }
-                },
-                "google": {
-                    "productId": "wz.bundle.on_the_big_screen",
-                    "status": "draft",
-                    "ownedDeckCountProducts": {
-                        "1": { "productId": "wz.bundle.on_the_big_screen.owned_1", "status": "draft" },
-                        "2": { "productId": "wz.bundle.on_the_big_screen.owned_2", "status": "draft" },
-                        "3": { "productId": "wz.bundle.on_the_big_screen.owned_3", "status": "draft" }
+                        "1": {
+                            "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_1",
+                            "status": "available"
+                        },
+                        "2": {
+                            "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_2",
+                            "status": "available"
+                        },
+                        "3": {
+                            "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_3",
+                            "status": "available"
+                        },
+                        "4": {
+                            "productId": "com.cadelawless.whatzit.bundle.on_the_big_screen.owned_4",
+                            "status": "available"
+                        }
                     }
                 }
             },
@@ -14325,7 +14708,73 @@ const bundleCatalog: PortableCatalog =
                 "rom-com",
                 "movie-musicals",
                 "action-movies",
-                "dramas"
+                "dramas",
+                "horror-movies"
+            ]
+        },
+        {
+            "id": "hello-fall",
+            "order": 4,
+            "title": "Hello, Fall!",
+            "description": "Cozy up with our seasonal mix of fall decks, including Halloween, Thanksgiving, Fall Favorites, and Horror Movies.",
+            "access": "paid",
+            "price": 6.99,
+            "version": 2,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.bundle.hello_fall",
+                    "status": "available",
+                    "ownedDeckCountProducts": {
+                        "1": {
+                            "productId": "com.cadelawless.whatzit.bundle.hello_fall.owned_1",
+                            "status": "available"
+                        },
+                        "2": {
+                            "productId": "com.cadelawless.whatzit.bundle.hello_fall.owned_2",
+                            "status": "available"
+                        },
+                        "3": {
+                            "productId": "com.cadelawless.whatzit.bundle.hello_fall.owned_3",
+                            "status": "available"
+                        }
+                    }
+                }
+            },
+            "deckIds": [
+                "halloween",
+                "thanksgiving",
+                "fall-favorties",
+                "horror-movies"
+            ]
+        },
+        {
+            "id": "superhero-essentials",
+            "order": 5,
+            "title": "Superhero Essentials",
+            "description": "Get the full superhero collection with all three decks: Heroes, Villains, and Superhero Movies.",
+            "access": "paid",
+            "price": 4.99,
+            "version": 2,
+            "storeProducts": {
+                "apple": {
+                    "productId": "com.cadelawless.whatzit.bundle.superhero_essentials",
+                    "status": "available",
+                    "ownedDeckCountProducts": {
+                        "1": {
+                            "productId": "com.cadelawless.whatzit.bundle.superhero_essentials.owned_1",
+                            "status": "available"
+                        },
+                        "2": {
+                            "productId": "com.cadelawless.whatzit.bundle.superhero_essentials.owned_2",
+                            "status": "available"
+                        }
+                    }
+                }
+            },
+            "deckIds": [
+                "villians",
+                "heroes",
+                "superhero-movies"
             ]
         }
     ],
@@ -14357,7 +14806,18 @@ const bundleCatalog: PortableCatalog =
             "commercial-classics",
             "movie-musicals",
             "action-movies",
-            "dramas"
+            "dramas",
+            "halloween",
+            "fall-favorties",
+            "thanksgiving",
+            "horror-movies",
+            "around-the-world",
+            "villians",
+            "heroes",
+            "superhero-movies",
+            "international-cuisine",
+            "name-that-brand",
+            "game-night"
         ]
     }
 }
@@ -14366,29 +14826,40 @@ const bundleCatalog: PortableCatalog =
 const deckCoverImages: Record<string, number> =
 /* DECK_MANAGER_COVERS_START */
 {
-  "assets/images/decks/baseline/088d2d8bbe7ec2abfb1e0e80eaceccf0c37ac535895af7857fc3feab49815bbe.webp": require("../../assets/images/decks/baseline/088d2d8bbe7ec2abfb1e0e80eaceccf0c37ac535895af7857fc3feab49815bbe.webp"),
-  "assets/images/decks/baseline/1c04eb5ee9f26a1d7a35ecda723c0c83297f5694a9b1c44993c58de01aefa097.webp": require("../../assets/images/decks/baseline/1c04eb5ee9f26a1d7a35ecda723c0c83297f5694a9b1c44993c58de01aefa097.webp"),
+  "assets/images/decks/baseline/10ebcc882e3dd32c678085295641bb776cd38243c3f0fe5c9b9ab455b6ae41f0.webp": require("../../assets/images/decks/baseline/10ebcc882e3dd32c678085295641bb776cd38243c3f0fe5c9b9ab455b6ae41f0.webp"),
   "assets/images/decks/baseline/215a98b84f2bca55770cb39f022d373dda076ea9e007b0203edb102d2a204997.webp": require("../../assets/images/decks/baseline/215a98b84f2bca55770cb39f022d373dda076ea9e007b0203edb102d2a204997.webp"),
   "assets/images/decks/baseline/260b4b5eb65af62f6d547973c0d7990b7af3bca713d2a3edbf88a26e452c8238.webp": require("../../assets/images/decks/baseline/260b4b5eb65af62f6d547973c0d7990b7af3bca713d2a3edbf88a26e452c8238.webp"),
   "assets/images/decks/baseline/29ba30902827e5793fcd42a00ab26e70862cff669f3f871c9e8c2da9ae2757a2.webp": require("../../assets/images/decks/baseline/29ba30902827e5793fcd42a00ab26e70862cff669f3f871c9e8c2da9ae2757a2.webp"),
-  "assets/images/decks/baseline/2d12e61a90d603bf485b5dddb6a32df0ca37e368f7d95de9fce3182cada3808a.webp": require("../../assets/images/decks/baseline/2d12e61a90d603bf485b5dddb6a32df0ca37e368f7d95de9fce3182cada3808a.webp"),
   "assets/images/decks/baseline/3477ebe64b6ef8415d0cc1e5df469eca6d31077cafff7731395d08381c4cbb6b.webp": require("../../assets/images/decks/baseline/3477ebe64b6ef8415d0cc1e5df469eca6d31077cafff7731395d08381c4cbb6b.webp"),
   "assets/images/decks/baseline/3e6b2f069c9b417830adca343edea9d9c9f5fa26b2af8af7609652b5bc8981e8.webp": require("../../assets/images/decks/baseline/3e6b2f069c9b417830adca343edea9d9c9f5fa26b2af8af7609652b5bc8981e8.webp"),
+  "assets/images/decks/baseline/43527d67510b77bf4580d5ebe35926aba0dcc57c5b6eff043cc6d6dd56d9ce4c.webp": require("../../assets/images/decks/baseline/43527d67510b77bf4580d5ebe35926aba0dcc57c5b6eff043cc6d6dd56d9ce4c.webp"),
   "assets/images/decks/baseline/4f900c020a2bb93242b3475fe27e0480ed705d193f54bdf1e7b24f5393c4ac9c.webp": require("../../assets/images/decks/baseline/4f900c020a2bb93242b3475fe27e0480ed705d193f54bdf1e7b24f5393c4ac9c.webp"),
   "assets/images/decks/baseline/58c149a77f992ee0710983bf7f9c449c42a890a4659e98178347a057c54052c5.webp": require("../../assets/images/decks/baseline/58c149a77f992ee0710983bf7f9c449c42a890a4659e98178347a057c54052c5.webp"),
-  "assets/images/decks/baseline/5d2cdd7585b6d212b3cf5ef61d923ecb6ac9c52cf4fa8faa972fd5435e3729df.webp": require("../../assets/images/decks/baseline/5d2cdd7585b6d212b3cf5ef61d923ecb6ac9c52cf4fa8faa972fd5435e3729df.webp"),
+  "assets/images/decks/baseline/598cb805c9a5dd035fd21bcb4aaf187a1d89ff1c9dc6f492c0f6fc6383585d48.webp": require("../../assets/images/decks/baseline/598cb805c9a5dd035fd21bcb4aaf187a1d89ff1c9dc6f492c0f6fc6383585d48.webp"),
+  "assets/images/decks/baseline/5f1c4a3647b08ceb7321ba2d690f355e739492323f64c3ab4151ea559c94feee.webp": require("../../assets/images/decks/baseline/5f1c4a3647b08ceb7321ba2d690f355e739492323f64c3ab4151ea559c94feee.webp"),
   "assets/images/decks/baseline/6718fbe9d2484e1edd674ed474eba6e76661cd4556a2af5fc0cb1c598bcbaa2a.webp": require("../../assets/images/decks/baseline/6718fbe9d2484e1edd674ed474eba6e76661cd4556a2af5fc0cb1c598bcbaa2a.webp"),
+  "assets/images/decks/baseline/6bd07c9bbbde662aa2eb5b8ef1450d3b82095f5f479e33e4c2d7e41b99d74e67.webp": require("../../assets/images/decks/baseline/6bd07c9bbbde662aa2eb5b8ef1450d3b82095f5f479e33e4c2d7e41b99d74e67.webp"),
   "assets/images/decks/baseline/6c7413e5705c1e405b081a5b5730559727ec58ba8a3f123653f4205a8c00e856.webp": require("../../assets/images/decks/baseline/6c7413e5705c1e405b081a5b5730559727ec58ba8a3f123653f4205a8c00e856.webp"),
   "assets/images/decks/baseline/73cd49beb143e036e75873c272fc0fb9ce8c74a2d61c2990b63b91e2b27a0012.webp": require("../../assets/images/decks/baseline/73cd49beb143e036e75873c272fc0fb9ce8c74a2d61c2990b63b91e2b27a0012.webp"),
   "assets/images/decks/baseline/801f0bcc45a3e6485a98aa9d4b462e63ad8de3ea5599c91f378f5ec996604791.webp": require("../../assets/images/decks/baseline/801f0bcc45a3e6485a98aa9d4b462e63ad8de3ea5599c91f378f5ec996604791.webp"),
   "assets/images/decks/baseline/8539c37838aa6093a812a7c0f36d32aa13a3980b65300b924957ac5aa8217c1c.webp": require("../../assets/images/decks/baseline/8539c37838aa6093a812a7c0f36d32aa13a3980b65300b924957ac5aa8217c1c.webp"),
   "assets/images/decks/baseline/89c808874ae09c7d307861505979ac2061cb1f61d4af80d393daf8670c965629.webp": require("../../assets/images/decks/baseline/89c808874ae09c7d307861505979ac2061cb1f61d4af80d393daf8670c965629.webp"),
-  "assets/images/decks/baseline/8f7be9f5f87a4e6ecebc3279207bab47152dd068b7507b64b2b71a09077ca5d7.webp": require("../../assets/images/decks/baseline/8f7be9f5f87a4e6ecebc3279207bab47152dd068b7507b64b2b71a09077ca5d7.webp"),
+  "assets/images/decks/baseline/8e9ec67baccebcd1562c3ace73c90ff6dabe7467e5d7f9e06c89f33f7620a520.webp": require("../../assets/images/decks/baseline/8e9ec67baccebcd1562c3ace73c90ff6dabe7467e5d7f9e06c89f33f7620a520.webp"),
+  "assets/images/decks/baseline/950a9ce007f57d4e6790d484d367bc43ba1379dc40ea55114ae3db2160ece889.webp": require("../../assets/images/decks/baseline/950a9ce007f57d4e6790d484d367bc43ba1379dc40ea55114ae3db2160ece889.webp"),
   "assets/images/decks/baseline/9afb8181a1cf3b0bb04a2a00efbd5dd7c131d3212db26f0c043f14d1a6fde49e.webp": require("../../assets/images/decks/baseline/9afb8181a1cf3b0bb04a2a00efbd5dd7c131d3212db26f0c043f14d1a6fde49e.webp"),
-  "assets/images/decks/baseline/a6e18142ae3178eff5f0600fc0964f7fb8ff7ae743d286e2f5ea055919c75c18.webp": require("../../assets/images/decks/baseline/a6e18142ae3178eff5f0600fc0964f7fb8ff7ae743d286e2f5ea055919c75c18.webp"),
+  "assets/images/decks/baseline/a2e0e4980499440b697543493c1b581030eabbc24bae813ff02c67834a09d25c.webp": require("../../assets/images/decks/baseline/a2e0e4980499440b697543493c1b581030eabbc24bae813ff02c67834a09d25c.webp"),
+  "assets/images/decks/baseline/a625064f77684496ed63761d90e89970a432d7666a62a8febb4bee80144c7a6e.webp": require("../../assets/images/decks/baseline/a625064f77684496ed63761d90e89970a432d7666a62a8febb4bee80144c7a6e.webp"),
+  "assets/images/decks/baseline/a91c1ae4d93d4454cf9576811e0b89843175dd5f90b44ca854708d91337a94d1.webp": require("../../assets/images/decks/baseline/a91c1ae4d93d4454cf9576811e0b89843175dd5f90b44ca854708d91337a94d1.webp"),
+  "assets/images/decks/baseline/b01947704f292e52c164584a8ffa1a3b682370bd6029785926ee86902326d101.webp": require("../../assets/images/decks/baseline/b01947704f292e52c164584a8ffa1a3b682370bd6029785926ee86902326d101.webp"),
+  "assets/images/decks/baseline/b21d005ca2afc120208f2b071221174800e6a3bacb709fe74b682a64496cbc1a.webp": require("../../assets/images/decks/baseline/b21d005ca2afc120208f2b071221174800e6a3bacb709fe74b682a64496cbc1a.webp"),
   "assets/images/decks/baseline/ce1169dda5d22368842fab1a82b0767e1c3fd8b14b6ec4a9ebd025363a3d530d.webp": require("../../assets/images/decks/baseline/ce1169dda5d22368842fab1a82b0767e1c3fd8b14b6ec4a9ebd025363a3d530d.webp"),
+  "assets/images/decks/baseline/da258ee14f1d0e068798b565afee968ad15973f276a5d73572d3129d3dfe1e80.webp": require("../../assets/images/decks/baseline/da258ee14f1d0e068798b565afee968ad15973f276a5d73572d3129d3dfe1e80.webp"),
+  "assets/images/decks/baseline/dbedf08c6035b174fa1927afa55edfd4bd44710955f2a520a70666aa7d9390d6.webp": require("../../assets/images/decks/baseline/dbedf08c6035b174fa1927afa55edfd4bd44710955f2a520a70666aa7d9390d6.webp"),
+  "assets/images/decks/baseline/e64c29e0e905e90ba205db0812119ab9896965a8482b40f456b1abf9b4f31776.webp": require("../../assets/images/decks/baseline/e64c29e0e905e90ba205db0812119ab9896965a8482b40f456b1abf9b4f31776.webp"),
   "assets/images/decks/baseline/eca760c7804715f0369076179a041e2fa46aa307cff0d269aa9f7fcbf0661a1a.webp": require("../../assets/images/decks/baseline/eca760c7804715f0369076179a041e2fa46aa307cff0d269aa9f7fcbf0661a1a.webp"),
+  "assets/images/decks/baseline/ecb6cfc317f49863cac66dcd68557c1b54ae7b261afe1b1907823d0bea98381e.webp": require("../../assets/images/decks/baseline/ecb6cfc317f49863cac66dcd68557c1b54ae7b261afe1b1907823d0bea98381e.webp"),
   "assets/images/decks/baseline/ef11c88b0219f2129ddbca1119ea40fe45c49d3129746334ce370b52e07e081f.webp": require("../../assets/images/decks/baseline/ef11c88b0219f2129ddbca1119ea40fe45c49d3129746334ce370b52e07e081f.webp"),
+  "assets/images/decks/baseline/f8c637bb6bc411f31dab31de118948fc7d8a42a1e64bd90d7baccb906858b485.webp": require("../../assets/images/decks/baseline/f8c637bb6bc411f31dab31de118948fc7d8a42a1e64bd90d7baccb906858b485.webp"),
   "assets/images/decks/baseline/fa3c1b43e049506aa24597868f5bce44ae3db0a0d7078145d6b3773bc345a560.webp": require("../../assets/images/decks/baseline/fa3c1b43e049506aa24597868f5bce44ae3db0a0d7078145d6b3773bc345a560.webp"),
   "assets/images/decks/baseline/fbba3caf2280a856a7ca0fdba37b7e8e18d0197495227ca641aa037ce6b8d47e.webp": require("../../assets/images/decks/baseline/fbba3caf2280a856a7ca0fdba37b7e8e18d0197495227ca641aa037ce6b8d47e.webp"),
 }
