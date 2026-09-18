@@ -33,6 +33,7 @@ import {
   useBundleOffer,
   useCommerceProduct,
   useCommerceTesting,
+  useOwnedDeckIds,
   useRestorePurchases,
 } from '@/storefront/commerce-provider';
 import { successfulRestoreNotice } from '@/storefront/restore-purchases-notice';
@@ -556,6 +557,9 @@ function BundleBrowseCard({
   };
   const commerce = useCommerceProduct(commerceTarget);
   const offer = useBundleOffer(bundle.id);
+  const ownedDeckIds = useOwnedDeckIds();
+  const ownedDeckCount = bundle.deckIds.filter((id) => ownedDeckIds.has(id)).length;
+  const hasPartialOwnership = ownedDeckCount > 0 && ownedDeckCount < bundle.deckIds.length;
   const localizedPrice = localizedCommercePrice(commerce.state);
   const bundleStatus = commerce.state.status === 'owned'
     ? 'OWNED'
@@ -569,13 +573,13 @@ function BundleBrowseCard({
     () => bundle.deckIds
       .map((id) => catalog.getDeckById(id))
       .filter((deck): deck is CatalogDeck => deck !== undefined)
-      .slice(0, 4),
+      .slice(0, 3),
     [bundle.deckIds, catalog],
   );
   return (
     <Pressable
       accessibilityHint="Opens bundle details"
-      accessibilityLabel={`${bundle.title}, ${bundle.deckIds.length} decks${bundleStatus ? `, bundle ${bundleStatus}` : ''}${comparisonPrice ? `, compared with ${comparisonPrice} ${comparisonDescription}` : ''}${remainingSavingsLabel ? `, ${remainingSavingsLabel}` : ''}`}
+      accessibilityLabel={`${bundle.title}, ${bundle.deckIds.length} decks${hasPartialOwnership ? `, ${ownedDeckCount} of ${bundle.deckIds.length} owned` : ''}${bundleStatus ? `, bundle ${bundleStatus}` : ''}${comparisonPrice ? `, compared with ${comparisonPrice} ${comparisonDescription}` : ''}${remainingSavingsLabel ? `, ${remainingSavingsLabel}` : ''}`}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
@@ -587,7 +591,7 @@ function BundleBrowseCard({
         <View style={styles.bundleCopy}>
           <Text numberOfLines={2} style={styles.bundleTitle}>{bundle.title}</Text>
           <Text style={styles.bundleDescription}>{bundle.description || `${bundle.deckIds.length} decks in one collection.`}</Text>
-          <Text style={styles.bundleMeta}>{bundle.deckIds.length} DECKS</Text>
+          <Text style={styles.bundleMeta}>{bundle.deckIds.length} DECKS{hasPartialOwnership ? ` · ${ownedDeckCount}/${bundle.deckIds.length} OWNED` : ''}</Text>
           {bundleStatus && (
             <View style={styles.bundlePriceBadge}>
               <View style={styles.bundlePriceRow}>
@@ -610,10 +614,10 @@ function BundleBrowseCard({
                 style={[
                   styles.fanCard,
                   {
-                    left: 13 + (decks.length - 1 - index) * 8,
+                    left: 13 + (decks.length - 1) * 8 - index * 12,
                     transform: [
-                      { rotate: `${-5 - index * 4}deg` },
-                      { translateY: index * 8 },
+                      { rotate: `${-6 - index * 5}deg` },
+                      { translateY: index * 12 },
                     ],
                     zIndex: decks.length - index,
                   },
@@ -716,7 +720,7 @@ const styles = StyleSheet.create({
   bundleList: { gap: 16 },
   bundleCard: { minHeight: 210, overflow: 'hidden', padding: 22, borderWidth: 1, borderColor: '#DCE8F5', borderRadius: 26, backgroundColor: '#FFFFFF', boxShadow: '0 5px 16px rgba(71, 85, 105, 0.10)' },
   bundleBody: { minHeight: 190, position: 'relative', justifyContent: 'center' },
-  bundleCopy: { width: '58%', gap: 8, zIndex: 10 },
+  bundleCopy: { width: '60%', gap: 8, zIndex: 10 },
   bundleTitle: { color: '#111827', fontSize: 21, lineHeight: 25, fontFamily: 'Inter_900Black', fontWeight: '900' },
   bundleDescription: { color: '#64748B', fontSize: 13, lineHeight: 18 },
   bundleMeta: { color: '#459EFE', fontSize: 11, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.7 },
@@ -724,8 +728,8 @@ const styles = StyleSheet.create({
   bundlePriceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
   bundleComparisonPrice: { color: '#64748B', fontSize: 11, fontFamily: 'Inter_600SemiBold', fontWeight: '600', textDecorationLine: 'line-through' },
   bundlePrice: { color: colors.pass, fontSize: 17, lineHeight: 21, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.2 },
-  bundleSavingsLabel: { color: '#000000', fontSize: 11, lineHeight: 15, fontFamily: 'Inter_700Bold', fontWeight: '700' },
-  fan: { width: 190, height: 190, position: 'absolute', top: '50%', right: -85, marginTop: -95, zIndex: 2 },
+  bundleSavingsLabel: { color: '#64748B', fontSize: 11, lineHeight: 15, fontFamily: 'Inter_700Bold', fontWeight: '700' },
+  fan: { width: 190, height: 190, position: 'absolute', top: '50%', right: -90, marginTop: -99, zIndex: 2 },
   fanCard: { width: 104, height: 156, position: 'absolute', top: 10, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 9, backgroundColor: '#DCE5EF', boxShadow: '0 5px 12px rgba(15, 23, 42, 0.24)' },
   fanFallback: { flex: 1, backgroundColor: '#BFDBFE' },
   deckList: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },

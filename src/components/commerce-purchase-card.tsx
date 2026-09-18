@@ -23,6 +23,7 @@ type CommercePurchaseCardProps = {
   onRetry?: () => void;
   purchaseLabel?: string;
   purchaseHint?: string | null;
+  primaryColor?: 'brand' | 'blue';
   state: CommerceProductState;
   showTargetTitle?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -37,6 +38,7 @@ export function CommercePurchaseCard({
   onRetry,
   purchaseLabel,
   purchaseHint,
+  primaryColor = 'brand',
   state,
   showTargetTitle = false,
   style,
@@ -121,6 +123,7 @@ export function CommercePurchaseCard({
           styles.button,
           showTargetTitle && styles.buttonWithTargetTitle,
           styles[`${presentation.tone}Button`],
+          presentation.tone === 'primary' && primaryColor === 'blue' && styles.bluePrimaryButton,
           disabled && styles.disabledButton,
           pressed && !disabled && styles.pressed,
         ]}
@@ -148,7 +151,7 @@ export function CommercePurchaseCard({
 
 const styles = StyleSheet.create({
   purchaseHint: {
-    color: colors.play,
+    color: colors.pass,
     fontSize: 14,
     lineHeight: 19,
     fontFamily: 'Inter_700Bold',
@@ -188,7 +191,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   mutedButton: { backgroundColor: '#CBD5E1' },
-  primaryButton: { backgroundColor: colors.play },
+  primaryButton: { backgroundColor: colors.pass },
+  bluePrimaryButton: { backgroundColor: colors.play },
   successButton: { backgroundColor: colors.correctText },
   warningButton: { backgroundColor: colors.pass },
   disabledButton: { opacity: 0.72 },
@@ -214,7 +218,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   comparisonPrice: {
-    color: '#C5D9EE',
+    color: '#FFD0AD',
     fontSize: 14,
     lineHeight: 18,
     fontFamily: 'Inter_700Bold',

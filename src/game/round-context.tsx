@@ -15,7 +15,7 @@ import { Platform } from 'react-native';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import type { CatalogDeck, CatalogSnapshot } from '@/catalog/catalog-snapshot';
-import { getDailyCardPool } from '@/game/daily-card-memory';
+import { cardContentKey } from '@/game/daily-card-memory';
 import { initialRoundState, roundReducer } from '@/game/game-reducer';
 import type { CardOutcome, RoundState } from '@/game/game-types';
 import { clampRoundDuration } from '@/game/round-duration';
@@ -23,9 +23,9 @@ import { captureRoundDeck, resolveRoundDeck } from '@/game/round-deck-snapshot';
 import { captureRoundResultSnapshot } from '@/game/round-result-snapshot';
 import { shuffle } from '@/game/shuffle';
 import {
-  loadDailySeenCardIds,
-  rememberDailyCard,
-  resetDailySeenCardIds,
+  loadRoundCardIds,
+  rememberCard as rememberSeenCard,
+  replenishRoundCardIds,
 } from '@/storage/daily-card-memory';
 import { rememberDeckPlayed } from '@/storage/deck-library-preferences';
 import {
@@ -123,8 +123,9 @@ export function RoundProvider({ children }: PropsWithChildren) {
 
   const rememberCard = useCallback((deckId: string | null, cardId: string | undefined) => {
     if (!deckId || !cardId) return;
-    rememberDailyCard(deckId, cardId);
-  }, []);
+    const card = getDeckById(deckId)?.cards.find((candidate) => candidate.id === cardId);
+    if (card) rememberSeenCard(card);
+  }, [getDeckById]);
 
   const recordOverlayEvent = useCallback((event: Omit<RoundVideoEvent, 'atMs'>) => {
     if (recordingStartedAt.current === null || !recordingActive.current) return;
@@ -704,13 +705,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
         const deck = catalogRef.current.getDeckById(deckId);
         if (!deck) return false;
         const capturedDeck = captureRoundDeck(deck);
-        const seenCards = await loadDailySeenCardIds(deckId);
-        const pool = getDailyCardPool(
-          capturedDeck.cards.map((card) => card.id),
-          seenCards,
+        const cardIds = await loadRoundCardIds(
+          capturedDeck.cards,
+          catalogRef.current.decks,
         );
-        if (pool.cardIds.length === 0) return false;
-        if (pool.resetMemory) await resetDailySeenCardIds(deckId);
+        if (cardIds.length === 0) return false;
         roundDeckRef.current = capturedDeck;
         setRoundDeck(capturedDeck);
         recordingCancelled.current = false;
@@ -723,7 +722,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
           type: 'CONFIGURE',
           deckId,
           durationSeconds: clampRoundDuration(durationSeconds),
-          cardOrder: shuffle(pool.cardIds),
+          cardOrder: shuffle(cardIds),
         });
         return true;
       },
@@ -769,11 +768,8 @@ export function RoundProvider({ children }: PropsWithChildren) {
           let nextCardId = round.cardOrder[round.currentCardIndex + 1];
           const replenishedCardOrder = nextCardId
             ? undefined
-            : replenishDeck(round.deckId, getDeckById);
-          if (replenishedCardOrder?.length) {
-            void resetDailySeenCardIds(round.deckId!);
-            nextCardId = replenishedCardOrder[0];
-          }
+            : replenishDeck(round, getDeckById);
+          if (replenishedCardOrder?.length) nextCardId = replenishedCardOrder[0];
           rememberCard(round.deckId, nextCardId);
           const deck = getDeckById(round.deckId ?? undefined);
           const card = deck?.cards.find((candidate) => candidate.id === nextCardId);
@@ -799,15 +795,16 @@ export function RoundProvider({ children }: PropsWithChildren) {
       },
       resumeRound: () => {
         let replenishedCardOrder: string[] | undefined;
-        if (round.status === 'paused' && round.pausedStatus === 'feedback') {
+        if (
+          round.status === 'paused' &&
+          round.pausedStatus === 'feedback' &&
+          (round.remainingMs ?? 0) > 0
+        ) {
           let nextCardId = round.cardOrder[round.currentCardIndex + 1];
           replenishedCardOrder = nextCardId
             ? undefined
-            : replenishDeck(round.deckId, getDeckById);
-          if (replenishedCardOrder?.length) {
-            void resetDailySeenCardIds(round.deckId!);
-            nextCardId = replenishedCardOrder[0];
-          }
+            : replenishDeck(round, getDeckById);
+          if (replenishedCardOrder?.length) nextCardId = replenishedCardOrder[0];
           rememberCard(round.deckId, nextCardId);
         }
         dispatch({ type: 'RESUME', now: Date.now(), replenishedCardOrder });
@@ -864,6 +861,24 @@ export function RoundProvider({ children }: PropsWithChildren) {
   );
 }
 
+function replenishDeck(
+  round: RoundState,
+  getDeckById: CatalogSnapshot['getDeckById'],
+): string[] | undefined {
+  const deck = getDeckById(round.deckId ?? undefined);
+  if (!deck) return undefined;
+  const cardsById = new Map(deck.cards.map((card) => [card.id, card]));
+  const shownThisRound = new Set(
+    round.cardOrder
+      .slice(0, round.currentCardIndex + 1)
+      .flatMap((id) => {
+        const card = cardsById.get(id);
+        return card ? [cardContentKey(card)] : [];
+      }),
+  );
+  return shuffle(replenishRoundCardIds(deck.cards, shownThisRound));
+}
+
 export function useRound() {
   const context = useContext(RoundContext);
   if (!context) throw new Error('useRound must be used inside RoundProvider');
@@ -890,12 +905,4 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   return Promise.race([promise, timeoutPromise]).finally(() => {
     if (timeout) clearTimeout(timeout);
   });
-}
-
-function replenishDeck(
-  deckId: string | null,
-  getDeckById: CatalogSnapshot['getDeckById'],
-) {
-  const deck = getDeckById(deckId ?? undefined);
-  return deck ? shuffle(deck.cards.map((card) => card.id)) : undefined;
 }

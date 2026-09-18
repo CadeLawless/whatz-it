@@ -302,6 +302,7 @@ export default function DeckPreviewSheet() {
                     onPurchase={deckCommerce.purchase}
                     onRetry={deckCommerce.retry}
                     purchaseLabel={deckPrice ? `BUY DECK • ${deckPrice}` : 'BUY DECK'}
+                    primaryColor="blue"
                     showTargetTitle
                     state={deckCommerce.state}
                     target={deckCommerceTarget}

@@ -44,6 +44,8 @@ export default function BundleDetailsScreen() {
   const commerce = useCommerceProduct(resolvedCommerceTarget);
   const offer = useBundleOffer(bundleId);
   const ownedDeckIds = useOwnedDeckIds();
+  const ownedDeckCount = bundle?.deckIds.filter((id) => ownedDeckIds.has(id)).length ?? 0;
+  const hasPartialOwnership = !!bundle && ownedDeckCount > 0 && ownedDeckCount < bundle.deckIds.length;
   const purchaseHint = localizedCommercePrice(commerce.state)
     ? bundlePurchaseHint(offer)
     : null;
@@ -86,6 +88,11 @@ export default function BundleDetailsScreen() {
             <Text style={styles.eyebrow}>BUNDLE</Text>
             <Text style={styles.title}>{bundle.title}</Text>
             <Text style={styles.description}>{bundle.description}</Text>
+            {hasPartialOwnership && (
+              <View style={styles.ownedBadge}>
+                <Text style={styles.ownedBadgeText}>{ownedDeckCount}/{bundle.deckIds.length} decks owned</Text>
+              </View>
+            )}
           </View>
 
           <BundleCoverCarousel
@@ -168,6 +175,20 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   description: { color: colors.white, fontSize: 15, lineHeight: 21 },
+  ownedBadge: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  ownedBadgeText: {
+    color: colors.white,
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+  },
   purchaseFooter: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

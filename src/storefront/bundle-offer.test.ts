@@ -60,7 +60,7 @@ describe('bundle offer', () => {
     assert.equal(bundleRemainingDeckLabel({ ...bundleOffer(bundle, new Set(['a', 'b']), 'apple', prices), comparisonPrice: null }), null);
   });
   it('shows bundle savings copy for a new buyer with a comparison', () => {
-    assert.equal(bundlePurchaseHint(bundleOffer(bundle, new Set(), 'apple', prices)), 'Save more by bundling.');
+    assert.equal(bundlePurchaseHint(bundleOffer(bundle, new Set(), 'apple', prices)), 'Save more by bundling!');
     assert.equal(bundlePurchaseHint(bundleOffer(bundle, new Set(['a', 'b']), 'apple', prices)), 'Buy the last 2 decks');
     const expensiveBundle = new Map(prices);
     expensiveBundle.set('bundle.full', { currency: 'USD', price: 9.99 });
