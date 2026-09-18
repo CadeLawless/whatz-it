@@ -98,6 +98,30 @@ describe('catalog artifact verification', () => {
 });
 
 describe('catalog synchronization activation', () => {
+  it('activates a deck with no cover media', async () => {
+    const harness = createDatabaseHarness();
+    const storedFiles = new Map<string, Uint8Array>();
+    try {
+      await applyBundledCatalogBaseline(harness.adapter, bundledCatalog);
+      const fixture = acceptanceFixture(synchronizedRevision);
+      fixture.manifest.decks[1].cover = null;
+      fixture.manifest.decks[1].thumbnail = null;
+      const result = await synchronizeCatalog(harness.adapter, {
+        manifestUrl: fixture.manifestUrl,
+        downloadRuntime: acceptanceRuntime(fixture, storedFiles),
+      });
+      assert.equal(result.status, 'updated');
+      assert.deepEqual(
+        plainRow(harness.database.prepare(
+          'SELECT cover_hash, thumbnail_hash FROM decks WHERE deck_id = ?',
+        ).get(fixture.manifest.decks[1].id)),
+        { cover_hash: null, thumbnail_hash: null },
+      );
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('commits metadata, cards, media, and revision together', async () => {
     const harness = createDatabaseHarness();
     try {
@@ -209,7 +233,9 @@ describe('catalog synchronization activation', () => {
       successor.decks[1].cardContentVersion += 1;
       successor.decks[1].content.hash = 'e'.repeat(64);
       const preparedMedia = new Map(
-        successor.decks.flatMap((deck) => [deck.cover, deck.thumbnail]).map(
+        successor.decks.flatMap((deck) => [deck.cover, deck.thumbnail].filter(
+          (reference): reference is NonNullable<typeof reference> => reference !== null,
+        )).map(
           (reference) => [
             reference.hash,
             { ...reference, localUri: `file:///catalog-media/${reference.hash}.webp` },
@@ -557,7 +583,7 @@ describe('Phase 3 catalog acceptance', () => {
       let conditionalEtag: string | null = 'not-requested';
       let transientAttempts = 0;
       const runtime = acceptanceRuntime(fixture, storedFiles);
-      const transientUrl = fixture.manifest.decks[1].cover.url;
+      const transientUrl = fixture.manifest.decks[1].cover!.url;
       const result = await synchronizeCatalog(harness.adapter, {
         manifestUrl: fixture.manifestUrl,
         downloadRuntime: {
@@ -751,8 +777,8 @@ function updateFixture() {
     manifest,
     artifacts: new Map([['celebrity-shuffle', artifact]]),
     media: new Map([
-      [coverHash, { ...manifest.decks[0].cover, localUri: 'file:///cover.webp' }],
-      [thumbnailHash, { ...manifest.decks[0].thumbnail, localUri: 'file:///thumbnail.webp' }],
+      [coverHash, { ...manifest.decks[0].cover!, localUri: 'file:///cover.webp' }],
+      [thumbnailHash, { ...manifest.decks[0].thumbnail!, localUri: 'file:///thumbnail.webp' }],
     ]),
   };
 }
@@ -847,10 +873,10 @@ function acceptanceFixture(revision: number) {
     manifest,
     artifacts: new Map<string, Uint8Array>([
       [freeContentUrl, freeContent],
-      [manifest.decks[0].cover.url, media.freeCover],
-      [manifest.decks[0].thumbnail.url, media.freeThumbnail],
-      [manifest.decks[1].cover.url, media.paidCover],
-      [manifest.decks[1].thumbnail.url, media.paidThumbnail],
+      [manifest.decks[0].cover!.url, media.freeCover],
+      [manifest.decks[0].thumbnail!.url, media.freeThumbnail],
+      [manifest.decks[1].cover!.url, media.paidCover],
+      [manifest.decks[1].thumbnail!.url, media.paidThumbnail],
     ]),
   };
 }
@@ -879,7 +905,7 @@ function acceptanceRuntime(
       size: storedFiles.get(uri)?.byteLength ?? 0,
     }),
     storeDownloadedMedia: async (
-      references: CatalogManifest['decks'][number]['cover'][],
+      references: NonNullable<CatalogManifest['decks'][number]['cover']>[],
       downloads: Map<string, Uint8Array>,
     ) =>
       references.flatMap((reference) => {

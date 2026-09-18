@@ -290,7 +290,7 @@ async function activeCatalogMediaIsReady(
        LEFT JOIN media_files m ON m.content_hash = d.thumbnail_hash
       WHERE d.lifecycle_status = 'active' AND d.thumbnail_hash IS NOT NULL`,
   );
-  if (rows.length === 0) return false;
+  if (rows.length === 0) return true;
 
   const inspect = runtime?.inspectLocalFile ?? inspectLocalFile;
   for (const row of rows) {
@@ -376,12 +376,12 @@ export async function applyPreparedCatalog(
         deck.content.hash,
         deck.content.bytes,
         deck.content.url,
-        deck.cover.hash,
-        deck.cover.bytes,
-        deck.cover.url,
-        deck.thumbnail.hash,
-        deck.thumbnail.bytes,
-        deck.thumbnail.url,
+        deck.cover?.hash ?? null,
+        deck.cover?.bytes ?? null,
+        deck.cover?.url ?? null,
+        deck.thumbnail?.hash ?? null,
+        deck.thumbnail?.bytes ?? null,
+        deck.thumbnail?.url ?? null,
         deck.productIds.apple,
         deck.productIds.google,
         deck.status,
@@ -498,7 +498,7 @@ export async function applyPreparedCatalog(
       }
     }
     for (const item of media.values()) {
-      const mediaType = manifest.decks.some((deck) => deck.thumbnail.hash === item.hash)
+      const mediaType = manifest.decks.some((deck) => deck.thumbnail?.hash === item.hash)
         ? 'thumbnail'
         : 'cover';
       await transaction.runAsync(
@@ -545,6 +545,7 @@ function uniqueMediaReferences(manifest: CatalogManifest) {
   for (const deck of manifest.decks) {
     if (deck.status !== 'active') continue;
     for (const reference of [deck.cover, deck.thumbnail]) {
+      if (reference === null) continue;
       const existing = references.get(reference.hash);
       if (existing && (existing.bytes !== reference.bytes || existing.url !== reference.url)) {
         throw new CatalogSyncError('invalid_manifest', `Media hash ${reference.hash} has conflicting metadata.`);

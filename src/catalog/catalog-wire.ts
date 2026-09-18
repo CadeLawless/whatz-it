@@ -37,8 +37,8 @@ export type CatalogManifestDeck = {
   cardCount: number;
   featuredCards?: Card[];
   content: CatalogContentReference;
-  cover: CatalogArtifactReference;
-  thumbnail: CatalogArtifactReference;
+  cover: CatalogArtifactReference | null;
+  thumbnail: CatalogArtifactReference | null;
   productIds: CatalogProductIds;
 };
 
@@ -135,6 +135,9 @@ export function parseCatalogManifest(
     ) {
       throw new Error(`Development preview deck ${id} must expose authenticated preview content.`);
     }
+    if ((deck.cover === null) !== (deck.thumbnail === null)) {
+      throw new Error(`${path}.cover and ${path}.thumbnail must both be null or objects.`);
+    }
     return {
       id,
       order: positiveInteger(deck.order, `${path}.order`),
@@ -157,11 +160,11 @@ export function parseCatalogManifest(
         contentUrl,
         protectedContent,
       ),
-      cover: artifactReference(
+      cover: deck.cover === null ? null : artifactReference(
         objectValue(deck.cover, `${path}.cover`),
         `${path}.cover`,
       ),
-      thumbnail: artifactReference(
+      thumbnail: deck.thumbnail === null ? null : artifactReference(
         objectValue(deck.thumbnail, `${path}.thumbnail`),
         `${path}.thumbnail`,
       ),

@@ -102,6 +102,28 @@ describe('catalog wire validation', () => {
     );
   });
 
+  it('accepts decks without cover media and rejects an incomplete media pair', () => {
+    const fixture = manifestFixture();
+    const uncovered = {
+      ...fixture,
+      decks: fixture.decks.map((deck, index) => index === 1
+        ? { ...deck, cover: null, thumbnail: null }
+        : deck),
+    };
+    const manifest = parseCatalogManifest(uncovered);
+    assert.equal(manifest.decks[1].cover, null);
+    assert.equal(manifest.decks[1].thumbnail, null);
+    assert.throws(
+      () => parseCatalogManifest({
+        ...uncovered,
+        decks: uncovered.decks.map((deck, index) => index === 1
+          ? { ...deck, thumbnail: fixture.decks[1].thumbnail }
+          : deck),
+      }),
+      /cover and decks\[1\]\.thumbnail must both be null or objects/,
+    );
+  });
+
   it('validates and enforces an optional minimum app version', () => {
     const fixture = manifestFixture();
     fixture.minimumAppVersion = '1.2.0';

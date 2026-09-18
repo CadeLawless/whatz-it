@@ -17,6 +17,30 @@ import {
 const placeholderHash = 'a'.repeat(64);
 
 describe('release catalog baseline preparation', () => {
+  it('omits cover downloads and bundled cover paths for an uncovered deck', async () => {
+    const contentBytes = new TextEncoder().encode(JSON.stringify(freeArtifact()));
+    const fixture = manifestFixture();
+    fixture.decks[0].content.hash = sha256(contentBytes);
+    fixture.decks[0].content.bytes = contentBytes.byteLength;
+    const uncovered = {
+      ...fixture,
+      decks: fixture.decks.map((deck) => ({ ...deck, cover: null, thumbnail: null })),
+    };
+    const requested: string[] = [];
+    const request = (async (input: URL | RequestInfo) => {
+      const url = String(input);
+      requested.push(url);
+      if (url === 'https://api.example.test/manifest') return Response.json(uncovered);
+      if (url === fixture.decks[0].content.url) return new Response(contentBytes);
+      return new Response('missing', { status: 404 });
+    }) as typeof fetch;
+
+    const prepared = await fetchPreparedBaseline('https://api.example.test/manifest', request);
+    assert.equal(prepared.covers.size, 0);
+    assert.equal(prepared.catalog.decks.every((deck) => !deck.coverImage), true);
+    assert.equal(requested.length, 2);
+  });
+
   it('embeds verified storefront covers while retaining paid metadata only', () => {
     const manifest = parseCatalogManifest(manifestFixture());
     const artifact = freeArtifact();

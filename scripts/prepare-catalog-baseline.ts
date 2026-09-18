@@ -85,13 +85,15 @@ export async function fetchPreparedBaseline(
         deck.access === 'free'
           ? fetchFreeDeckArtifact(deck, request)
           : Promise.resolve(undefined),
-        fetchVerifiedBytes(deck.cover.url, deck.cover.bytes, deck.cover.hash, request),
+        deck.cover
+          ? fetchVerifiedBytes(deck.cover.url, deck.cover.bytes, deck.cover.hash, request)
+          : Promise.resolve(undefined),
       ]);
-      assertWebp(coverBytes, deck.id);
+      if (coverBytes) assertWebp(coverBytes, deck.id);
       return {
         artifact,
         coverBytes,
-        coverPath: baselineCoverPath(deck.cover.hash),
+        coverPath: deck.cover ? baselineCoverPath(deck.cover.hash) : undefined,
         deckId: deck.id,
       };
     },
@@ -100,8 +102,12 @@ export async function fetchPreparedBaseline(
   const artifacts = new Map(
     entries.flatMap((entry) => entry.artifact ? [[entry.deckId, entry.artifact] as const] : []),
   );
-  const coverPaths = new Map(entries.map((entry) => [entry.deckId, entry.coverPath]));
-  const covers = new Map(entries.map((entry) => [entry.coverPath, entry.coverBytes]));
+  const coverPaths = new Map(entries.flatMap((entry) => entry.coverPath
+    ? [[entry.deckId, entry.coverPath] as const]
+    : []));
+  const covers = new Map(entries.flatMap((entry) => entry.coverPath && entry.coverBytes
+    ? [[entry.coverPath, entry.coverBytes] as const]
+    : []));
   return { catalog: buildBaselineCatalog(manifest, artifacts, coverPaths), covers };
 }
 
@@ -121,8 +127,11 @@ export function buildBaselineCatalog(
       if (deck.access === 'free' && !artifact) {
         throw new Error(`Free deck ${deck.id} is missing its verified baseline artifact.`);
       }
-      if (coverPath !== baselineCoverPath(deck.cover.hash)) {
+      if (deck.cover && coverPath !== baselineCoverPath(deck.cover.hash)) {
         throw new Error(`Deck ${deck.id} is missing its verified baseline cover.`);
+      }
+      if (!deck.cover && coverPath) {
+        throw new Error(`Deck ${deck.id} has an unexpected baseline cover.`);
       }
       if (deck.access === 'paid' && artifact) {
         throw new Error(`Paid deck ${deck.id} must not be included as baseline card content.`);
