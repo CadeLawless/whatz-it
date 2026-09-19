@@ -19,6 +19,7 @@ import Animated, {
 
 import {
   createCatalogDiscoveryRepository,
+  type CatalogBundleCursor,
   type CatalogBundleSummary,
   type CatalogDeckCursor,
   type CatalogDeckSummary,
@@ -27,6 +28,7 @@ import {
 import type { CatalogDeck, CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { CatalogCoverImage } from '@/components/catalog-cover-image';
 import { ConfirmationPrompt } from '@/components/confirmation-prompt';
+import { OwnedCoverOverlay } from '@/components/owned-cover-overlay';
 import { bundleRemainingDeckSavingsLabel } from '@/storefront/bundle-offer';
 import {
   localizedCommercePrice,
@@ -37,9 +39,13 @@ import {
   useRestorePurchases,
 } from '@/storefront/commerce-provider';
 import { successfulRestoreNotice } from '@/storefront/restore-purchases-notice';
+import {
+  alphabeticalStorefrontOrder,
+  sortStorefrontItems,
+} from '@/storefront/storefront-catalog-order';
 import { colors } from '@/theme';
 
-const PAGE_SIZE = 24;
+const DISCOVERY_PAGE_SIZE = 100;
 
 type ExploreSection = 'bundles' | 'decks';
 
@@ -53,21 +59,11 @@ function createQueryKey(search: string) {
 }
 
 function catalogDeckPage(catalog: CatalogSnapshot) {
-  const decks = catalog.paidDecks
+  return catalog.paidDecks
     .map<CatalogDeckSummary>(({ cards: _cards, order: _order, version, ...deck }) => ({
       ...deck,
       deckVersion: version,
-    }))
-    .sort(compareCatalogTitles);
-  const page = decks.slice(0, PAGE_SIZE);
-  const last = page.at(-1);
-  return {
-    decks: page,
-    nextCursor:
-      decks.length > PAGE_SIZE && last
-        ? { title: last.title, deckId: last.id }
-        : null,
-  };
+    }));
 }
 
 function catalogBundles(catalog: CatalogSnapshot) {
@@ -81,29 +77,39 @@ function catalogBundles(catalog: CatalogSnapshot) {
       ...(bundle.price === undefined ? {} : { price: bundle.price }),
       bundleVersion: bundle.version,
       deckIds: [...bundle.deckIds],
-    }))
-    .sort(compareCatalogTitles)
-    .slice(0, PAGE_SIZE);
+    }));
 }
 
-function compareCatalogTitles(
-  left: { id: string; title: string },
-  right: { id: string; title: string },
-) {
-  return left.title.localeCompare(right.title, undefined, { sensitivity: 'base' })
-    || left.id.localeCompare(right.id);
+async function queryAllDecks(repository: CatalogDiscoveryRepository, search: string) {
+  const decks: CatalogDeckSummary[] = [];
+  let after: CatalogDeckCursor | undefined;
+  do {
+    const page = await repository.queryDecks({
+      access: 'paid',
+      search,
+      limit: DISCOVERY_PAGE_SIZE,
+      after,
+    });
+    decks.push(...page.decks);
+    after = page.nextCursor ?? undefined;
+  } while (after);
+  return decks;
 }
 
-function replaceWithoutReordering<T extends { id: string }>(
-  current: readonly T[],
-  next: readonly T[],
-) {
-  const nextById = new Map(next.map((item) => [item.id, item]));
-  const retained = current
-    .map((item) => nextById.get(item.id))
-    .filter((item) => item !== undefined);
-  const retainedIds = new Set(retained.map((item) => item.id));
-  return [...retained, ...next.filter((item) => !retainedIds.has(item.id))];
+async function queryAllBundles(repository: CatalogDiscoveryRepository, search: string) {
+  const bundles: CatalogBundleSummary[] = [];
+  let after: CatalogBundleCursor | undefined;
+  do {
+    const page = await repository.queryBundles({
+      access: 'paid',
+      search,
+      limit: DISCOVERY_PAGE_SIZE,
+      after,
+    });
+    bundles.push(...page.bundles);
+    after = page.nextCursor ?? undefined;
+  } while (after);
+  return bundles;
 }
 
 export const StorefrontExplore = forwardRef<
@@ -124,6 +130,7 @@ export const StorefrontExplore = forwardRef<
   const router = useRouter();
   const restore = useRestorePurchases();
   const commerceTesting = useCommerceTesting();
+  const ownedDeckIds = useOwnedDeckIds();
   const restoreNoticePending = useRef(false);
   const [testingPrompt, setTestingPrompt] = useState<'new-device' | 'reset-ownership' | null>(null);
   const searchInputRef = useRef<TextInput>(null);
@@ -135,13 +142,9 @@ export const StorefrontExplore = forwardRef<
   const [search, setSearch] = useState('');
   const [repository, setRepository] = useState<CatalogDiscoveryRepository | null>(null);
   const [decks, setDecks] = useState<CatalogDeckSummary[]>(
-    () => catalogDeckPage(catalog).decks,
+    () => catalogDeckPage(catalog),
   );
   const [bundles, setBundles] = useState<CatalogBundleSummary[]>(() => catalogBundles(catalog));
-  const [nextCursor, setNextCursor] = useState<CatalogDeckCursor | null>(
-    () => catalogDeckPage(catalog).nextCursor,
-  );
-  const [loadingMore, setLoadingMore] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
   const [sectionControlWidth, setSectionControlWidth] = useState(0);
   const loadedQueryKeys = useRef<Record<ExploreSection, string>>({
@@ -153,6 +156,26 @@ export const StorefrontExplore = forwardRef<
   >({ bundles: null, decks: null });
   const reduceMotion = useReducedMotion();
   const activeSectionPosition = useSharedValue(section === 'decks' ? 1 : 0);
+  const displayedDecks = useMemo(
+    () => sortStorefrontItems(
+      decks,
+      alphabeticalStorefrontOrder(decks),
+      (deck) => ownedDeckIds.has(deck.id),
+    ),
+    [decks, ownedDeckIds],
+  );
+  const displayedBundles = useMemo(
+    () => sortStorefrontItems(
+      bundles,
+      catalog.bundles
+        .filter((bundle) => bundle.access === 'paid')
+        .sort((left, right) => left.order - right.order)
+        .map((bundle) => bundle.id),
+      (bundle) => bundle.deckIds.length > 0
+        && bundle.deckIds.every((deckId) => ownedDeckIds.has(deckId)),
+    ),
+    [bundles, catalog.bundles, ownedDeckIds],
+  );
 
   useEffect(() => {
     if (!restoreNoticePending.current) return;
@@ -215,38 +238,24 @@ export const StorefrontExplore = forwardRef<
     if (!repository) return;
     let cancelled = false;
     const queryKey = createQueryKey(search);
-    const repositoryChanged = loadedRepositories.current[section] !== repository;
-    if (!repositoryChanged && loadedQueryKeys.current[section] === queryKey) return;
-    const preserveOrder =
-      repositoryChanged && loadedQueryKeys.current[section] === queryKey;
+    if (
+      loadedRepositories.current[section] === repository
+      && loadedQueryKeys.current[section] === queryKey
+    ) return;
 
     const timer = setTimeout(() => {
       const request =
         section === 'decks'
-          ? repository.queryDecks({
-              access: 'paid',
-              search,
-              limit: PAGE_SIZE,
-            }).then((page) => {
+          ? queryAllDecks(repository, search).then((results) => {
               if (cancelled) return;
-              setDecks((current) =>
-                preserveOrder
-                  ? replaceWithoutReordering(current, page.decks)
-                  : page.decks,
-              );
-              setNextCursor(page.nextCursor);
+              setDecks(results);
               loadedQueryKeys.current.decks = queryKey;
               loadedRepositories.current.decks = repository;
             })
-          : repository
-              .queryBundles({ access: 'paid', search, limit: PAGE_SIZE })
-              .then((page) => {
+          : queryAllBundles(repository, search)
+              .then((results) => {
                 if (cancelled) return;
-                setBundles((current) =>
-                  preserveOrder
-                    ? replaceWithoutReordering(current, page.bundles)
-                    : page.bundles,
-                );
+                setBundles(results);
                 loadedQueryKeys.current.bundles = queryKey;
                 loadedRepositories.current.bundles = repository;
               });
@@ -269,28 +278,6 @@ export const StorefrontExplore = forwardRef<
   const selectSection = (nextSection: ExploreSection) => {
     searchInputRef.current?.blur();
     setSection(nextSection);
-  };
-
-  const loadMore = async () => {
-    if (!repository || !nextCursor || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const page = await repository.queryDecks({
-        access: 'paid',
-        search,
-        limit: PAGE_SIZE,
-        after: nextCursor,
-      });
-      setDecks((current) => [...current, ...page.decks]);
-      setNextCursor(page.nextCursor);
-    } catch (cause) {
-      console.warn(
-        '[StorefrontExplore] More cached decks could not be loaded.',
-        cause instanceof Error ? cause.message : String(cause),
-      );
-    } finally {
-      setLoadingMore(false);
-    }
   };
 
   return (
@@ -368,7 +355,7 @@ export const StorefrontExplore = forwardRef<
           {section === 'bundles' ? (
             bundles.length > 0 ? (
               <View style={styles.bundleList}>
-                {bundles.map((bundle) => (
+                {displayedBundles.map((bundle) => (
                   <BundleBrowseCard
                     bundle={bundle}
                     catalog={catalog}
@@ -388,10 +375,11 @@ export const StorefrontExplore = forwardRef<
           ) : decks.length > 0 ? (
             <>
               <View style={styles.deckList}>
-                {decks.map((deck) => (
+                {displayedDecks.map((deck) => (
                   <DeckBrowseCard
                     deck={catalog.getDeckById(deck.id) ?? deck}
                     key={deck.id}
+                    owned={ownedDeckIds.has(deck.id)}
                     onPress={() =>
                       router.push({
                         pathname: '/store/deck/[deckId]',
@@ -401,20 +389,6 @@ export const StorefrontExplore = forwardRef<
                   />
                 ))}
               </View>
-              {nextCursor && (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={loadingMore}
-                  onPress={() => void loadMore()}
-                  style={({ pressed }) => [styles.loadMore, pressed && styles.pressed]}
-                >
-                  {loadingMore ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.loadMoreText}>LOAD MORE DECKS</Text>
-                  )}
-                </Pressable>
-              )}
             </>
           ) : (
             <EmptyResults search={search} type="decks" />
@@ -631,15 +605,17 @@ function BundleBrowseCard({
 
 function DeckBrowseCard({
   deck,
+  owned,
   onPress,
 }: {
   deck: CatalogDeckSummary | CatalogSnapshot['decks'][number];
+  owned: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityHint="Opens deck details"
-      accessibilityLabel={`${deck.title}, ${deck.cardCount} cards`}
+      accessibilityLabel={`${deck.title}, ${deck.cardCount} cards${owned ? ', owned' : ''}`}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [styles.deckCard, pressed && styles.cardPressed]}
@@ -658,6 +634,7 @@ function DeckBrowseCard({
           localOnly
           style={StyleSheet.absoluteFill}
         />
+        {owned && <OwnedCoverOverlay />}
       </View>
     </Pressable>
   );
@@ -729,8 +706,6 @@ const styles = StyleSheet.create({
   messageCard: { gap: 8, padding: 22, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 20, backgroundColor: '#FFFFFF' },
   messageTitle: { color: '#111827', fontSize: 17, fontFamily: 'Inter_900Black', fontWeight: '900' },
   messageBody: { color: '#64748B', fontSize: 14, lineHeight: 20 },
-  loadMore: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#459EFE' },
-  loadMoreText: { color: '#FFFFFF', fontSize: 12, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 0.7 },
   restorePurchases: { alignItems: 'center', gap: 9, paddingTop: 8 },
   restorePurchasesButton: {
     minHeight: 44,

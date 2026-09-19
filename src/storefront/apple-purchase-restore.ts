@@ -15,18 +15,13 @@ export async function collectApplePurchasesForRestore({
   synchronizeStoreKit: () => Promise<unknown>;
   getPurchases: () => Promise<Purchase[]>;
 }) {
-  let synchronizationError: unknown;
   try {
     await synchronizeStoreKit();
-  } catch (error) {
-    synchronizationError = error;
+  } catch {
+    // StoreKit can report an incomplete sync when there is simply nothing new
+    // to restore. The current-entitlements snapshot below is authoritative.
   }
-
-  const purchases = await getPurchases();
-  if (synchronizationError && purchases.length === 0) {
-    throw synchronizationError;
-  }
-  return purchases;
+  return getPurchases();
 }
 
 export async function reconcileApplePurchases({
