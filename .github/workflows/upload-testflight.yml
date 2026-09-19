@@ -1,0 +1,75 @@
+name: Upload IPA to TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: Direct HTTPS URL for the store-signed IPA
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: testflight-upload
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Upload to App Store Connect
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Download and validate IPA
+        env:
+          IPA_URL: ${{ inputs.ipa_url }}
+        run: |
+          set -euo pipefail
+
+          case "$IPA_URL" in
+            https://*) ;;
+            *)
+              echo "::error::The IPA URL must use HTTPS."
+              exit 1
+              ;;
+          esac
+
+          curl \
+            --fail \
+            --location \
+            --retry 3 \
+            --retry-all-errors \
+            --show-error \
+            --output "$RUNNER_TEMP/app.ipa" \
+            "$IPA_URL"
+
+          test -s "$RUNNER_TEMP/app.ipa"
+          unzip -tq "$RUNNER_TEMP/app.ipa"
+
+      - name: Upload IPA to Apple
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          : "${ASC_ISSUER_ID:?Missing ASC_ISSUER_ID repository secret}"
+          : "${ASC_KEY_ID:?Missing ASC_KEY_ID repository secret}"
+          : "${ASC_PRIVATE_KEY:?Missing ASC_PRIVATE_KEY repository secret}"
+
+          key_directory="$HOME/.appstoreconnect/private_keys"
+          key_file="$key_directory/AuthKey_${ASC_KEY_ID}.p8"
+
+          mkdir -p "$key_directory"
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s\n' "$ASC_PRIVATE_KEY" > "$key_file"
+          chmod 600 "$key_file"
+
+          xcrun altool \
+            --upload-app \
+            --file "$RUNNER_TEMP/app.ipa" \
+            --type ios \
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID"
