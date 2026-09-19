@@ -52,6 +52,39 @@ describe('Apple purchase restoration', () => {
     assert.deepEqual(calls, ['synchronize-storekit', 'get-purchases']);
   });
 
+  it('uses owned purchases when StoreKit reports that synchronization did not complete', async () => {
+    const calls: string[] = [];
+    const purchases = [purchase()];
+
+    const result = await collectApplePurchasesForRestore({
+      synchronizeStoreKit: async () => {
+        calls.push('synchronize-storekit');
+        throw new Error('App Store purchase sync did not complete');
+      },
+      getPurchases: async () => {
+        calls.push('get-purchases');
+        return purchases;
+      },
+    });
+
+    assert.equal(result, purchases);
+    assert.deepEqual(calls, ['synchronize-storekit', 'get-purchases']);
+  });
+
+  it('keeps a StoreKit synchronization failure when no owned purchases can be recovered', async () => {
+    const synchronizationError = new Error('App Store purchase sync did not complete');
+
+    await assert.rejects(
+      collectApplePurchasesForRestore({
+        synchronizeStoreKit: async () => {
+          throw synchronizationError;
+        },
+        getPurchases: async () => [],
+      }),
+      synchronizationError,
+    );
+  });
+
   it('verifies each known transaction once before repairing local content', async () => {
     const calls: string[] = [];
     const result = await reconcileApplePurchases({

@@ -15,8 +15,18 @@ export async function collectApplePurchasesForRestore({
   synchronizeStoreKit: () => Promise<unknown>;
   getPurchases: () => Promise<Purchase[]>;
 }) {
-  await synchronizeStoreKit();
-  return getPurchases();
+  let synchronizationError: unknown;
+  try {
+    await synchronizeStoreKit();
+  } catch (error) {
+    synchronizationError = error;
+  }
+
+  const purchases = await getPurchases();
+  if (synchronizationError && purchases.length === 0) {
+    throw synchronizationError;
+  }
+  return purchases;
 }
 
 export async function reconcileApplePurchases({
