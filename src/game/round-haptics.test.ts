@@ -52,14 +52,23 @@ function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 
         case 'whatz-it-video-export': return {
           hasAndroidRoundHapticAmplitudeControl() { return false; },
           cancelAndroidRoundWaveform() { calls.push({ api: 'native-cancel' }); },
+          cancelRoundHapticPlayback() { calls.push({ api: 'ios-cancel' }); },
           playAndroidRoundWaveform(timings: number[], amplitudes: number[]) {
             if (native === 'missing') return false;
             calls.push({ api: 'waveform', value: { timings, amplitudes } });
             if (native === 'failed') throw new Error('unavailable');
             return true;
           },
-          async playRoundHaptic(cue: string, value: number | null) {
-            calls.push({ api: 'ios', value: [cue, value] });
+          async playRoundHaptic(
+            cue: string,
+            value: number | null,
+            strongPulseDurationMs: number,
+            timesUpPulseIntervalMs: number,
+          ) {
+            calls.push({
+              api: 'ios',
+              value: [cue, value, strongPulseDurationMs, timesUpPulseIntervalMs],
+            });
           },
         };
         default:
@@ -177,14 +186,20 @@ test('native failure never speculatively dispatches a second vibration', async (
   assert.deepEqual(h.calls.map(c => c.api), ['waveform', 'failure']);
 });
 
-test('iOS retains exactly one original native call per cue with and without recording', async () => {
+test('iOS sends every cue through one native Core Haptics call with and without recording', async () => {
   const h = harness('ios');
   const expected = [];
   for (const cameraActive of [false, true]) {
     for (const { cue, count } of cases) {
       await h.triggerRoundHaptic(cue, { cameraActive, countdownValue: count });
-      expected.push({ api: 'ios', value: [cue, count ?? null] });
+      expected.push({ api: 'ios', value: [cue, count ?? null, 450, 520] });
     }
   }
   assert.deepEqual(h.calls, expected);
+});
+
+test('iOS cleanup stops active Core Haptics playback', () => {
+  const h = harness('ios');
+  h.cancelRoundHaptics();
+  assert.deepEqual(h.calls.map(call => call.api), ['ios-cancel', 'cancel']);
 });

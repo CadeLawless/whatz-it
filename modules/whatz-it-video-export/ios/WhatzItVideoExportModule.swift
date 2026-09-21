@@ -1,5 +1,5 @@
-import AudioToolbox
 import AVFoundation
+import CoreHaptics
 import ExpoModulesCore
 import ImageIO
 import UIKit
@@ -89,6 +89,10 @@ public final class WhatzItVideoExportModule: Module {
   private var recordingCueBuffers = [String: AVAudioPCMBuffer]()
   private var recordingCueNextPlayerIndex = 0
   private var recordingCuePlayers = [AVAudioPlayerNode]()
+  private let roundHapticQueue = DispatchQueue(label: "com.whatzit.round-haptics")
+  private var roundHapticEngine: CHHapticEngine?
+  private var activeRoundHapticPlayer: CHHapticAdvancedPatternPlayer?
+  private var activeFinalCountdownHapticPlayer: CHHapticAdvancedPatternPlayer?
 
   public func definition() -> ModuleDefinition {
     Name("WhatzItVideoExport")
@@ -203,11 +207,23 @@ public final class WhatzItVideoExportModule: Module {
       return audioSession.allowHapticsAndSystemSoundsDuringRecording
     }
 
-    AsyncFunction("playRoundHaptic") { (cue: String, countdownValue: Int?) throws -> String in
-      guard Self.scheduleRoundHaptic(cue: cue, countdownValue: countdownValue) else {
-        throw VideoExportError.unknownHapticCue(cue)
-      }
-      return "ui-feedback-generator"
+    AsyncFunction("playRoundHaptic") {
+      (
+        cue: String,
+        countdownValue: Int?,
+        strongPulseDurationMs: Double?,
+        timesUpPulseIntervalMs: Double?
+      ) throws -> String in
+      try self.playRoundHaptic(
+        cue: cue,
+        countdownValue: countdownValue,
+        strongPulseDurationMs: strongPulseDurationMs,
+        timesUpPulseIntervalMs: timesUpPulseIntervalMs
+      )
+    }
+
+    Function("cancelRoundHapticPlayback") {
+      self.cancelRoundHapticPlayback()
     }
 
     AsyncFunction("playRecordingRoundSound") { (sound: String, volume: Double) -> Bool in
@@ -556,49 +572,163 @@ public final class WhatzItVideoExportModule: Module {
     }
   }
 
-  private static func scheduleRoundHaptic(cue: String, countdownValue: Int?) -> Bool {
+  private func playRoundHaptic(
+    cue: String,
+    countdownValue: Int?,
+    strongPulseDurationMs: Double?,
+    timesUpPulseIntervalMs: Double?
+  ) throws -> String {
+    guard let pattern = try Self.makeRoundHapticPattern(
+      cue: cue,
+      countdownValue: countdownValue,
+      strongPulseDurationMs: strongPulseDurationMs,
+      timesUpPulseIntervalMs: timesUpPulseIntervalMs
+    ) else {
+      throw VideoExportError.unknownHapticCue(cue)
+    }
+    guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+      return "core-haptics-unsupported"
+    }
+
+    return try self.roundHapticQueue.sync {
+      let engine = try self.getRoundHapticEngine()
+      try engine.start()
+      let player = try engine.makeAdvancedPlayer(with: pattern)
+      if cue == "final-countdown" {
+        // Keep the clock tick on its own player so it can layer over a Correct
+        // pulse without truncating that longer, higher-priority feedback.
+        try? self.activeFinalCountdownHapticPlayer?.stop(atTime: CHHapticTimeImmediate)
+        self.activeFinalCountdownHapticPlayer = player
+      } else {
+        try? self.activeRoundHapticPlayer?.stop(atTime: CHHapticTimeImmediate)
+        self.activeRoundHapticPlayer = player
+      }
+      try player.start(atTime: CHHapticTimeImmediate)
+      return cue == "final-countdown" ? "core-haptics-layered-tick" : "core-haptics"
+    }
+  }
+
+  private func cancelRoundHapticPlayback() {
+    self.roundHapticQueue.sync {
+      try? self.activeRoundHapticPlayer?.stop(atTime: CHHapticTimeImmediate)
+      try? self.activeFinalCountdownHapticPlayer?.stop(atTime: CHHapticTimeImmediate)
+      self.activeRoundHapticPlayer = nil
+      self.activeFinalCountdownHapticPlayer = nil
+    }
+  }
+
+  private func getRoundHapticEngine() throws -> CHHapticEngine {
+    if let engine = self.roundHapticEngine { return engine }
+
+    let engine = try CHHapticEngine(audioSession: AVAudioSession.sharedInstance())
+    engine.playsHapticsOnly = true
+    engine.isAutoShutdownEnabled = true
+    engine.stoppedHandler = { [weak self] reason in
+      logNativeDiagnostic("[RoundHapticsNative] Engine stopped reason=%ld", reason.rawValue)
+      self?.roundHapticQueue.async {
+        self?.activeRoundHapticPlayer = nil
+        self?.activeFinalCountdownHapticPlayer = nil
+      }
+    }
+    engine.resetHandler = { [weak self] in
+      logNativeDiagnostic("[RoundHapticsNative] Engine reset")
+      self?.roundHapticQueue.async {
+        self?.activeRoundHapticPlayer = nil
+        self?.activeFinalCountdownHapticPlayer = nil
+      }
+    }
+    self.roundHapticEngine = engine
+    return engine
+  }
+
+  private static func makeRoundHapticPattern(
+    cue: String,
+    countdownValue: Int?,
+    strongPulseDurationMs: Double?,
+    timesUpPulseIntervalMs: Double?
+  ) throws -> CHHapticPattern? {
+    let requestedDurationMs = strongPulseDurationMs.flatMap { $0.isFinite ? $0 : nil } ?? 450
+    let strongPulseDuration = min(max(requestedDurationMs / 1_000, 0.05), 2)
+    let requestedIntervalMs = timesUpPulseIntervalMs.flatMap { $0.isFinite ? $0 : nil } ?? 520
+    let timesUpPulseInterval = min(
+      max(requestedIntervalMs / 1_000, strongPulseDuration + 0.04),
+      3
+    )
+    var events = [CHHapticEvent]()
     switch cue {
     case "card-flip":
-      scheduleImpact(.medium)
+      events.append(transientHaptic(intensity: 0.65, sharpness: 0.5))
     case "correct":
-      scheduleSystemVibration()
+      events.append(contentsOf: strongSustainedPulse(duration: strongPulseDuration))
     case "pass":
-      scheduleImpact(.medium)
+      events.append(transientHaptic(intensity: 0.65, sharpness: 0.5))
     case "get-ready":
-      scheduleImpact(.medium)
-      scheduleImpact(.medium, after: 0.08)
+      events.append(transientHaptic(intensity: 0.65, sharpness: 0.5))
+      events.append(transientHaptic(intensity: 0.65, sharpness: 0.5, at: 0.08))
     case "initial-countdown":
       let count = max(1, min(3, 4 - (countdownValue ?? 3)))
       for index in 0..<count {
-        scheduleImpact(.light, after: Double(index) * 0.08)
+        events.append(
+          transientHaptic(
+            intensity: 0.35,
+            sharpness: 0.45,
+            at: Double(index) * 0.08
+          )
+        )
       }
     case "final-countdown":
-      scheduleImpact(.rigid)
+      events.append(transientHaptic(intensity: 0.75, sharpness: 1))
     case "times-up":
-      scheduleSystemVibration()
-      scheduleSystemVibration(after: 0.52)
-      scheduleSystemVibration(after: 1.04)
+      events.append(contentsOf: strongSustainedPulse(duration: strongPulseDuration, at: 0))
+      events.append(
+        contentsOf: strongSustainedPulse(
+          duration: strongPulseDuration,
+          at: timesUpPulseInterval
+        )
+      )
+      events.append(
+        contentsOf: strongSustainedPulse(
+          duration: strongPulseDuration,
+          at: timesUpPulseInterval * 2
+        )
+      )
     default:
-      return false
+      return nil
     }
-    return true
+    return try CHHapticPattern(events: events, parameters: [])
   }
 
-  private static func scheduleImpact(
-    _ style: UIImpactFeedbackGenerator.FeedbackStyle,
-    after delay: TimeInterval = 0
-  ) {
-    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-      let generator = UIImpactFeedbackGenerator(style: style)
-      generator.prepare()
-      generator.impactOccurred()
-    }
+  private static func transientHaptic(
+    intensity: Float,
+    sharpness: Float,
+    at relativeTime: TimeInterval = 0
+  ) -> CHHapticEvent {
+    CHHapticEvent(
+      eventType: .hapticTransient,
+      parameters: [
+        CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+        CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness),
+      ],
+      relativeTime: relativeTime
+    )
   }
 
-  private static func scheduleSystemVibration(after delay: TimeInterval = 0) {
-    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-      AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
-    }
+  private static func strongSustainedPulse(
+    duration: TimeInterval,
+    at relativeTime: TimeInterval = 0
+  ) -> [CHHapticEvent] {
+    [
+      transientHaptic(intensity: 1, sharpness: 0.5, at: relativeTime),
+      CHHapticEvent(
+        eventType: .hapticContinuous,
+        parameters: [
+          CHHapticEventParameter(parameterID: .hapticIntensity, value: 1),
+          CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.3),
+        ],
+        relativeTime: relativeTime,
+        duration: duration
+      ),
+    ]
   }
 
   private static func configureRecordingAudioSession(

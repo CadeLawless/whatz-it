@@ -1,6 +1,12 @@
 import * as Haptics from 'expo-haptics';
 import { Platform, Vibration } from 'react-native';
-import { cancelAndroidRoundWaveform, hasAndroidRoundHapticAmplitudeControl, playAndroidRoundWaveform, playRoundHaptic } from 'whatz-it-video-export';
+import {
+  cancelAndroidRoundWaveform,
+  cancelRoundHapticPlayback,
+  hasAndroidRoundHapticAmplitudeControl,
+  playAndroidRoundWaveform,
+  playRoundHaptic,
+} from 'whatz-it-video-export';
 import { androidHapticPattern } from '../game/android-haptic-pattern';
 import { AndroidHapticScheduler } from '../game/android-haptic-scheduler';
 import { traceAndroidGameplay } from './android-gameplay-trace';
@@ -22,6 +28,10 @@ type RoundHapticOptions = {
 };
 
 const QUICK_IMPACT_GAP_MS = 80;
+// These values live in the updateable JavaScript bundle. The native player
+// clamps them to safe ranges before creating a Core Haptics pattern.
+const IOS_STRONG_PULSE_DURATION_MS = 450;
+const IOS_TIMES_UP_PULSE_INTERVAL_MS = 520;
 let hapticGeneration = 0;
 const androidScheduler = new AndroidHapticScheduler((cue, { timings, amplitudes }) => {
   try {
@@ -47,6 +57,8 @@ export function cancelRoundHaptics() {
   if (Platform.OS === 'android') {
     androidScheduler.cancel();
     cancelAndroidRoundWaveform();
+  } else if (Platform.OS === 'ios') {
+    cancelRoundHapticPlayback();
   }
   Vibration.cancel();
 }
@@ -62,11 +74,11 @@ export async function triggerRoundHaptic(
   }
   const generation = hapticGeneration;
   const startedAt = Date.now();
-  // Always use the original camera-active native path on iOS so microphone
-  // permission and recording state cannot select a different vibration set.
+  // Keep every iOS cue on the same Core Haptics engine whether or not the
+  // optional round recording is active.
   const useIosNativeHaptics = Platform.OS === 'ios';
   const requestedPattern = describeRequestedPattern(cue, countdownValue);
-  const feedbackPath = useIosNativeHaptics ? 'ios-native-feedback-generator' : 'expo-haptics';
+  const feedbackPath = useIosNativeHaptics ? 'ios-core-haptics' : 'expo-haptics';
 
   logRoundDiagnostic('round haptic cue requested', {
     cameraActive,
@@ -80,8 +92,13 @@ export async function triggerRoundHaptic(
   try {
     if (useIosNativeHaptics) {
       try {
-        const nativePath = await playRoundHaptic(cue, countdownValue ?? null);
-        logRoundDiagnostic('iOS camera-safe native feedback started', {
+        const nativePath = await playRoundHaptic(
+          cue,
+          countdownValue ?? null,
+          IOS_STRONG_PULSE_DURATION_MS,
+          IOS_TIMES_UP_PULSE_INTERVAL_MS,
+        );
+        logRoundDiagnostic('iOS Core Haptics feedback started', {
           cue,
           nativePath,
           requestedPattern,
@@ -93,15 +110,10 @@ export async function triggerRoundHaptic(
           cue,
           requestedPattern,
         });
-        if (cameraActive) {
-          dispatchIosCameraFallback(cue, countdownValue);
-          logRoundDiagnostic('iOS camera vibration fallback dispatched', {
-            actualPattern: describeIosFallback(cue, countdownValue),
-            cue,
-          });
-        } else {
-          await performStyledHaptic(cue, countdownValue, generation);
-        }
+        await performStyledHaptic(cue, countdownValue, generation);
+        logRoundDiagnostic('iOS feedback-generator fallback dispatched', {
+          cue,
+        });
       }
     } else {
       await performStyledHaptic(cue, countdownValue, generation);
@@ -135,7 +147,7 @@ async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 |
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       return;
     case 'correct':
-      dispatchSystemVibrationSeries(1);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       return;
     case 'pass':
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -154,7 +166,7 @@ async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 |
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
       return;
     case 'times-up':
-      dispatchSystemVibrationSeries(3);
+      await performImpactSeries(Haptics.ImpactFeedbackStyle.Heavy, 3, generation);
   }
 }
 
@@ -166,38 +178,14 @@ async function performImpactSeries(style: Haptics.ImpactFeedbackStyle, count: nu
   }
 }
 
-function dispatchIosCameraFallback(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3) {
-  Vibration.cancel();
-  switch (cue) {
-    case 'correct':
-      dispatchSystemVibrationSeries(1);
-      return;
-    case 'get-ready':
-      Vibration.vibrate([0, 500]);
-      return;
-    case 'times-up':
-      dispatchSystemVibrationSeries(3);
-      return;
-    case 'initial-countdown':
-      if (countdownValue === 2) {
-        Vibration.vibrate([0, 500]);
-      } else if (countdownValue === 1) {
-        Vibration.vibrate([0, 450, 450]);
-      } else {
-        Vibration.vibrate();
-      }
-      return;
-    default:
-      Vibration.vibrate();
-  }
-}
-
 function describeRequestedPattern(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3) {
   switch (cue) {
     case 'card-flip':
       return 'Medium impact';
     case 'correct':
-      return Platform.OS === 'android' ? 'Heavy impact' : 'one long system vibration at system-controlled strength';
+      return Platform.OS === 'android'
+        ? 'Heavy impact'
+        : `one ${IOS_STRONG_PULSE_DURATION_MS} ms maximum-intensity Core Haptics pulse`;
     case 'pass':
       return 'Medium impact';
     case 'get-ready':
@@ -207,40 +195,10 @@ function describeRequestedPattern(cue: RoundHapticCue, countdownValue?: 1 | 2 | 
     case 'final-countdown':
       return 'Rigid impact';
     case 'times-up':
-      return 'three long system vibrations at system-controlled strength';
+      return Platform.OS === 'ios'
+        ? `three ${IOS_STRONG_PULSE_DURATION_MS} ms maximum-intensity Core Haptics pulses at ${IOS_TIMES_UP_PULSE_INTERVAL_MS} ms intervals`
+        : 'three long system vibrations at system-controlled strength';
   }
-}
-
-function describeIosFallback(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3) {
-  if (cue === 'correct') return 'one fixed system-vibration pulse';
-  if (cue === 'get-ready') return 'two fixed system-vibration pulses';
-  if (cue === 'times-up') return 'three fixed system-vibration pulses';
-  if (cue === 'initial-countdown') {
-    return `${countdownValue ? 4 - countdownValue : 1} fixed system-vibration pulse(s)`;
-  }
-  return 'one fixed system-vibration pulse';
-}
-
-function dispatchSystemVibrationSeries(count: number) {
-  Vibration.cancel();
-  if (count <= 1) {
-    if (Platform.OS === 'ios') {
-      Vibration.vibrate();
-    } else {
-      Vibration.vibrate(450);
-    }
-    return;
-  }
-  if (Platform.OS === 'ios') {
-    Vibration.vibrate(Array.from({ length: count }, (_, index) => (index === 0 ? 0 : 520)));
-    return;
-  }
-  const pattern = [0];
-  for (let index = 0; index < count; index += 1) {
-    pattern.push(450);
-    if (index < count - 1) pattern.push(150);
-  }
-  Vibration.vibrate(pattern);
 }
 
 function delay(milliseconds: number) {
