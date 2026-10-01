@@ -2,8 +2,8 @@ import type { RoundHapticCue } from '../utils/round-haptics';
 
 export type AndroidHapticPattern = { timings: number[]; amplitudes: number[] };
 
-/** A single motor cannot express two patterns at once. State changes start
- * immediately; at most one interrupted/overlapping clock tick follows them. */
+/** A single motor cannot express two patterns at once. Keep answer pulses
+ * intact when the next card appears; at most one clock tick follows them. */
 export class AndroidHapticScheduler {
   private until = 0;
   private activeCue: RoundHapticCue | null = null;
@@ -20,6 +20,7 @@ export class AndroidHapticScheduler {
 
   request(cue: RoundHapticCue, pattern: AndroidHapticPattern) {
     if (cue === 'times-up' || cue === 'get-ready' || cue === 'initial-countdown') this.clearTick();
+    if (cue === 'card-flip' && (this.activeCue === 'correct' || this.activeCue === 'pass') && this.now() < this.until) return;
     if (cue === 'final-countdown' && this.now() < this.until) {
       this.pendingTick = pattern;
       this.scheduleTick();

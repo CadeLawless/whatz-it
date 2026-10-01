@@ -4,6 +4,7 @@ import {
   cancelAndroidRoundWaveform,
   cancelRoundHapticPlayback,
   hasAndroidRoundHapticAmplitudeControl,
+  playAndroidRoundImpact,
   playAndroidRoundWaveform,
   playRoundHaptic,
 } from 'whatz-it-video-export';
@@ -36,6 +37,10 @@ let hapticGeneration = 0;
 const androidScheduler = new AndroidHapticScheduler((cue, { timings, amplitudes }) => {
   try {
     traceAndroidGameplay('haptic.dispatch', { cue, timings });
+    if ((cue === 'card-flip' || cue === 'pass') && hasAndroidRoundHapticAmplitudeControl() && playAndroidRoundImpact(cue)) {
+      traceAndroidGameplay('haptic.dispatch-returned', { cue });
+      return;
+    }
     if (!playAndroidRoundWaveform(timings, amplitudes)) {
       Vibration.cancel();
       Vibration.vibrate(timings, false);

@@ -4,11 +4,11 @@ import { describe, it } from 'node:test';
 import { platformReleaseCapabilities } from './platform-release';
 
 describe('platform release capabilities', () => {
-  it('enables the catalog, storefront, and Google Play commerce on Android', () => {
+  it('keeps the catalog but hides the storefront and commerce on Android', () => {
     assert.deepEqual(platformReleaseCapabilities('android'), {
       catalogUpdates: true,
-      nativeStoreCommerce: true,
-      storefront: true,
+      nativeStoreCommerce: false,
+      storefront: false,
     });
   });
 

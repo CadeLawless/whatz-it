@@ -1,6 +1,7 @@
 import { useEventListener } from 'expo';
 import { type AudioPlayer, setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { Image, type ImageRef } from 'expo-image';
+import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import {
   useVideoPlayer,
@@ -775,8 +776,10 @@ function ActiveRoundVideoPlayer({
         </View>
       )}
 
+      {Platform.OS === 'android' && expanded && <NavigationBar hidden />}
       <Modal
         animationType="fade"
+        navigationBarTranslucent
         onRequestClose={() => (saveNotice ? setSaveNotice(null) : closeExpanded())}
         statusBarTranslucent
         supportedOrientations={['portrait']}

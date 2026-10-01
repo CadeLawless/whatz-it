@@ -11,7 +11,7 @@ export function platformReleaseCapabilities(
 ): PlatformReleaseCapabilities {
   return {
     catalogUpdates: true,
-    nativeStoreCommerce: platform === 'ios' || platform === 'android',
-    storefront: true,
+    nativeStoreCommerce: platform === 'ios',
+    storefront: platform !== 'android',
   };
 }

@@ -13,7 +13,7 @@ const { code } = require('@babel/core').transformFileSync(resolve('src/utils/rou
   presets: [['babel-preset-expo', { worklets: false }]],
 });
 
-function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 'failed' = 'available') {
+function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 'failed' = 'available', impact = false, amplitudeControl = false) {
   const calls: { api: string; value?: unknown }[] = [];
   let now = 0;
   let nextId = 0;
@@ -50,7 +50,12 @@ function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 
           },
         };
         case 'whatz-it-video-export': return {
-          hasAndroidRoundHapticAmplitudeControl() { return false; },
+          hasAndroidRoundHapticAmplitudeControl() { return amplitudeControl; },
+          playAndroidRoundImpact(cue: string) {
+            if (!impact) return false;
+            calls.push({ api: 'impact', value: cue });
+            return true;
+          },
           cancelAndroidRoundWaveform() { calls.push({ api: 'native-cancel' }); },
           cancelRoundHapticPlayback() { calls.push({ api: 'ios-cancel' }); },
           playAndroidRoundWaveform(timings: number[], amplitudes: number[]) {
@@ -92,10 +97,37 @@ function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 
   } };
 }
 
+test('Android pass and card flip use distinct device-tuned impacts when supported', async () => {
+  const h = harness('android', 'available', true, true);
+  await h.triggerRoundHaptic('pass', { cameraActive: true });
+  h.advance(43);
+  await h.triggerRoundHaptic('card-flip', { cameraActive: true });
+  await h.triggerRoundHaptic('correct', { cameraActive: true });
+  assert.deepEqual(h.calls.map(call => call.api), ['impact', 'impact', 'waveform']);
+  assert.deepEqual(h.calls.slice(0, 2).map(call => call.value), ['pass', 'card-flip']);
+});
+
+test('Android motors without amplitude control use one duration-based pulse per pass and flip', async () => {
+  const h = harness('android', 'available', true);
+  await h.triggerRoundHaptic('pass', { cameraActive: false });
+  h.advance(100);
+  await h.triggerRoundHaptic('card-flip', { cameraActive: false });
+  assert.deepEqual(h.calls.map(call => call.api), ['waveform', 'waveform']);
+  assert.deepEqual(h.calls.map(call => (call.value as ReturnType<typeof androidHapticPattern>).timings), [[0, 100], [0, 80]]);
+});
+
+test('a quick next-card flip cannot cut off a pass pulse', async () => {
+  const h = harness('android');
+  await h.triggerRoundHaptic('pass', { cameraActive: false });
+  h.advance(25);
+  await h.triggerRoundHaptic('card-flip', { cameraActive: false });
+  assert.equal(h.calls.length, 1);
+});
+
 const cases: { cue: RoundHapticCue; count?: 1 | 2 | 3; timings: number[] }[] = [
-  { cue: 'correct', timings: [0, 180] },
-  { cue: 'pass', timings: [0, 90, 90, 90] },
-  { cue: 'card-flip', timings: [0, 90] },
+  { cue: 'correct', timings: [0, 450] },
+  { cue: 'pass', timings: [0, 100] },
+  { cue: 'card-flip', timings: [0, 80] },
   { cue: 'get-ready', timings: [0, 110, 90, 110] },
   { cue: 'initial-countdown', count: 3, timings: [0, 100] },
   { cue: 'initial-countdown', count: 2, timings: [0, 100, 80, 100] },
@@ -129,17 +161,17 @@ test('cleanup stops the motor; a new round dispatches without a pending sequence
   assert.deepEqual(h.calls.map(c => c.api), ['waveform', 'native-cancel', 'cancel', 'waveform']);
 });
 
-test('ticks cannot interrupt answers; next-card feedback immediately replaces the answer', async () => {
+test('ticks and next-card flips do not interrupt a long correct pulse', async () => {
   const h = harness('android');
   await h.triggerRoundHaptic('correct', { cameraActive: true });
   await h.triggerRoundHaptic('final-countdown', { cameraActive: true });
   assert.equal(h.calls.length, 1);
   await h.triggerRoundHaptic('card-flip', { cameraActive: true });
-  assert.equal(h.calls.length, 2);
-  h.advance(129);
-  assert.equal(h.calls.length, 2);
+  assert.equal(h.calls.length, 1);
+  h.advance(489);
+  assert.equal(h.calls.length, 1);
   h.advance(1);
-  assert.equal(h.calls.length, 3);
+  assert.equal(h.calls.length, 2);
 });
 
 test('older binaries receive one duration-only waveform with identical pulse onsets', async () => {
@@ -154,7 +186,7 @@ test('an answer interrupts a clock tick immediately and replays the tick once', 
   h.advance(20);
   await h.triggerRoundHaptic('correct', { cameraActive: true });
   assert.equal(h.calls.length, 2);
-  h.advance(219);
+  h.advance(489);
   assert.equal(h.calls.length, 2);
   h.advance(1);
   assert.deepEqual((h.calls[2].value as ReturnType<typeof androidHapticPattern>).timings, [0, 100]);

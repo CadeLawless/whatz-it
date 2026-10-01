@@ -48,6 +48,7 @@ type WhatzItVideoExportNativeModule = {
   stopAndroidGameplayTrace?(): void;
   saveAndroidGameplayTrace?(json: string): Promise<void>;
   playAndroidRoundWaveform?(timings: number[], amplitudes: number[]): void;
+  playAndroidRoundImpact?(cue: 'card-flip' | 'pass'): boolean;
   cancelAndroidRoundWaveform?(): void;
   overlayExportVersion?: number;
   getSystemOutputVolume?(): number;
@@ -110,6 +111,10 @@ export function playAndroidRoundWaveform(timings: number[], amplitudes: number[]
   if (!nativeModule.playAndroidRoundWaveform) return false;
   nativeModule.playAndroidRoundWaveform(timings, amplitudes);
   return true;
+}
+
+export function playAndroidRoundImpact(cue: 'card-flip' | 'pass') {
+  return nativeModule.playAndroidRoundImpact?.(cue) ?? false;
 }
 
 export function cancelAndroidRoundWaveform() {

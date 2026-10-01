@@ -124,6 +124,23 @@ class WhatzItVideoExportModule : Module() {
         }
       }
     }
+    // Device-tuned effects give the frequent card transitions a crisp click
+    // even on motors that cannot reproduce short custom amplitude waveforms.
+    Function("playAndroidRoundImpact") { cue: String ->
+      val vibrator = getRoundVibrator()
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && vibrator?.hasVibrator() == true) {
+        val effect = when (cue) {
+          "card-flip" -> VibrationEffect.EFFECT_TICK
+          "pass" -> VibrationEffect.EFFECT_CLICK
+          else -> throw IllegalArgumentException("Unsupported Android round impact: $cue")
+        }
+        vibrator.cancel()
+        vibrator.vibrate(VibrationEffect.createPredefined(effect))
+        true
+      } else {
+        false
+      }
+    }
     Function("cancelAndroidRoundWaveform") { roundVibrator?.cancel(); Unit }
     OnActivityEntersBackground { roundVibrator?.cancel(); gameplayTrace?.stop() }
     OnDestroy { roundVibrator?.cancel(); gameplayTrace?.stop() }
