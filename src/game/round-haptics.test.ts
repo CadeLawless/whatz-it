@@ -16,8 +16,6 @@ const { code } = require('@babel/core').transformFileSync(resolve('src/utils/rou
 function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 'failed' = 'available', impact = false, amplitudeControl = false) {
   const calls: { api: string; value?: unknown }[] = [];
   let now = 0;
-  let nextId = 0;
-  const timers = new Map<number, { at: number; callback: () => void }>();
   const exported = {} as typeof import('../utils/round-haptics');
   runInNewContext(code, {
     exports: exported, Date: { now: () => now },
@@ -31,11 +29,7 @@ function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 
         case '../game/android-haptic-scheduler': return {
           AndroidHapticScheduler: class extends AndroidHapticScheduler {
             constructor(dispatch: ConstructorParameters<typeof AndroidHapticScheduler>[0]) {
-              super(dispatch, () => now, (callback, ms) => {
-                const id = ++nextId;
-                timers.set(id, { at: now + ms, callback });
-                return id as unknown as ReturnType<typeof setTimeout>;
-              }, id => { timers.delete(id as unknown as number); });
+              super(dispatch, () => now);
             }
           },
         };
@@ -85,15 +79,7 @@ function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 
     },
   });
   return { ...exported, calls, advance(ms: number) {
-    const end = now + ms;
-    for (;;) {
-      const next = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
-      if (!next || next[1].at > end) break;
-      now = next[1].at;
-      timers.delete(next[0]);
-      next[1].callback();
-    }
-    now = end;
+    now += ms;
   } };
 }
 
@@ -171,6 +157,8 @@ test('ticks and next-card flips do not interrupt a long correct pulse', async ()
   h.advance(489);
   assert.equal(h.calls.length, 1);
   h.advance(1);
+  assert.equal(h.calls.length, 1);
+  await h.triggerRoundHaptic('final-countdown', { cameraActive: true });
   assert.equal(h.calls.length, 2);
 });
 
@@ -180,7 +168,7 @@ test('older binaries receive one duration-only waveform with identical pulse ons
   assert.deepEqual(h.calls, [{ api: 'cancel' }, { api: 'fallback', value: [0, 100, 80, 100, 80, 100] }]);
 });
 
-test('an answer interrupts a clock tick immediately and replays the tick once', async () => {
+test('an answer interrupts a clock tick immediately without replaying a stale tick', async () => {
   const h = harness('android');
   await h.triggerRoundHaptic('final-countdown', { cameraActive: true });
   h.advance(20);
@@ -189,13 +177,13 @@ test('an answer interrupts a clock tick immediately and replays the tick once', 
   h.advance(489);
   assert.equal(h.calls.length, 2);
   h.advance(1);
-  assert.deepEqual((h.calls[2].value as ReturnType<typeof androidHapticPattern>).timings, [0, 100]);
+  assert.equal(h.calls.length, 2);
   h.advance(1000);
-  assert.equal(h.calls.length, 3);
+  assert.equal(h.calls.length, 2);
 });
 
 for (const replacement of ['times-up', 'get-ready', 'initial-countdown', 'cancel'] as const) {
-  test(`${replacement} clears a deferred tick without leaving a vibration in the next round`, async () => {
+  test(`${replacement} cannot leave a delayed vibration in the next round`, async () => {
     const h = harness('android');
     await h.triggerRoundHaptic('correct', { cameraActive: false });
     await h.triggerRoundHaptic('final-countdown', { cameraActive: false });

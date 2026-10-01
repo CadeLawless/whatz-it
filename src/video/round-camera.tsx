@@ -22,6 +22,7 @@ import {
 } from 'whatz-it-live-overlay';
 
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
+import { waitForOptionalRecordingAsset } from '@/video/optional-recording-asset';
 
 const ROUND_VIDEO_TARGET_BIT_RATE = 5_000_000;
 // Ready and Game render a clockwise-rotated landscape canvas while the native
@@ -189,7 +190,12 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
             });
             const microphonePrepared = await prepareMicrophone();
             if (liveOverlayOutput) {
-              const branding = await loadLiveOverlayBrandingUris();
+              const branding = Platform.OS === 'android'
+                ? await waitForOptionalRecordingAsset(loadLiveOverlayBrandingUris())
+                : await loadLiveOverlayBrandingUris();
+              if (!branding && Platform.OS === 'android') {
+                logVideoDiagnostic('recording proceeding without optional branding assets');
+              }
               await liveOverlayOutput.startRecording(
                 branding?.headshotUri ?? undefined,
                 branding?.wordmarkUri ?? undefined,
@@ -466,7 +472,15 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
         onError={onError}
         onStarted={() => {
           // Prepare native resources before ReadyScreen starts any countdown audio.
-          void Promise.all([prepareMicrophone(), loadLiveOverlayBrandingUris()]).then(() => onReady());
+          logVideoDiagnostic('native camera started; preparing recording resources');
+          if (Platform.OS === 'android') {
+            // Branding is optional and Metro may be unreachable. Its download
+            // must not turn a running camera into a camera-readiness timeout.
+            void loadLiveOverlayBrandingUris();
+            void prepareMicrophone().then(() => onReady());
+          } else {
+            void Promise.all([prepareMicrophone(), loadLiveOverlayBrandingUris()]).then(() => onReady());
+          }
         }}
         orientationSource="custom"
         outputs={cameraOutputs}

@@ -42,6 +42,9 @@ export type VideoStorageMaintenanceResult = {
 };
 
 type WhatzItVideoExportNativeModule = {
+  prepareAndroidRoundSounds?(sounds: Record<string, string>): Promise<boolean>;
+  playAndroidRoundSound?(sound: string, volume: number): boolean;
+  stopAndroidRoundSounds?(introOnly: boolean): void;
   androidRoundHapticAmplitudeControl?(): boolean;
   androidGameplayTraceClock?(): number | null;
   startAndroidGameplayTrace?(): void;
@@ -97,6 +100,23 @@ type WhatzItVideoExportNativeModule = {
 };
 
 const nativeModule = requireNativeModule<WhatzItVideoExportNativeModule>('WhatzItVideoExport');
+
+export function supportsAndroidRoundSounds() {
+  return typeof nativeModule.prepareAndroidRoundSounds === 'function' &&
+    typeof nativeModule.playAndroidRoundSound === 'function';
+}
+
+export function prepareAndroidRoundSounds(sounds: Record<string, string>) {
+  return nativeModule.prepareAndroidRoundSounds?.(sounds) ?? Promise.resolve(false);
+}
+
+export function playAndroidRoundSound(sound: string, volume: number) {
+  return nativeModule.playAndroidRoundSound?.(sound, volume) ?? false;
+}
+
+export function stopAndroidRoundSounds(introOnly = false) {
+  nativeModule.stopAndroidRoundSounds?.(introOnly);
+}
 
 export const androidGameplayTrace = {
   clock: () => nativeModule.androidGameplayTraceClock?.() ?? null,

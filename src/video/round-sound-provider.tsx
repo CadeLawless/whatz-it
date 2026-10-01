@@ -17,9 +17,12 @@ import {
 } from 'react';
 import { AppState, Platform } from 'react-native';
 import { usePathname } from 'expo-router';
+import { stopAndroidRoundSounds } from 'whatz-it-video-export';
 import { cancelRoundHaptics } from '@/utils/round-haptics';
 import {
   getRoundSoundSource,
+  isAndroidRoundSoundBankReady,
+  prepareAndroidRoundSoundBank,
   playRoundSound,
   rewindRoundSoundPlayer,
   stopRoundSoundPlayer,
@@ -193,11 +196,15 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   const stopAll = useCallback(() => {
     generation.current += 1;
     cancelRoundHaptics();
+    stopAndroidRoundSounds();
+    if (isAndroidRoundSoundBankReady()) return;
     for (const [, , player] of playerEntries) stopRoundSoundPlayer(player);
   }, [playerEntries]);
   const stopIntro = useCallback(() => {
     generation.current += 1;
     cancelRoundHaptics();
+    stopAndroidRoundSounds(true);
+    if (isAndroidRoundSoundBankReady()) return;
     for (const sound of ['get-ready', 'count-3', 'count-2', 'count-1'] as const) {
       stopRoundSoundPlayer(regularPlayers[sound]);
     }
@@ -246,6 +253,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     void configureAudioSession();
+    void prepareAndroidRoundSoundBank();
   }, [configureAudioSession]);
 
   useEffect(() => {
@@ -347,6 +355,9 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     try {
       const sessionReady = await configureAudioSession();
       if (requestGeneration !== generation.current) return false;
+      if (await prepareAndroidRoundSoundBank()) {
+        return sessionReady && requestGeneration === generation.current;
+      }
       tickIndex.current = 0;
       const results = await Promise.all(
         playerEntries.map(async ([name, sound, player]) => ({

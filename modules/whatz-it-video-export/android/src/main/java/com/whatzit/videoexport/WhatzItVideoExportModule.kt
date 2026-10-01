@@ -74,6 +74,7 @@ class WhatzItVideoExportModule : Module() {
     appContext.reactContext?.applicationContext?.let { AndroidGameplayTrace(it) }
   }
   private var roundVibrator: Vibrator? = null
+  private val roundSounds by lazy { AndroidRoundSounds() }
 
   private fun getRoundVibrator(): Vibrator? {
     roundVibrator?.let { return it }
@@ -92,6 +93,14 @@ class WhatzItVideoExportModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("WhatzItVideoExport")
+
+    AsyncFunction("prepareAndroidRoundSounds") { sounds: Map<String, String>, promise: Promise ->
+      roundSounds.prepare(sounds, promise)
+    }
+    Function("playAndroidRoundSound") { sound: String, volume: Double ->
+      roundSounds.play(sound, volume)
+    }
+    Function("stopAndroidRoundSounds") { introOnly: Boolean -> roundSounds.stop(introOnly); Unit }
 
     Function("androidRoundHapticAmplitudeControl") {
       Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && getRoundVibrator()?.hasAmplitudeControl() == true
@@ -142,8 +151,8 @@ class WhatzItVideoExportModule : Module() {
       }
     }
     Function("cancelAndroidRoundWaveform") { roundVibrator?.cancel(); Unit }
-    OnActivityEntersBackground { roundVibrator?.cancel(); gameplayTrace?.stop() }
-    OnDestroy { roundVibrator?.cancel(); gameplayTrace?.stop() }
+    OnActivityEntersBackground { roundVibrator?.cancel(); roundSounds.stop(); gameplayTrace?.stop() }
+    OnDestroy { roundVibrator?.cancel(); roundSounds.release(); gameplayTrace?.stop() }
 
     AsyncFunction("performVideoStorageMaintenance") {
       val context = appContext.reactContext?.applicationContext

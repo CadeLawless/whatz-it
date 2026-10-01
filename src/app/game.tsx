@@ -41,6 +41,7 @@ const ROUND_FRAME_INSET = 16;
 const ROUND_FRAME_BORDER_WIDTH = 6;
 const ROUND_FRAME_RADIUS = 28;
 const ROUND_PLAYING_BORDER_COLOR = '#439EFE';
+const useRoundCueEffect = Platform.OS === 'android' ? useLayoutEffect : useEffect;
 
 type PortraitPausePhase = 'prompt' | 'positioning' | 'welcome-back' | 'restarting' | 'finished';
 
@@ -129,12 +130,24 @@ export default function GameScreen() {
       : remainingSeconds;
   const handleAnswer = useCallback(
     (outcome: 'correct' | 'passed') => {
+      if (Platform.OS === 'android') {
+        if (round.status !== 'playing' || feedbackSoundCard.current === round.currentCardIndex) return;
+        feedbackSoundCard.current = round.currentCardIndex;
+        answerCard(outcome);
+        // Dispatch in the accepted input turn. Waiting for a React passive
+        // effect made feedback depend on rendering and recording work.
+        void triggerRoundHaptic(outcome === 'correct' ? 'correct' : 'pass', { cameraActive: isRecording });
+        void playSound(outcome === 'correct' ? 'correct' : 'pass', () =>
+          committedCueState.current.card === round.currentCardIndex &&
+          (committedCueState.current.status === 'playing' || committedCueState.current.status === 'feedback'));
+        return;
+      }
       answerCard(outcome);
     },
-    [answerCard],
+    [answerCard, isRecording, playSound, round.currentCardIndex, round.status],
   );
-  // Audio/haptics follow the committed card state, never precede its dispatch.
-  useEffect(() => {
+  // iOS cues and any feedback not handled directly follow committed state.
+  useRoundCueEffect(() => {
     if (!focused || round.status !== 'feedback') return;
     if (feedbackSoundCard.current === round.currentCardIndex) return;
     feedbackSoundCard.current = round.currentCardIndex;
@@ -160,7 +173,7 @@ export default function GameScreen() {
       void triggerRoundHaptic('pass', { cameraActive: isRecording });
     }
   }, [focused, round.status, round.latestOutcome, round.currentCardIndex, isRecording, playSound]);
-  useEffect(() => {
+  useRoundCueEffect(() => {
     if (!focused || round.status !== 'playing' || round.currentCardIndex === 0) return;
     if (flipSoundCard.current === round.currentCardIndex) return;
     flipSoundCard.current = round.currentCardIndex;
