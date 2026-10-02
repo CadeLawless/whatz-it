@@ -19,15 +19,18 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { captureRef } from 'react-native-view-shot';
 import type { PermissionStatus } from 'react-native-vision-camera';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
+import { GameModeSelector } from '@/components/game-mode-selector';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { TimerPicker } from '@/components/timer-picker';
 import { useRound } from '@/game/round-context';
+import { parseGameMode } from '@/game/game-mode';
+import type { GameMode } from '@/game/game-types';
+import { requestModePermissions } from '@/game/round-setup';
 import {
   clampRoundDuration,
   DEFAULT_ROUND_DURATION,
@@ -36,7 +39,9 @@ import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { platformReleaseCapabilities } from '@/release/platform-release';
 import {
   loadRoundDuration,
+  loadRoundMode,
   saveRoundDuration,
+  saveRoundMode,
 } from '@/storage/preferences';
 import {
   clearSettingsReturnDeckId,
@@ -60,10 +65,11 @@ const releaseCapabilities = platformReleaseCapabilities(Platform.OS);
 
 export default function DeckDetailsScreen() {
   const { catalog } = useCatalog();
-  const { deckId, durationSeconds, returnToRoundId } = useLocalSearchParams<{
+  const { deckId, durationSeconds, returnToRoundId, mode: replayMode } = useLocalSearchParams<{
     deckId: string;
     durationSeconds?: string;
     returnToRoundId?: string;
+    mode?: string;
   }>();
   const deck = catalog.getDeckById(deckId);
   const router = useRouter();
@@ -75,23 +81,28 @@ export default function DeckDetailsScreen() {
       ? clampRoundDuration(replayDuration)
       : DEFAULT_ROUND_DURATION;
   const [duration, setDuration] = useState(initialDuration);
+  const [modeSelection, setModeSelection] = useState<{
+    source: string | undefined; value: GameMode; loaded: boolean;
+  }>(() => ({ source: replayMode, value: parseGameMode(replayMode), loaded: replayMode !== undefined }));
+  const mode = modeSelection.source === replayMode ? modeSelection.value : parseGameMode(replayMode);
+  const modeLoaded = modeSelection.source === replayMode && modeSelection.loaded;
   const [isStarting, setIsStarting] = useState(false);
   const [frozenRoundSetupNotice, setFrozenRoundSetupNotice] =
     useState<RoundSetupNotice | null>(null);
   const [motionPermissionStatus, setMotionPermissionStatus] =
     useState<RoundMotionPermissionStatus | 'checking'>('checking');
 
-  const screenRef = useRef<View>(null);
   const settingsReturnPending = useRef(false);
   const settingsReturnWrite = useRef<Promise<void> | null>(null);
   const settingsWasBackgrounded = useRef(false);
+  const starting = useRef(false);
   const {
     cameraStatus: cameraPermissionStatus,
     microphoneStatus: microphonePermissionStatus,
     requestPendingPermissions,
   } = useRoundCameraPermissions();
   const isPortrait = usePortraitScreen();
-  const { beginTransition, revealTransition } = useScreenshotTransition();
+  const { revealTransition } = useScreenshotTransition();
 
   const armSettingsReturn = useCallback(
     (source: 'background' | 'explicit') => {
@@ -123,6 +134,17 @@ export default function DeckDetailsScreen() {
     if (durationSeconds) return;
     loadRoundDuration().then(setDuration);
   }, [durationSeconds]);
+
+  useEffect(() => {
+    let active = true;
+    const load = replayMode !== undefined
+      ? Promise.resolve(parseGameMode(replayMode)) : loadRoundMode();
+    void load.then((loaded) => {
+      if (!active) return;
+      setModeSelection({ source: replayMode, value: loaded, loaded: true });
+    });
+    return () => { active = false; };
+  }, [replayMode]);
 
   useEffect(() => {
     let active = true;
@@ -161,6 +183,7 @@ export default function DeckDetailsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      starting.current = false;
       setIsStarting(false);
       setFrozenRoundSetupNotice(null);
       if (isPortrait) {
@@ -190,40 +213,27 @@ export default function DeckDetailsScreen() {
   }
 
   const handleStart = async () => {
-    if (isStarting) {
+    if (starting.current || !modeLoaded) {
       return;
     }
 
     setFrozenRoundSetupNotice(roundSetupNotice);
     setIsStarting(true);
+    starting.current = true;
     const safeDuration = clampRoundDuration(duration);
 
-    if (!(await configureRound(deck.id, safeDuration))) {
+    if (!(await configureRound(deck.id, safeDuration, mode))) {
       setIsStarting(false);
+      starting.current = false;
       return;
     }
 
-    const motionAccess = await requestRoundMotionAccess();
-    setMotionPermissionStatus(motionAccess);
-    await requestPendingPermissions().catch(() => undefined);
+    await requestModePermissions(mode, async () => {
+      setMotionPermissionStatus(await requestRoundMotionAccess());
+    }, requestPendingPermissions);
 
     saveRoundDuration(safeDuration).catch(() => undefined);
-
-    try {
-      const uri = await captureRef(screenRef, {
-        format: 'jpg',
-        quality: 0.95,
-        result: 'tmpfile',
-      });
-
-      await beginTransition({
-        destination: 'ready',
-        direction: 'left',
-        uri,
-      });
-    } catch {
-      // If capture is unavailable, Ready still opens without a transition.
-    }
+    saveRoundMode(mode).catch(() => undefined);
 
     router.push('/ready' as Href);
   };
@@ -256,7 +266,7 @@ export default function DeckDetailsScreen() {
     router.replace('/');
   };
 
-  const roundSetupNotice = getRoundSetupNotice({
+  const roundSetupNotice = mode === 'pass-n-play' ? null : getRoundSetupNotice({
     cameraStatus: cameraPermissionStatus,
     microphoneStatus: microphonePermissionStatus,
     motionStatus: motionPermissionStatus,
@@ -270,8 +280,6 @@ export default function DeckDetailsScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView
-        ref={screenRef}
-        collapsable={false}
         style={styles.screen}
         edges={['top', 'bottom']}
       >
@@ -333,7 +341,8 @@ export default function DeckDetailsScreen() {
         <View style={styles.startFooter}>
           <Pressable
             accessibilityRole="button"
-            disabled={isStarting}
+            disabled={isStarting || !modeLoaded}
+            accessibilityState={{ disabled: isStarting || !modeLoaded, busy: isStarting }}
             onPress={handleStart}
             style={({ pressed }) => [
               styles.startButton,
@@ -356,6 +365,13 @@ export default function DeckDetailsScreen() {
               tintColor={colors.white}
             />
           </Pressable>
+          <View style={styles.modeSelection}>
+            <GameModeSelector value={mode} disabled={isStarting || !modeLoaded}
+              onChange={(selectedMode) => {
+                setModeSelection({ source: replayMode, value: selectedMode, loaded: true });
+                void saveRoundMode(selectedMode).catch(() => undefined);
+              }} />
+          </View>
         </View>
       </SafeAreaView>
     </>
@@ -465,9 +481,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: 'Inter_900Black',
     letterSpacing: 0.2,
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
     marginBottom: spacing.md,
   },
+
+  modeSelection: { marginTop: spacing.md },
 
   startArea: {
     marginTop: 'auto',
@@ -478,7 +496,7 @@ const styles = StyleSheet.create({
   startFooter: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: 0,
     backgroundColor: colors.surface,
   },
 

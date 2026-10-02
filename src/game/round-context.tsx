@@ -17,10 +17,11 @@ import { useCatalog } from '@/catalog/catalog-provider';
 import type { CatalogDeck, CatalogSnapshot } from '@/catalog/catalog-snapshot';
 import { cardContentKey } from '@/game/daily-card-memory';
 import { initialRoundState, roundReducer } from '@/game/game-reducer';
-import type { CardOutcome, RoundState } from '@/game/game-types';
+import type { CardOutcome, GameMode, RoundAction, RoundState } from '@/game/game-types';
 import { clampRoundDuration } from '@/game/round-duration';
 import { captureRoundDeck, resolveRoundDeck } from '@/game/round-deck-snapshot';
 import { captureRoundResultSnapshot } from '@/game/round-result-snapshot';
+import { resolveRoundTransition } from '@/game/round-transition';
 import { shuffle } from '@/game/shuffle';
 import {
   loadRoundCardIds,
@@ -52,10 +53,12 @@ const CAMERA_CAPTURE_STOP_TIMEOUT_MS = 4_000;
 type RoundContextValue = {
   round: RoundState;
   roundDeck: CatalogDeck | null;
-  configureRound: (deckId: string, durationSeconds: number) => Promise<boolean>;
+  configureRound: (deckId: string, durationSeconds: number, mode?: GameMode) => Promise<boolean>;
   startRound: () => void;
   answerCard: (outcome: CardOutcome) => void;
   advanceCard: () => void;
+  revealCard: () => void;
+  expireRound: (endsAt: number) => void;
   finishRound: () => void;
   pauseRound: () => void;
   resumeRound: () => void;
@@ -99,7 +102,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
       resolveRoundDeck(catalogRef.current, roundDeckRef.current, deckId),
     [],
   );
-  const [round, dispatch] = useReducer(roundReducer, initialRoundState);
+  const [round, commitAction] = useReducer(roundReducer, initialRoundState);
+  // Track accepted actions immediately so rapid inputs before a React commit
+  // cannot remember a card that the reducer did not reveal.
+  const actionRound = useRef(initialRoundState);
   const committedRoundEndsAt = useRef(round.endsAt);
   useLayoutEffect(() => { committedRoundEndsAt.current = round.endsAt; }, [round.endsAt]);
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -127,6 +133,19 @@ export function RoundProvider({ children }: PropsWithChildren) {
     if (card) rememberSeenCard(card);
   }, [getDeckById]);
 
+  const dispatch = useCallback((action: RoundAction) => {
+    const previous = actionRound.current;
+    const transition = resolveRoundTransition(previous, action);
+    actionRound.current = transition.round;
+    commitAction(action);
+    if (transition.round.mode === 'pass-n-play' && transition.revealedCardId) {
+      rememberCard(transition.round.deckId, transition.revealedCardId);
+      if (previous.status === 'ready' && transition.round.deckId) {
+        void rememberDeckPlayed(transition.round.deckId);
+      }
+    }
+  }, [rememberCard]);
+
   const recordOverlayEvent = useCallback((event: Omit<RoundVideoEvent, 'atMs'>) => {
     if (recordingStartedAt.current === null || !recordingActive.current) return;
     const atMs = Math.max(0, Date.now() - recordingStartedAt.current);
@@ -136,7 +155,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       previous.text === event.text &&
       previous.byline === event.byline
     ) return;
-    const timerEndsAtMs = Platform.OS === 'android' && event.timerEndsAtMs === undefined && committedRoundEndsAt.current !== null
+    const timerEndsAtMs = event.timerEndsAtMs === undefined && committedRoundEndsAt.current !== null
       ? Math.max(0, committedRoundEndsAt.current - recordingStartedAt.current)
       : event.timerEndsAtMs;
     const timedEvent = { ...event, ...(timerEndsAtMs === undefined ? {} : { timerEndsAtMs }), atMs };
@@ -699,7 +718,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       pauseRecording,
       resumeRecording,
       cancelRecording,
-      configureRound: async (deckId, durationSeconds) => {
+      configureRound: async (deckId, durationSeconds, mode = 'classic') => {
         if (cancellingPromise.current) await cancellingPromise.current;
         if (stoppingPromise.current) await stoppingPromise.current;
         const deck = catalogRef.current.getDeckById(deckId);
@@ -710,6 +729,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
           catalogRef.current.decks,
         );
         if (cardIds.length === 0) return false;
+        if (mode === 'pass-n-play') {
+          await cancelRecording();
+          setCameraEnabled(false);
+          setMicrophoneEnabled(false);
+        }
         roundDeckRef.current = capturedDeck;
         setRoundDeck(capturedDeck);
         recordingCancelled.current = false;
@@ -720,6 +744,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
         setCurrentVideo(null);
         dispatch({
           type: 'CONFIGURE',
+          mode,
           deckId,
           durationSeconds: clampRoundDuration(durationSeconds),
           cardOrder: shuffle(cardIds),
@@ -727,6 +752,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
         return true;
       },
       startRound: () => {
+        if (actionRound.current.mode === 'pass-n-play') {
+          dispatch({ type: 'START', now: Date.now() });
+          return;
+        }
         if (round.deckId) void rememberDeckPlayed(round.deckId);
         const cardId = round.cardOrder[round.currentCardIndex];
         rememberCard(round.deckId, cardId);
@@ -745,6 +774,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
         dispatch({ type: 'START', now: Date.now() });
       },
       answerCard: (outcome) => {
+        if (actionRound.current.mode === 'pass-n-play') {
+          dispatch({ type: 'ANSWER', outcome, now: Date.now() });
+          return;
+        }
         traceAndroidGameplay('answerCard.enter');
         if (Platform.OS === 'android') {
           traceAndroidGameplay('reducer.dispatch');
@@ -764,6 +797,16 @@ export function RoundProvider({ children }: PropsWithChildren) {
         traceAndroidGameplay('reducer.dispatch-returned');
       },
       advanceCard: () => {
+        if (actionRound.current.mode === 'pass-n-play') {
+          const current = actionRound.current;
+          if (current.status !== 'feedback') return;
+          dispatch({
+            type: 'ADVANCE', now: Date.now(),
+            replenishedCardOrder: current.latestOutcome === 'correct' || current.cardOrder[current.currentCardIndex + 1]
+              ? undefined : replenishDeck(current, getDeckById),
+          });
+          return;
+        }
         if (round.status === 'feedback') {
           let nextCardId = round.cardOrder[round.currentCardIndex + 1];
           const replenishedCardOrder = nextCardId
@@ -786,6 +829,18 @@ export function RoundProvider({ children }: PropsWithChildren) {
         }
         dispatch({ type: 'ADVANCE' });
       },
+      revealCard: () => {
+        const current = actionRound.current;
+        if (current.mode !== 'pass-n-play' || current.status !== 'handoff') return;
+        dispatch({
+          type: 'REVEAL', now: Date.now(),
+          replenishedCardOrder: current.cardOrder[current.currentCardIndex + 1]
+            ? undefined : replenishDeck(current, getDeckById),
+        });
+      },
+      expireRound: (endsAt) => {
+        dispatch({ type: 'EXPIRE', now: Date.now(), endsAt });
+      },
       finishRound: () => {
         recordOverlayEvent({ kind: 'times-up', text: "TIME'S UP!" });
         dispatch({ type: 'FINISH', now: Date.now() });
@@ -794,6 +849,17 @@ export function RoundProvider({ children }: PropsWithChildren) {
         dispatch({ type: 'PAUSE', now: Date.now() });
       },
       resumeRound: () => {
+        if (actionRound.current.mode === 'pass-n-play') {
+          const current = actionRound.current;
+          dispatch({
+            type: 'RESUME', now: Date.now(),
+            replenishedCardOrder: current.status === 'paused' && current.pausedStatus === 'feedback' &&
+              current.latestOutcome !== 'correct' &&
+              !current.cardOrder[current.currentCardIndex + 1]
+              ? replenishDeck(current, getDeckById) : undefined,
+          });
+          return;
+        }
         let replenishedCardOrder: string[] | undefined;
         if (
           round.status === 'paused' &&
@@ -820,6 +886,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       cancelRecording,
       currentVideo,
       deleteCurrentVideo,
+      dispatch,
       getRecordingTimerEndsAtMs,
       getDeckById,
       isRecording,
@@ -841,6 +908,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     <RoundContext.Provider value={value}>
       <RoundCamera
         enabled={cameraEnabled}
+        portrait={round.mode === 'pass-n-play'}
         microphoneEnabled={microphoneEnabled}
         onReady={() => {
             cameraReady.current = true;

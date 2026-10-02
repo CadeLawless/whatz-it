@@ -54,6 +54,7 @@ type WhatzItVideoExportNativeModule = {
   playAndroidRoundImpact?(cue: 'card-flip' | 'pass'): boolean;
   cancelAndroidRoundWaveform?(): void;
   overlayExportVersion?: number;
+  portraitLiveOverlayVersion?: number;
   getSystemOutputVolume?(): number;
   exportOverlayVideo(
     inputUri: string,
@@ -214,6 +215,10 @@ export function supportsLiveOverlayMux() {
     (nativeVersion === 0 || nativeVersion >= 25) &&
     typeof nativeModule.muxLiveOverlayVideo === 'function'
   );
+}
+
+export function supportsPortraitLiveOverlay() {
+  return (nativeModule.portraitLiveOverlayVersion ?? 0) >= 1 && supportsLiveOverlayMux();
 }
 
 export function muxLiveOverlayVideo(

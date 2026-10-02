@@ -9,7 +9,7 @@ import {
   type VideoThumbnail,
   VideoView,
 } from 'expo-video';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type PropsWithChildren, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type GestureResponderEvent,
   Modal,
@@ -95,6 +95,7 @@ export function RoundVideoPlayer(props: RoundVideoPlayerProps) {
   } = props;
   const [playerOpen, setPlayerOpen] = useState(false);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const portrait = video.resultSnapshot?.mode === 'pass-n-play';
 
   if (!staticThumbnail || (!thumbnailSource && !video.thumbnailUri) || thumbnailFailed) {
     return <ActiveRoundVideoPlayer {...props} />;
@@ -102,10 +103,10 @@ export function RoundVideoPlayer(props: RoundVideoPlayerProps) {
 
   return (
     <>
-      <View style={[styles.frame, style]}>
+      <View style={[styles.frame, portrait && styles.portraitFrame, style]}>
         <Image
           cachePolicy="memory-disk"
-          contentFit="cover"
+          contentFit={portrait ? 'contain' : 'cover'}
           onDisplay={onThumbnailReady}
           onError={() => setThumbnailFailed(true)}
           priority="high"
@@ -150,6 +151,7 @@ function ActiveRoundVideoPlayer({
   onExpandedClose,
 }: ActiveRoundVideoPlayerProps) {
   const insets = useSafeAreaInsets();
+  const portrait = video.resultSnapshot?.mode === 'pass-n-play';
   const [expanded, setExpanded] = useState(false);
   const [saveNotice, setSaveNotice] = useState<VideoSaveNotice | null>(null);
   const [isPlaying, setIsPlaying] = useState(!staticThumbnail);
@@ -158,7 +160,7 @@ function ActiveRoundVideoPlayer({
   const [progressWidth, setProgressWidth] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-  const [videoSize, setVideoSize] = useState({ width: 16, height: 9 });
+  const [videoSize, setVideoSize] = useState(portrait ? { width: 9, height: 16 } : { width: 16, height: 9 });
   // Play the same finished file that is retained in app storage and saved to the media library.
   const playbackUri = video.exportUri ?? video.uri;
   const expandedRef = useRef(false);
@@ -427,7 +429,7 @@ function ActiveRoundVideoPlayer({
     () => getContainedVideoFrame(containerSize, videoSize),
     [containerSize, videoSize],
   );
-  const landscapeInsets = getClockwiseLandscapeInsets(insets);
+  const playbackInsets = portrait ? insets : getClockwiseLandscapeInsets(insets);
 
   const clearControlsTimer = () => {
     if (controlsTimer.current === null) return;
@@ -731,15 +733,15 @@ function ActiveRoundVideoPlayer({
   return (
     <>
       {!expanded && !hideCollapsed && (
-        <View style={[styles.frame, style]}>
+        <View style={[styles.frame, portrait && styles.portraitFrame, style]}>
           {video.thumbnailUri || thumbnail ? (
             <View
               collapsable={false}
               ref={thumbnailCaptureRef}
-              style={StyleSheet.absoluteFill}
+              style={portrait ? styles.portraitThumbnailCapture : StyleSheet.absoluteFill}
             >
               <Image
-                contentFit="cover"
+                contentFit={portrait ? 'contain' : 'cover'}
                 onError={notifyThumbnailReady}
                 onDisplay={handleThumbnailLoad}
                 source={video.thumbnailUri ? { uri: video.thumbnailUri } : thumbnail}
@@ -751,7 +753,7 @@ function ActiveRoundVideoPlayer({
             </View>
           ) : !suspending ? (
             <VideoView
-              contentFit="cover"
+              contentFit={portrait ? 'contain' : 'cover'}
               nativeControls={false}
               player={player}
               style={StyleSheet.absoluteFill}
@@ -785,7 +787,7 @@ function ActiveRoundVideoPlayer({
         supportedOrientations={['portrait']}
         visible={expanded}
       >
-        <LandscapeViewport>
+        <PlaybackViewport portrait={portrait}>
           <View style={styles.modalRoot}>
             <StatusBar hidden animated={false} />
             <View
@@ -796,10 +798,10 @@ function ActiveRoundVideoPlayer({
               style={[
                 styles.expandedFrame,
                 {
-                  marginTop: landscapeInsets.top,
-                  marginRight: landscapeInsets.right,
-                  marginBottom: landscapeInsets.bottom,
-                  marginLeft: landscapeInsets.left,
+                  marginTop: playbackInsets.top,
+                  marginRight: playbackInsets.right,
+                  marginBottom: playbackInsets.bottom,
+                  marginLeft: playbackInsets.left,
                 },
               ]}
             >
@@ -938,10 +940,15 @@ function ActiveRoundVideoPlayer({
               visible={saveNotice !== null}
             />
           </View>
-        </LandscapeViewport>
+        </PlaybackViewport>
       </Modal>
     </>
   );
+}
+
+function PlaybackViewport({ portrait, children }: PropsWithChildren<{ portrait: boolean }>) {
+  return portrait ? <View style={styles.modalRoot}>{children}</View>
+    : <LandscapeViewport>{children}</LandscapeViewport>;
 }
 
 function setPlayerMuted(player: VideoPlayer, muted: boolean) {
@@ -1145,6 +1152,8 @@ function getEventPalette(kind: RoundVideoEvent['kind']) {
 
 const styles = StyleSheet.create({
   frame: { overflow: 'hidden', backgroundColor: '#111111' },
+  portraitFrame: { aspectRatio: 9 / 16, backgroundColor: '#D1D5DB' },
+  portraitThumbnailCapture: { height: '100%', aspectRatio: 9 / 16, alignSelf: 'center' },
   thumbnailPlayBadge: {
     position: 'absolute',
     top: '50%',

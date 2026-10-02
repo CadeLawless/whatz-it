@@ -49,37 +49,40 @@ internal class LiveOverlayRenderer(
       ?.replace(Regex("\\s+"), " ")
       ?.takeIf { it.isNotEmpty() }
       ?.let { "by $it" }
-    val horizontalPadding = canvasWidth * 0.0198f
-    val verticalPadding = canvasHeight * 0.0154f
-    val maximumTextWidth = max(1f, canvasWidth - horizontalPadding * 2)
+    val referenceEdge = min(canvasWidth, canvasHeight)
+    val sideMargin = if (canvasHeight > canvasWidth) canvasWidth * 0.05f else 0f
+    val maximumCardWidth = canvasWidth - sideMargin * 2
+    val horizontalPadding = max(canvasWidth * 0.0198f, referenceEdge * 0.035f)
+    val verticalPadding = referenceEdge * 0.0154f
+    val maximumTextWidth = max(1f, maximumCardWidth - horizontalPadding * 2)
 
-    answerPaint.textSize = canvasHeight * 0.056f
+    answerPaint.textSize = referenceEdge * 0.056f
     var answerWidth = answerPaint.measureText(text)
     if (answerWidth > maximumTextWidth) {
       answerPaint.textSize = max(0.1f, answerPaint.textSize * maximumTextWidth / answerWidth)
       answerWidth = answerPaint.measureText(text)
     }
-    bylinePaint.textSize = canvasHeight * 0.035f
+    bylinePaint.textSize = referenceEdge * 0.035f
     var bylineWidth = byline?.let { bylinePaint.measureText(it) } ?: 0f
     if (bylineWidth > maximumTextWidth) {
       bylinePaint.textSize = max(0.1f, bylinePaint.textSize * maximumTextWidth / bylineWidth)
       bylineWidth = byline?.let { bylinePaint.measureText(it) } ?: 0f
     }
     val timerText = timerTextFor(event, elapsedMs)
-    timerPaint.textSize = canvasHeight * 0.0308f
+    timerPaint.textSize = referenceEdge * 0.0308f
     val timerWidth = timerText?.let { timerPaint.measureText(it) } ?: 0f
     val minimumWidth = canvasWidth * 0.3f
     val width = min(
-      canvasWidth,
+      maximumCardWidth,
       max(minimumWidth, max(answerWidth, max(bylineWidth, timerWidth)) + horizontalPadding * 2),
     )
     val answerHeight = lineHeight(answerPaint)
     val bylineHeight = if (byline == null) 0f else lineHeight(bylinePaint)
     val timerHeight = if (timerText == null) 0f else lineHeight(timerPaint)
-    val bylineSpacing = if (byline == null) 0f else canvasHeight * 0.0051f
-    val timerSpacing = if (timerText == null) 0f else canvasHeight * 0.0051f
+    val bylineSpacing = if (byline == null) 0f else referenceEdge * 0.0051f
+    val timerSpacing = if (timerText == null) 0f else referenceEdge * 0.0051f
     val contentHeight = answerHeight + bylineSpacing + bylineHeight + timerSpacing + timerHeight
-    val height = max(canvasHeight * 0.123f, contentHeight + verticalPadding * 2)
+    val height = max(referenceEdge * 0.123f, contentHeight + verticalPadding * 2)
     val margin = canvasHeight * 0.133f
     val left = (canvasWidth - width) / 2f
     val bounds = RectF(left, canvasHeight - height - margin, left + width, canvasHeight - margin)

@@ -255,7 +255,7 @@ function RootLayoutContent() {
           options={{
             headerShown: false,
             gestureEnabled: false,
-            animation: 'none',
+            animation: 'slide_from_right',
             orientation: 'portrait',
           }}
         />

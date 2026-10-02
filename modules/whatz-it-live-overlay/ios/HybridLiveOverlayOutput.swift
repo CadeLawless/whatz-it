@@ -401,11 +401,15 @@ final class HybridLiveOverlayOutput: HybridCameraOutputSpec, NativeCameraOutput 
   }
 
   private func initializeWriters(pixelBuffer: CVPixelBuffer, timestamp: CMTime) throws {
-    // Round screens have a fixed landscape capture contract. Do not let a
-    // transient portrait orientation on the first frame permanently create a
-    // portrait writer that center-crops all subsequent landscape frames.
-    outputWidth = 1280
-    outputHeight = 720
+    // Choose dimensions from the configured orientation, not the first frame.
+    switch outputOrientation {
+    case .up, .down:
+      outputWidth = 720
+      outputHeight = 1280
+    default:
+      outputWidth = 1280
+      outputHeight = 720
+    }
     let cleanVideoWriter = try LiveVideoWriter(
       prefix: "whatz-it-live-clean",
       width: outputWidth,

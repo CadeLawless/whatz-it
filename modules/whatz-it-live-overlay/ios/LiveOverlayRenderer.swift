@@ -110,11 +110,14 @@ final class LiveOverlayRenderer {
       $0.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }.flatMap { $0.isEmpty ? nil : "by \($0)" }
     let timerText = remainingSeconds.map(Self.formatRoundClock)
-    let horizontalPadding = size.width * 0.0198
-    let verticalPadding = size.height * 0.0154
-    let maximumTextWidth = max(1, size.width - horizontalPadding * 2)
+    let referenceEdge = min(size.width, size.height)
+    let sideMargin = size.height > size.width ? size.width * 0.05 : 0
+    let maximumCardWidth = size.width - sideMargin * 2
+    let horizontalPadding = max(size.width * 0.0198, referenceEdge * 0.035)
+    let verticalPadding = referenceEdge * 0.0154
+    let maximumTextWidth = max(1, maximumCardWidth - horizontalPadding * 2)
 
-    var fontSize = size.height * 0.056
+    var fontSize = referenceEdge * 0.056
     var font = UIFont.systemFont(ofSize: fontSize, weight: .black)
     var textSize = (text as NSString).size(withAttributes: [.font: font])
     while textSize.width > maximumTextWidth && fontSize > 1 {
@@ -126,7 +129,7 @@ final class LiveOverlayRenderer {
     let bylineFont: UIFont?
     let bylineSize: CGSize
     if let byline {
-      var candidateSize = size.height * 0.035
+      var candidateSize = referenceEdge * 0.035
       var candidate = UIFont.systemFont(ofSize: candidateSize, weight: .semibold)
       var measured = (byline as NSString).size(withAttributes: [.font: candidate])
       while measured.width > maximumTextWidth && candidateSize > 1 {
@@ -143,25 +146,25 @@ final class LiveOverlayRenderer {
 
     let timerFont = timerText == nil
       ? nil
-      : UIFont.systemFont(ofSize: size.height * 0.0308, weight: .heavy)
+      : UIFont.systemFont(ofSize: referenceEdge * 0.0308, weight: .heavy)
     let timerSize = timerText.map {
       ($0 as NSString).size(withAttributes: [.font: timerFont!])
     } ?? .zero
     let width = min(
-      size.width,
+      maximumCardWidth,
       max(
         size.width * 0.3,
         ceil(max(textSize.width, max(bylineSize.width, timerSize.width))) + horizontalPadding * 2
       )
     )
-    let bylineSpacing = byline == nil ? 0 : size.height * 0.0051
-    let timerSpacing = timerText == nil ? 0 : size.height * 0.0051
+    let bylineSpacing = byline == nil ? 0 : referenceEdge * 0.0051
+    let timerSpacing = timerText == nil ? 0 : referenceEdge * 0.0051
     let contentHeight = font.lineHeight
       + (bylineFont?.lineHeight ?? 0)
       + bylineSpacing
       + (timerFont?.lineHeight ?? 0)
       + timerSpacing
-    let height = max(size.height * 0.123, ceil(contentHeight) + verticalPadding * 2)
+    let height = max(referenceEdge * 0.123, ceil(contentHeight) + verticalPadding * 2)
     let frame = CGRect(
       x: (size.width - width) / 2,
       y: size.height - height - size.height * 0.133,

@@ -11,6 +11,7 @@ import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
+import { parseGameMode } from '@/game/game-mode';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { colors, radius, spacing, typography } from '@/theme';
 import {
@@ -67,6 +68,7 @@ export default function ResultsScreen() {
   const displayedVideo = isArchivedRound ? archivedVideo : currentVideo;
   const archivedResults = archivedVideo?.resultSnapshot;
   const displayedResults = isArchivedRound ? archivedResults?.results ?? [] : round.results;
+  const displayedMode = parseGameMode(isArchivedRound ? archivedResults?.mode : round.mode);
   const displayedDeckTitle = isArchivedRound
     ? archivedResults?.deckTitle ?? catalog.getDeckById(archivedVideo?.deckId)?.title ?? 'Round results'
     : deck?.title;
@@ -198,6 +200,7 @@ export default function ResultsScreen() {
         params: {
           deckId: archivedResults!.deckId,
           durationSeconds: String(archivedResults!.durationSeconds),
+          mode: parseGameMode(archivedResults!.mode),
           returnToRoundId: roundId,
           transition: 'apple-slide',
         },
@@ -212,7 +215,7 @@ export default function ResultsScreen() {
     await waitForNextPaint();
     const replayDeckId = deck!.id;
     const replayDuration = round.durationSeconds;
-    if (!(await configureRound(replayDeckId, replayDuration))) {
+    if (!(await configureRound(replayDeckId, replayDuration, round.mode))) {
       setIsStarting(false);
       setSaveNotice({
         title: 'Deck unavailable',
@@ -387,7 +390,9 @@ export default function ResultsScreen() {
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <View>
-            <Text style={styles.eyebrow}>ROUND COMPLETE</Text>
+            <Text style={styles.eyebrow}>
+              {displayedMode === 'pass-n-play' ? 'PASS N PLAY ROUND RESULTS' : 'CLASSIC ROUND RESULTS'}
+            </Text>
             <Text style={styles.title}>Nice guessing!</Text>
             <Text style={styles.deckName}>{displayedDeckTitle}</Text>
             {((!isArchivedRound && isVideoFinalizing) || displayedVideo) && (
@@ -403,7 +408,7 @@ export default function ResultsScreen() {
                       staticThumbnail
                       suspending={isStarting}
                       video={displayedVideo}
-                      style={styles.video}
+                      style={[styles.video, displayedMode === 'pass-n-play' && styles.portraitVideo]}
                     />
                     <Pressable
                       accessibilityRole="button"
@@ -432,13 +437,18 @@ export default function ResultsScreen() {
                   <View
                     accessibilityLabel="Preparing your round video for playback"
                     accessibilityRole="progressbar"
-                    style={styles.videoPlaceholder}
+                    style={[styles.videoPlaceholder, displayedMode === 'pass-n-play' &&
+                      [styles.portraitVideo, styles.portraitPlaceholder]]}
                   >
                     <ActivityIndicator color={colors.play} size="large" />
-                    <Text style={styles.videoPlaceholderTitle}>Preparing your video…</Text>
-                    <Text style={styles.videoPlaceholderBody}>
-                      Your results are ready. Playback will appear as soon as processing finishes.
-                    </Text>
+                    {displayedMode !== 'pass-n-play' && (
+                      <>
+                        <Text style={styles.videoPlaceholderTitle}>Preparing your video…</Text>
+                        <Text style={styles.videoPlaceholderBody}>
+                          Your results are ready. Playback will appear as soon as processing finishes.
+                        </Text>
+                      </>
+                    )}
                   </View>
                 )}
               </View>
@@ -607,6 +617,10 @@ const styles = StyleSheet.create({
   deckName: { color: colors.muted, fontSize: 16, fontFamily: 'Inter_700Bold', fontWeight: '700', marginTop: spacing.sm },
   videoSection: { alignItems: 'center', marginTop: spacing.lg },
   video: { width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg },
+  // (9/16)^2 of the available width gives a 9:16 portrait the same height
+  // as the full-width 16:9 landscape player.
+  portraitVideo: { width: '31.640625%', aspectRatio: 9 / 16, alignSelf: 'center' },
+  portraitPlaceholder: { padding: 0 },
   videoPlaceholder: {
     width: '100%',
     aspectRatio: 16 / 9,

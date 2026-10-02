@@ -1,5 +1,6 @@
 import type { CatalogDeck } from '@/catalog/catalog-snapshot';
-import type { CardResult, RoundState } from '@/game/game-types';
+import { parseGameMode } from '@/game/game-mode';
+import type { CardResult, GameMode, RoundState } from '@/game/game-types';
 
 export type StoredCardResult = CardResult & {
   text: string;
@@ -8,6 +9,8 @@ export type StoredCardResult = CardResult & {
 
 export type RoundResultSnapshot = {
   version: 1;
+  // Older version-1 recordings omit mode and replay as Classic.
+  mode?: GameMode;
   deckId: string;
   deckTitle: string;
   durationSeconds: number;
@@ -15,13 +18,14 @@ export type RoundResultSnapshot = {
 };
 
 export function captureRoundResultSnapshot(
-  round: Pick<RoundState, 'deckId' | 'durationSeconds' | 'results'>,
+  round: Pick<RoundState, 'deckId' | 'durationSeconds' | 'results'> & Partial<Pick<RoundState, 'mode'>>,
   deck: CatalogDeck | null,
 ): RoundResultSnapshot | undefined {
   if (!round.deckId || !deck || deck.id !== round.deckId) return undefined;
 
   return {
     version: 1,
+    mode: parseGameMode(round.mode),
     deckId: round.deckId,
     deckTitle: deck.title,
     durationSeconds: round.durationSeconds,
