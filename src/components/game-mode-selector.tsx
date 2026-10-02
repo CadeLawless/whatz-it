@@ -5,8 +5,8 @@ import type { GameMode } from '@/game/game-types';
 import { colors, radius, spacing, typography } from '@/theme';
 
 const modes = [
-  { value: 'classic', title: 'Classic', description: 'One guesser, multiple clue-givers', instruction: 'Hold the phone at your forehead' },
-  { value: 'pass-n-play', title: "Pass n' Play", description: 'Multiple guessers, one clue-giver', instruction: 'Hold the phone facing you' },
+  { value: 'classic', title: 'Classic', description: 'Phone to forehead. Friends give clues!', instruction: 'Hold the phone at your forehead' },
+  { value: 'pass-n-play', title: "Pass n' Play", description: 'Give clues, then pass. Everyone gets a turn!', instruction: 'Hold the phone facing you' },
 ] as const;
 
 export function GameModeSelector({ value, disabled, onChange }: {
@@ -23,7 +23,7 @@ export function GameModeSelector({ value, disabled, onChange }: {
           const selected = value === mode.value;
           return (
             <Pressable key={mode.value} accessibilityRole="radio"
-              accessibilityLabel={`${mode.title}. ${mode.description}. ${mode.instruction}.`}
+              accessibilityLabel={`${mode.title}. ${mode.description} ${mode.instruction}.`}
               accessibilityState={{ checked: selected, disabled }} disabled={disabled}
               onPress={() => onChange(mode.value)}
               style={({ pressed }) => [styles.option, sideBySide && styles.column,
@@ -33,8 +33,8 @@ export function GameModeSelector({ value, disabled, onChange }: {
           );
         })}
       </View>
-      <Text style={styles.helper}>
-        {selectedMode.description}.
+      <Text adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.01} style={styles.helper}>
+        {selectedMode.description}
       </Text>
     </View>
   );

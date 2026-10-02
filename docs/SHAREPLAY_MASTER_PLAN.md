@@ -1,13 +1,22 @@
 # SharePlay remote play master plan
 
 Date: October 1, 2026  
+Updated: October 2, 2026 — fixed header entry and sheet-based setup direction.  
 Status: Proposed implementation plan. No SharePlay functionality has been implemented or device-tested.
 
 ## 1. Goal and recommended first release
 
 Let friends on separate iPhones play WHATZ IT? together while talking over FaceTime. Each person uses their own phone, receives the appropriate game screen, and sees the same accepted score and round outcome.
 
-**Recommended experience:** Choose a deck → Play with friends → invite through SharePlay → lobby → choose a guesser → everyone ready → countdown → play → shared results → next guesser.
+**Recommended experience:** Choose a deck → top-right SharePlay button → introduction sheet → native invitation → lobby in the sheet → choose a guesser → everyone ready → full-screen countdown/play → shared results → next guesser.
+
+### User-directed placement requirements
+
+- Keep all existing deck setup controls accessible without adding scrolling to that screen.
+- Put the SharePlay icon and the visible label **SharePlay** at the top right, opposite the back button in one fixed header row.
+- Use the saved-results screen opened from My Rounds as the visual reference for the fixed back/action header.
+- Tapping SharePlay opens a sheet with a short description and primary action. SharePlay introduction, setup, and lobby belong in this sheet.
+- Full-screen gameplay after setup is a recommendation; the requested sheet approach is the requirement for setup.
 
 The defaults below are recommendations for implementation, not previously approved product requirements:
 
@@ -66,16 +75,38 @@ Custom native code requires a development/TestFlight/App Store binary containing
 
 ## 4. User flow and screens
 
-1. **Entry:** Add a secondary **Play with friends** action on deck details for supported iPhones. Keep the existing local mode selector intact. Explain briefly that each player needs WHATZ IT? and joins SharePlay on their iPhone.
-2. **Invitation:** Present Apple’s sharing interface. Cover unavailable SharePlay, cancellation, app-version mismatch, and invitations received while the app is closed. Participants without the app follow the system’s installation path; verify that experience on devices before documenting it as supported.
+1. **Entry:** Add **SharePlay**, with its platform icon, to the top-right fixed header on deck details for supported iPhones. Use the existing back row's space; do not add a content button or increase the screen's required scroll distance. Open the introduction sheet described below.
+2. **Invitation:** The sheet's **Invite friends** action presents Apple’s sharing interface. Cover unavailable SharePlay, cancellation, app-version mismatch, and invitations received while the app is closed. Cancellation returns to the introduction sheet with settings preserved. Participants without the app follow the system’s installation path; verify that experience on devices before documenting it as supported.
 3. **Joining:** Finish app/catalog hydration and the protocol handshake before displaying the lobby. If a local round or export is active, ask the player to finish or leave that flow; do not reset it silently.
-4. **Lobby:** Show bounded, editable display names, connected/ready status, deck, duration, guesser, and scorekeeper. Do not assume Apple supplies contacts or a usable human name. Host selects settings; settings changes clear readiness.
+4. **Lobby:** Advance within the same sheet to show bounded, editable display names, connected/ready status, deck, duration, guesser, and scorekeeper. Do not assume Apple supplies contacts or a usable human name. Host selects settings; settings changes clear readiness.
 5. **Ready:** Require at least two eligible connected players, exactly one guesser, a distinct scorekeeper, matching content, and every active player ready. Start with the existing branded countdown style.
 6. **Playing:** Guesser sees “You’re guessing” and no answer. Clue-givers see answer/byline; scorekeeper also sees controls. Display pending input until the host accepts it. Keep controls clear of FaceTime’s floating UI on small screens.
 7. **Results:** Show the authoritative correct/pass list and score. Reveal completed answers only after the round ends. **Next player** returns everyone to the lobby with the next connected guesser proposed; require readiness again.
 8. **Exit:** Distinguish **Leave game** from host **End game for everyone**. Leaving a shared activity and ending it are different native operations. Do not promise to end the FaceTime call. [Apple leave/end semantics](https://developer.apple.com/documentation/groupactivities/groupsession/leave%28%29)
 
 Offer accessible button labels, large-text layouts, reduced-motion behavior, and a clear muted-audio state. Start with haptics and visual feedback; enable game sounds only after testing FaceTime coexistence on speakers and Bluetooth devices.
+
+### Fixed header and sheet design
+
+**Header:** Back on the left; SharePlay icon followed by **SharePlay** on the right. Keep both in one stable row outside the deck content's ScrollView, respecting the safe area. Match the saved-results header's alignment, weight, and action treatment. The current deck route hides the native stack header and renders its back control through `DeckDetailsHeader`, so inspect/refactor that row rather than assuming a native navigation-bar replacement is necessary. Remove the old in-content back row when introducing the fixed one; avoid double top padding or consuming an additional row of vertical space.
+
+Preserve a comfortable touch target and the visible SharePlay label. If the back destination label competes for width, shorten its visible text to **Back** while retaining the full accessible destination label. Do not solve a width problem by stacking actions, hiding SharePlay in a menu, or reducing text to an unreadable size.
+
+**Introduction sheet:** Start at a compact content-fitting height, with a close control and a single primary action. Suggested copy:
+
+> **Play together with SharePlay**  
+> Guess with friends over FaceTime, wherever they are. Everyone joins on their own iPhone with WHATZ IT?  
+> **Invite friends**
+
+Show the selected deck and duration as a small summary, inherited from deck setup. Keep extended instructions out of this first view. Resolve unavailable or paid-deck states inside the sheet with a short explanation and a usable next step.
+
+**Setup sheet:** After the native invitation completes, replace the introduction with the lobby in the same sheet. Expand its height for the roster and setup as needed. Keep the primary **Ready** or host **Start game** action visible in the sheet footer; any necessary roster scrolling stays inside the sheet and never changes the underlying deck screen. Incoming participants enter this same sheet flow after app hydration. The host can adjust remote duration here without silently rewriting local-mode preferences.
+
+**Presentation:** Prefer the installed `@expo/ui` native BottomSheet and verify SDK 57's presentation, sizing, dismissal, and React Native content integration. The repository's existing `AppSheet` is a custom animated sheet; its existence alone is not a reason to select it for this native flow. Confirm that Apple's invitation controller can be presented from the current sheet's active controller without competing modal transitions. Temporarily dismiss and restore the app sheet if required, preserving session/setup state. [Expo UI SDK 57](https://docs.expo.dev/versions/v57.0.0/sdk/ui/)
+
+**Dismissal:** Before activation, close/swipe simply returns to deck setup. Once joined, closing setup offers **Keep setting up** or **Leave game**; host ending for everyone remains a separate action. Native invitation cancellation must not accidentally end an existing session. When everyone is ready, transition deliberately from the sheet to full-screen countdown/gameplay so play cannot be dismissed with a sheet swipe. **Next player** reopens the lobby sheet; avoid stacking multiple lobby sheets or duplicating session observers.
+
+**Layout acceptance:** Compare before/after screenshots on the smallest supported iPhone and the user's usual phone. At standard text sizes, deck artwork, duration, local mode selection, and LET'S PLAY must remain accessible without a scroll, with both header actions visible. SharePlay adds no required scrolling at any supported size. At accessibility text sizes, preserve existing adaptive scrolling if needed for legibility rather than clipping controls; verify the header remains reachable. Check long back labels, safe areas, FaceTime overlays, and return-from-sheet layout. This layout gate comes before integrating the full session flow.
 
 ## 5. State ownership and protocol
 
@@ -178,10 +209,11 @@ All paths below are relative to this repository; new paths are proposals.
 | `src/shareplay/session-provider.tsx` | Native subscription, handshake, intent/snapshot flow, recovery. |
 | `src/shareplay/deck-compatibility.ts` | Canonical content hash, frozen deck, access readiness. |
 | `src/shareplay/transport.ts` | Native transport adapter and controllable in-memory test transport. |
-| `src/app/shareplay/{lobby,game,results}.tsx` | Remote screens; countdown can be a phase within game. |
-| `src/components/shareplay/` | Roster, roles, hidden guesser panel, clue panel, connection state. |
+| `src/app/shareplay/{game,results}.tsx` | Full-screen remote play/results; countdown can be a phase within game. Setup remains in the sheet. |
+| `src/components/shareplay/` | Native setup sheet, introduction/lobby steps, roster, roles, hidden guesser panel, clue panel, connection state. |
+| `src/components/deck-details-header.tsx` | Separate the fixed back/SharePlay action row from the deck hero; preserve other consumers. |
 | `src/app/_layout.tsx` | Long-lived observer and safe routing after provider hydration. |
-| `src/app/deck/[deckId].tsx` | Play with friends entry and selected-deck handoff. |
+| `src/app/deck/[deckId].tsx` | Fixed top-right SharePlay entry, sheet presentation, selected-deck/duration handoff, no added scrolling. |
 | `src/video/round-sound-provider.tsx` | Scoped audio behavior compatible with remote sessions. |
 | `package.json` | Local module registration if required by scaffold; include new test directory in `npm test`. |
 
@@ -210,7 +242,9 @@ Keep local `GameMode` and saved local results unchanged initially. Model remote 
 
 ### Phase 2 — Complete free-deck game
 
-- [ ] Build entry, native invitation, lobby, ready states, roles, synchronized countdown, play, results, and next-player flow.
+- [ ] First verify the fixed back/SharePlay header preserves the current no-scroll deck setup layout on physical phones.
+- [ ] Build the compact introduction sheet, native invitation, lobby within the sheet, ready states, roles, synchronized countdown, play, results, and return-to-sheet next-player flow.
+- [ ] Verify sheet sizing, visible primary actions, invitation presentation/cancellation, and joined-session dismissal behavior.
 - [ ] Add navigation guards, unsupported-platform behavior, explicit leave/end, and content compatibility errors.
 - [ ] Disable recording and ensure replay starts a fresh remote round through lobby readiness.
 
