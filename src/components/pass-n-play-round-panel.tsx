@@ -1,10 +1,10 @@
-import { SymbolView } from 'expo-symbols';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { CloseButton } from '@/components/close-button';
 import { PortraitTimesUpPanel } from '@/components/portrait-times-up-panel';
+import { PortraitAnswerText, PortraitRoundFeedback } from '@/components/portrait-round-visuals';
 import { RecordingIndicator } from '@/components/recording-indicator';
 import type { CardOutcome, RoundStatus } from '@/game/game-types';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -42,19 +42,7 @@ export function PassNPlayRoundPanel(props: Props) {
   const handoff = status === 'handoff';
   const paused = status === 'paused';
   if (status === 'feedback') {
-    const correct = props.outcome === 'correct';
-    const tint = correct ? colors.correctText : colors.passText;
-    return (
-      <View style={[styles.takeover, { backgroundColor: correct ? colors.correct : colors.pass }]}>
-        {correct ? (
-          <SymbolView accessibilityElementsHidden name={{ android: 'check', ios: 'checkmark', web: 'check' }}
-            size={112} tintColor={tint} style={styles.checkIcon} />
-        ) : <Text accessibilityElementsHidden style={[styles.feedbackIcon, { color: tint }]}>×</Text>}
-        <Text accessibilityRole="header" style={[styles.feedbackTitle, { color: tint }]}>
-          {correct ? 'CORRECT!' : 'PASS'}
-        </Text>
-      </View>
-    );
+    return <PortraitRoundFeedback outcome={props.outcome === 'correct' ? 'correct' : 'pass'} />;
   }
   return (
     <View style={styles.panel}>
@@ -70,8 +58,7 @@ export function PassNPlayRoundPanel(props: Props) {
             {status !== 'ready' && <Text style={styles.clock}>{props.clock}</Text>}
             {status === 'playing' && props.answer ? (
               <>
-                <Text adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.01}
-                  style={styles.answer}>{props.answer.text}</Text>
+                <PortraitAnswerText key={props.answer.text} text={props.answer.text} />
                 {props.answer.byline && <Text style={styles.byline}>{props.answer.byline}</Text>}
               </>
             ) : (
@@ -124,11 +111,7 @@ function Action({ label, onPress, secondary = false, large = false, equalWidth =
 
 const styles = StyleSheet.create({
   panel: { flex: 1, minHeight: 0, backgroundColor: colors.surface, borderWidth: 6,
-    borderColor: '#439EFE', borderRadius: radius.xl, overflow: 'hidden' },
-  takeover: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  checkIcon: { width: 112, height: 130 },
-  feedbackIcon: { fontSize: 124, lineHeight: 130, fontFamily: 'Inter_700Bold' },
-  feedbackTitle: { ...typography.hero, fontWeight: '900', textAlign: 'center' },
+    borderColor: colors.roundBorder, borderRadius: radius.xl, overflow: 'hidden' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: spacing.md, gap: spacing.md },
   clock: { ...typography.title, color: colors.muted, textAlign: 'center', fontVariant: ['tabular-nums'] },
@@ -136,7 +119,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase' },
   content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg, gap: spacing.md },
   cardArea: { flex: 1, minHeight: 0 },
-  answer: { ...typography.hero, width: '100%', color: colors.ink, textAlign: 'center' },
   byline: { ...typography.body, fontSize: 21, lineHeight: 28,
     fontFamily: 'Inter_700Bold', color: colors.muted, textAlign: 'center' },
   title: { ...typography.hero, color: colors.play, textAlign: 'center' },

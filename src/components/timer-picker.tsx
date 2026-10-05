@@ -23,6 +23,7 @@ export function TimerPicker({ value, onChange }: TimerPickerProps) {
             <Pressable
               key={seconds}
               accessibilityRole="button"
+              accessibilityLabel={`Set round length to ${seconds} seconds`}
               accessibilityState={{ selected }}
               onPress={() => onChange(seconds)}
               style={[styles.preset, selected && styles.presetSelected]}
@@ -34,12 +35,8 @@ export function TimerPicker({ value, onChange }: TimerPickerProps) {
           );
         })}
       </View>
-
       <View style={styles.customRow}>
-        <View>
-          <Text style={styles.customLabel}>CUSTOM TIMER</Text>
-          <Text style={styles.customValue}>{formatDuration(value)}</Text>
-        </View>
+        <Text accessibilityLabel={`Round length: ${value} seconds`} style={styles.customValue}>{formatDuration(value)}</Text>
         <View style={styles.stepper}>
           <Pressable
             accessibilityRole="button"
@@ -92,7 +89,7 @@ const styles = StyleSheet.create({
   presetText: { color: '#000000', fontSize: 15, fontFamily: 'Inter_800ExtraBold' },
   presetTextSelected: { color: colors.play },
   customRow: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -103,8 +100,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#D2DEE8',
   },
-  customLabel: { color: '#000000', fontSize: 14, fontFamily: 'Inter_800ExtraBold' },
-  customValue: { color: colors.play, fontSize: 30, lineHeight: 32, fontFamily: 'Inter_900Black', marginTop: 3 },
+  customValue: { color: colors.play, fontSize: 30, lineHeight: 32, fontFamily: 'Inter_900Black' },
   stepper: { flexDirection: 'row', gap: spacing.sm },
   stepButton: {
     width: 52,

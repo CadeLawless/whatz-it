@@ -16,6 +16,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +24,8 @@ import type { PermissionStatus } from 'react-native-vision-camera';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
+import { DeckSetupHeader } from '@/components/deck-setup-header';
+import { useSharePlay } from '@/shareplay/session-provider';
 import { GameModeSelector } from '@/components/game-mode-selector';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
@@ -64,6 +67,9 @@ type RoundSetupNotice = {
 const releaseCapabilities = platformReleaseCapabilities(Platform.OS);
 
 export default function DeckDetailsScreen() {
+  const { width } = useWindowDimensions();
+  const isIPad = Platform.OS === 'ios' && Platform.isPad;
+  const sharePlay = useSharePlay();
   const { catalog } = useCatalog();
   const { deckId, durationSeconds, returnToRoundId, mode: replayMode } = useLocalSearchParams<{
     deckId: string;
@@ -288,89 +294,102 @@ export default function DeckDetailsScreen() {
           showsVerticalScrollIndicator={false}
           style={styles.screen}
         >
-          <DeckDetailsHeader
+          {Platform.OS === 'ios' && <DeckSetupHeader
             backLabel={returnToRoundId ? 'Back to Results' : 'Back to Decks'}
-            deck={deck}
             onBack={handleBack}
-          />
+            onSharePlay={sharePlay.enabled ? () => sharePlay.open({
+              deckId: deck.id, deckTitle: deck.title, durationSeconds: duration, access: deck.access,
+            }) : undefined}
+          />}
+          <View style={styles.mainContent}>
+            <DeckDetailsHeader
+              showBackButton={Platform.OS !== 'ios'}
+              backLabel={returnToRoundId ? 'Back to Results' : 'Back to Decks'}
+              containerWidth={Math.min(width - spacing.lg * 2, 640)}
+              deck={deck}
+              onBack={handleBack}
+            />
 
-          <Text style={styles.sectionLabel}>ROUND LENGTH</Text>
+            <Text style={styles.sectionLabel}>ROUND LENGTH</Text>
 
-          <TimerPicker
-            value={duration}
-            onChange={(value) =>
-              setDuration(clampRoundDuration(value))
-            }
-          />
+            <TimerPicker
+              value={duration}
+              onChange={(value) =>
+                setDuration(clampRoundDuration(value))
+              }
+            />
 
-          <View style={styles.startArea}>
-            {displayedRoundSetupNotice && (
-              <View style={styles.roundSetupCard}>
-                <View style={styles.roundSetupHeader}>
-                  <Text style={styles.roundSetupTitle}>
-                    {displayedRoundSetupNotice.title}
-                  </Text>
+            <View style={styles.startArea}>
+              {displayedRoundSetupNotice && (
+                <View style={styles.roundSetupCard}>
+                  <View style={styles.roundSetupHeader}>
+                    <Text style={styles.roundSetupTitle}>
+                      {displayedRoundSetupNotice.title}
+                    </Text>
+                  </View>
+
+                  <View style={styles.roundSetupMessages}>
+                    {displayedRoundSetupNotice.messages.map((message) => (
+                      <View key={message} style={styles.roundSetupMessageRow}>
+                        <View style={styles.roundSetupDot} />
+                        <Text style={styles.roundSetupMessage}>{message}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {displayedRoundSetupNotice.showSettings && (
+                    <Pressable
+                      accessibilityHint="Opens the system settings for WHATZ IT?"
+                      accessibilityRole="link"
+                      onPress={() => void handleOpenSettings()}
+                      style={({ pressed }) => [
+                        styles.settingsLink,
+                        pressed && styles.settingsLinkPressed,
+                      ]}
+                    >
+                      <Text style={styles.settingsLinkText}>CHANGE SETTINGS</Text>
+                    </Pressable>
+                  )}
                 </View>
-
-                <View style={styles.roundSetupMessages}>
-                  {displayedRoundSetupNotice.messages.map((message) => (
-                    <View key={message} style={styles.roundSetupMessageRow}>
-                      <View style={styles.roundSetupDot} />
-                      <Text style={styles.roundSetupMessage}>{message}</Text>
-                    </View>
-                  ))}
-                </View>
-                {displayedRoundSetupNotice.showSettings && (
-                  <Pressable
-                    accessibilityHint="Opens the system settings for WHATZ IT?"
-                    accessibilityRole="link"
-                    onPress={() => void handleOpenSettings()}
-                    style={({ pressed }) => [
-                      styles.settingsLink,
-                      pressed && styles.settingsLinkPressed,
-                    ]}
-                  >
-                    <Text style={styles.settingsLinkText}>CHANGE SETTINGS</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
+              )}
+            </View>
           </View>
         </ScrollView>
 
-        <View style={styles.startFooter}>
-          <Pressable
-            accessibilityRole="button"
-            disabled={isStarting || !modeLoaded}
-            accessibilityState={{ disabled: isStarting || !modeLoaded, busy: isStarting }}
-            onPress={handleStart}
-            style={({ pressed }) => [
-              styles.startButton,
-              pressed && styles.startButtonPressed,
-            ]}
-          >
-            <Text style={styles.startButtonText}>
-              LET&apos;S PLAY
-            </Text>
+        <View style={[styles.startFooter, isIPad && styles.tabletFooter]}>
+          <View style={styles.footerContent}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isStarting || !modeLoaded}
+              accessibilityState={{ disabled: isStarting || !modeLoaded, busy: isStarting }}
+              onPress={handleStart}
+              style={({ pressed }) => [
+                styles.startButton,
+                pressed && styles.startButtonPressed,
+              ]}
+            >
+              <Text style={styles.startButtonText}>
+                LET&apos;S PLAY
+              </Text>
 
-            <SymbolView
-              accessibilityElementsHidden
-              name={{
-                android: 'arrow_forward',
-                ios: 'arrow.right',
-                web: 'arrow_forward',
-              }}
-              size={29}
-              style={styles.startArrow}
-              tintColor={colors.white}
-            />
-          </Pressable>
-          <View style={styles.modeSelection}>
-            <GameModeSelector value={mode} disabled={isStarting || !modeLoaded}
-              onChange={(selectedMode) => {
-                setModeSelection({ source: replayMode, value: selectedMode, loaded: true });
-                void saveRoundMode(selectedMode).catch(() => undefined);
-              }} />
+              <SymbolView
+                accessibilityElementsHidden
+                name={{
+                  android: 'arrow_forward',
+                  ios: 'arrow.right',
+                  web: 'arrow_forward',
+                }}
+                size={29}
+                style={styles.startArrow}
+                tintColor={colors.white}
+              />
+            </Pressable>
+            <View style={styles.modeSelection}>
+              <GameModeSelector value={mode} disabled={isStarting || !modeLoaded}
+                onChange={(selectedMode) => {
+                  setModeSelection({ source: replayMode, value: selectedMode, loaded: true });
+                  void saveRoundMode(selectedMode).catch(() => undefined);
+                }} />
+            </View>
           </View>
         </View>
       </SafeAreaView>
@@ -455,6 +474,12 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xl,
   },
+  mainContent: {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
+  },
 
   centered: {
     flex: 1,
@@ -498,6 +523,14 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: 0,
     backgroundColor: colors.surface,
+  },
+  tabletFooter: {
+    paddingBottom: spacing.xl,
+  },
+  footerContent: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
 
   roundSetupCard: {

@@ -21,7 +21,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCatalog } from '@/catalog/catalog-provider';
-import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
+import { AppSheet, MAX_SHEET_WIDTH, type AppSheetRef } from '@/components/app-sheet';
 import { CircularCloseButton } from '@/components/circular-close-button';
 import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
@@ -53,7 +53,7 @@ export default function DeckPreviewSheet() {
   const activeIndex = bundleDecks.findIndex(({ id }) => id === activeDeckId);
   const visibleCarouselIndex = Math.max(0, activeIndex);
   const canBrowseBundle = bundleDecks.length > 1 && activeIndex >= 0;
-  const pageWidth = Math.max(1, width - spacing.lg * 2);
+  const pageWidth = Math.max(1, Math.min(width, MAX_SHEET_WIDTH) - spacing.lg * 2);
   const pageStride = pageWidth + spacing.md;
   const deckCommerceTarget = deck
     ? {
@@ -205,7 +205,7 @@ export default function DeckPreviewSheet() {
             >
               <View style={styles.previewBody}>
                 <GestureDetector gesture={swipeGesture}>
-                  <View style={styles.carouselViewport}>
+                  <View style={[styles.carouselViewport, { width: pageWidth }]}>
                     <Animated.View
                       style={[styles.carouselTrack, carouselAnimatedStyle]}
                     >
@@ -224,6 +224,7 @@ export default function DeckPreviewSheet() {
                         >
                           <DeckDetailsHeader
                             backLabel="Close Preview"
+                            containerWidth={pageWidth}
                             deck={carouselDeck}
                             onBack={() => router.back()}
                             showBackButton={false}

@@ -30,10 +30,10 @@ function loopOffset(value: number, cycleWidth: number) {
 
 export function FeaturedCardsCarousel({
   cards,
-  isBundleDeck,
+  fullBleed = true,
 }: {
   cards: Card[] | undefined;
-  isBundleDeck: boolean;
+  fullBleed?: boolean;
 }) {
   const featuredCards = cards ?? [];
   const canAnimate = featuredCards.length >= MINIMUM_FEATURED_CARDS;
@@ -120,7 +120,7 @@ export function FeaturedCardsCarousel({
   if (!canAnimate) return null;
 
   return (
-    <View style={[styles.section, isBundleDeck && styles.bundleSection]}>
+    <View style={[styles.section, !fullBleed && styles.containedSection]}>
       <Text accessibilityRole="header" style={styles.label}>A PEEK INSIDE</Text>
       <GestureDetector gesture={panGesture}>
         <View style={styles.viewport}>
@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     marginHorizontal: -spacing.lg,
   },
-  bundleSection: {marginHorizontal: 0},
+  containedSection: { marginHorizontal: 0 },
   label: {
     paddingHorizontal: spacing.lg,
     color: colors.play,

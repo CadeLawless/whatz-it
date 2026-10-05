@@ -139,7 +139,7 @@ export function buildFlightRecorderTraceText(stagePrefix: string, limit = 60) {
     .filter((entry) => entry.stage.startsWith(stagePrefix))
     .slice(-Math.max(0, limit));
 
-  if (entries.length === 0) return 'No recent commerce events recorded.';
+  if (entries.length === 0) return 'No recent events recorded.';
   return entries.map((entry) => {
     const details = entry.details && Object.keys(entry.details).length > 0
       ? ` ${JSON.stringify(entry.details)}`

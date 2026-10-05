@@ -53,6 +53,9 @@ function loadComponent(path: string) {
       if (name.endsWith('/portrait-times-up-panel')) {
         return loadComponent('src/components/portrait-times-up-panel.tsx');
       }
+      if (name.endsWith('/portrait-round-visuals')) {
+        return loadComponent('src/components/portrait-round-visuals.tsx');
+      }
       return require(name);
     },
   });

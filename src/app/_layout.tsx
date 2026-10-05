@@ -18,6 +18,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { colors } from '@/theme';
 import { CatalogProvider, useCatalog } from '@/catalog/catalog-provider';
 import { RoundProvider } from '@/game/round-context';
+import { SharePlayProvider } from '@/shareplay/session-provider';
+import { SharePlaySetupSheet } from '@/components/shareplay/setup-sheet';
 import { ScreenshotTransitionProvider } from '@/components/screenshot-transition-provider';
 import { RoundSoundProvider } from '@/video/round-sound-provider';
 import { StoreCommerceProvider } from '@/storefront/store-commerce-provider';
@@ -159,9 +161,11 @@ function RootLayoutContent() {
   return (
     <GestureHandlerRootView onLayout={handleRootLayout} style={styles.root}>
       <SafeAreaProvider>
+      <SharePlayProvider>
       <RoundSoundProvider>
         <ScreenshotTransitionProvider>
           <RoundProvider>
+          <SharePlaySetupSheet />
           <StatusBar style="dark" />
           {/* One route-based owner keeps the controls hidden across Ready → Game
               and restores them on Results, cancellation, or returning to decks. */}
@@ -281,6 +285,7 @@ function RootLayoutContent() {
           </RoundProvider>
         </ScreenshotTransitionProvider>
       </RoundSoundProvider>
+      </SharePlayProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

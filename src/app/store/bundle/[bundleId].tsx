@@ -84,40 +84,44 @@ export default function BundleDetailsScreen() {
             <Text numberOfLines={1} style={styles.backText}>{backLabel}</Text>
           </Pressable>
 
-          <View style={styles.hero}>
-            <Text style={styles.eyebrow}>BUNDLE</Text>
-            <Text style={styles.title}>{bundle.title}</Text>
-            <Text style={styles.description}>{bundle.description}</Text>
-            {hasPartialOwnership && (
-              <View style={styles.ownedBadge}>
-                <Text style={styles.ownedBadgeText}>{ownedDeckCount}/{bundle.deckIds.length} decks owned</Text>
-              </View>
-            )}
-          </View>
+          <View style={styles.mainContent}>
+            <View style={styles.hero}>
+              <Text style={styles.eyebrow}>BUNDLE</Text>
+              <Text style={styles.title}>{bundle.title}</Text>
+              <Text style={styles.description}>{bundle.description}</Text>
+              {hasPartialOwnership && (
+                <View style={styles.ownedBadge}>
+                  <Text style={styles.ownedBadgeText}>{ownedDeckCount}/{bundle.deckIds.length} decks owned</Text>
+                </View>
+              )}
+            </View>
 
-          <BundleCoverCarousel
-            decks={bundle.decks}
-            ownedDeckIds={ownedDeckIds}
-            onDeckPress={(deck) =>
-              router.push({
-                pathname: '/store/deck-preview/[deckId]',
-                params: { bundleId: bundle.id, deckId: deck.id },
-              })
-            }
-          />
+            <BundleCoverCarousel
+              decks={bundle.decks}
+              ownedDeckIds={ownedDeckIds}
+              onDeckPress={(deck) =>
+                router.push({
+                  pathname: '/store/deck-preview/[deckId]',
+                  params: { bundleId: bundle.id, deckId: deck.id },
+                })
+              }
+            />
+          </View>
         </ScrollView>
 
         <View style={styles.purchaseFooter}>
-          <CommercePurchaseCard
-            comparisonPrice={purchaseHint ? offer?.comparisonPrice : null}
-            comparisonKind={offer?.comparisonKind}
-            onPurchase={commerce.purchase}
-            onRetry={commerce.retry}
-            purchaseHint={purchaseHint}
-            purchaseHintColor="blue"
-            state={commerce.state}
-            target={resolvedCommerceTarget}
-          />
+          <View style={styles.footerContent}>
+            <CommercePurchaseCard
+              comparisonPrice={purchaseHint ? offer?.comparisonPrice : null}
+              comparisonKind={offer?.comparisonKind}
+              onPurchase={commerce.purchase}
+              onRetry={commerce.retry}
+              purchaseHint={purchaseHint}
+              purchaseHintColor="blue"
+              state={commerce.state}
+              target={resolvedCommerceTarget}
+            />
+          </View>
         </View>
       </SafeAreaView>
     </>
@@ -127,6 +131,13 @@ export default function BundleDetailsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { gap: spacing.xl, padding: spacing.lg, paddingBottom: spacing.xl },
+  mainContent: {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
+    gap: spacing.xl,
+  },
   backButton: {
     minHeight: 48,
     alignSelf: 'flex-start',
@@ -195,6 +206,11 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.xl,
     backgroundColor: colors.surface,
+  },
+  footerContent: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   centered: {
     flex: 1,
