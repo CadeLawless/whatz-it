@@ -19,6 +19,7 @@ import { AppState, Platform } from 'react-native';
 import { usePathname } from 'expo-router';
 import { stopAndroidRoundSounds } from 'whatz-it-video-export';
 import { cancelRoundHaptics } from '@/utils/round-haptics';
+import { isSharePlayAudioBlocked } from '@/shareplay/audio-policy';
 import {
   getRoundSoundSource,
   isAndroidRoundSoundBankReady,
@@ -52,6 +53,8 @@ type RoundSoundContextValue = {
   isReady: boolean;
   loadTimedOut: boolean;
   play: (sound: RoundSoundId, isCurrent?: () => boolean) => Promise<boolean>;
+  playSharePlay: (sound: RoundSoundId, isCurrent: () => boolean) => Promise<boolean>;
+  prepareForSharePlay: (isCurrent: () => boolean) => Promise<boolean>;
   prepareForRound: () => Promise<boolean>;
   stopAll: () => void;
   stopIntro: () => void;
@@ -214,7 +217,8 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   }, [pathname, stopAll]);
   useEffect(() => () => stopAll(), [stopAll]);
 
-  const configureAudioSession = useCallback(async () => {
+  const configureAudioSession = useCallback(async (sharePlay = false, isCurrent: () => boolean = () => true) => {
+    if ((!sharePlay && isSharePlayAudioBlocked()) || !isCurrent()) return false;
     if (!audioModePromise.current) {
       audioModePromise.current = setAudioModeAsync({
         allowsRecording: false,
@@ -230,13 +234,13 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
         });
     }
     const modeReady = await audioModePromise.current;
-    if (!modeReady) return false;
+    if (!modeReady || (!sharePlay && isSharePlayAudioBlocked()) || !isCurrent()) return false;
     try {
       // Camera preparation may change the shared mode to play-and-record.
       // Reactivate that current mode for every cue without overwriting it.
       await setIsAudioActiveAsync(true);
       logRoundDiagnostic('current audio session activated');
-      return true;
+      return isCurrent();
     } catch (error) {
       warnRoundDiagnostic('audio session activation failed', error);
       return false;
@@ -252,9 +256,11 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   }, [namedStatuses.length]);
 
   useEffect(() => {
-    void configureAudioSession();
+    // Reserve audio activation for local play. Opening an incoming SharePlay
+    // invitation must not activate our playback session over FaceTime.
+    if (pathname === '/ready' || pathname === '/game') void configureAudioSession();
     void prepareAndroidRoundSoundBank();
-  }, [configureAudioSession]);
+  }, [configureAudioSession, pathname]);
 
   useEffect(() => {
     let previousState = AppState.currentState;
@@ -265,12 +271,12 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
         stopAll();
         return;
       }
-      if (!enteredForeground) return;
+      if (!enteredForeground || (pathname !== '/ready' && pathname !== '/game')) return;
       logRoundDiagnostic('audio provider entered foreground; restoring session');
       void configureAudioSession();
     });
     return () => subscription.remove();
-  }, [configureAudioSession, stopAll]);
+  }, [configureAudioSession, pathname, stopAll]);
 
   useEffect(() => {
     for (const [name, status] of namedStatuses) {
@@ -327,12 +333,13 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     readinessSignature,
   ]);
 
-  const play = useCallback(
-    async (sound: RoundSoundId, isCurrent: () => boolean = () => true) => {
+  const playCue = useCallback(
+    async (sound: RoundSoundId, isCurrent: () => boolean = () => true, stopAtEnd = true) => {
       if (AppState.currentState !== 'active' || !isCurrent()) return false;
-      if (sound === 'round-end') stopAll();
+      if (sound === 'round-end' && stopAtEnd) stopAll();
       const requestGeneration = generation.current;
-      const canPlay = () => generation.current === requestGeneration && isCurrent();
+      const canPlay = () => AppState.currentState === 'active' &&
+        generation.current === requestGeneration && isCurrent();
       // Do not await a native audio-session operation here. Android serializes
       // those operations, so 3-2-1 requests can accumulate behind a slow
       // activation and then all call play() together. The session is armed
@@ -347,6 +354,15 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     },
     [regularPlayers, stopAll, tickPlayers],
   );
+
+  const play = useCallback((sound: RoundSoundId, isCurrent: () => boolean = () => true) =>
+    playCue(sound, () => !isSharePlayAudioBlocked() && isCurrent()), [playCue]);
+  // The current SharePlay turn owner prepares round audio. A player's Ready
+  // tap also uses this path for its brief local feedback cue.
+  const prepareForSharePlay = useCallback((isCurrent: () => boolean) =>
+    configureAudioSession(true, isCurrent), [configureAudioSession]);
+  const playSharePlay = useCallback((sound: RoundSoundId, isCurrent: () => boolean) =>
+    playCue(sound, () => isSharePlayAudioBlocked() && isCurrent(), false), [playCue]);
 
   const prepareForRound = useCallback(async () => {
     const before = getLoadSnapshot();
@@ -396,8 +412,10 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   }, [configureAudioSession]);
 
   const value = useMemo(
-    () => ({ isReady, loadTimedOut: effectiveLoadTimedOut, play, prepareForRound, recoverAudio, stopAll, stopIntro }),
-    [effectiveLoadTimedOut, isReady, play, prepareForRound, recoverAudio, stopAll, stopIntro],
+    () => ({ isReady, loadTimedOut: effectiveLoadTimedOut, play, playSharePlay, prepareForSharePlay,
+      prepareForRound, recoverAudio, stopAll, stopIntro }),
+    [effectiveLoadTimedOut, isReady, play, playSharePlay, prepareForSharePlay,
+      prepareForRound, recoverAudio, stopAll, stopIntro],
   );
   return <RoundSoundContext.Provider value={value}>{children}</RoundSoundContext.Provider>;
 }

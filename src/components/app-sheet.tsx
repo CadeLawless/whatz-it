@@ -30,7 +30,7 @@ export type AppSheetRef = {
 
 const DISMISS_DISTANCE = 72;
 const DISMISS_VELOCITY = 720;
-const MAX_SHEET_WIDTH = 680;
+export const MAX_SHEET_WIDTH = 680;
 
 export const AppSheet = forwardRef<AppSheetRef, AppSheetProps>(function AppSheet(
   { accessibilityLabel, children, heightFraction, onClose },

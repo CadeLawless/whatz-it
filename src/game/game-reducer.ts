@@ -1,6 +1,7 @@
 import type { RoundAction, RoundState } from '@/game/game-types';
 
 export const initialRoundState: RoundState = {
+  mode: 'classic',
   status: 'idle',
   deckId: null,
   durationSeconds: 60,
@@ -20,6 +21,7 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
       return {
         ...initialRoundState,
         status: 'ready',
+        mode: action.mode ?? 'classic',
         deckId: action.deckId,
         durationSeconds: action.durationSeconds,
         cardOrder: action.cardOrder,
@@ -34,6 +36,9 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
       };
     case 'ANSWER': {
       if (state.status !== 'playing') return state;
+      if (state.mode === 'pass-n-play' && state.endsAt !== null && action.now >= state.endsAt) {
+        return roundReducer(state, { type: 'FINISH', now: action.now });
+      }
       const cardId = state.cardOrder[state.currentCardIndex];
       if (!cardId) return { ...state, status: 'finished' };
       return {
@@ -48,6 +53,15 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
     }
     case 'ADVANCE': {
       if (state.status !== 'feedback') return state;
+      if (state.mode === 'pass-n-play') {
+        if (action.now === undefined) return state;
+        if (state.endsAt !== null && action.now >= state.endsAt) {
+          return roundReducer(state, { type: 'FINISH', now: action.now });
+        }
+        if (state.latestOutcome === 'correct') {
+          return { ...state, status: 'handoff', latestOutcome: null };
+        }
+      }
       const nextIndex = state.currentCardIndex + 1;
       if (nextIndex >= state.cardOrder.length) {
         if (!action.replenishedCardOrder?.length) {
@@ -68,8 +82,34 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
         latestOutcome: null,
       };
     }
+    case 'REVEAL': {
+      if (state.mode !== 'pass-n-play' || state.status !== 'handoff') return state;
+      if (state.endsAt === null || action.now >= state.endsAt) {
+        return roundReducer(state, { type: 'FINISH', now: action.now });
+      }
+      const nextIndex = state.currentCardIndex + 1;
+      const cardOrder = nextIndex < state.cardOrder.length
+        ? state.cardOrder
+        : [...state.cardOrder, ...(action.replenishedCardOrder ?? [])];
+      if (!cardOrder[nextIndex]) return roundReducer(state, { type: 'FINISH', now: action.now });
+      return {
+        ...state,
+        status: 'playing',
+        cardOrder,
+        currentCardIndex: nextIndex,
+        latestOutcome: null,
+      };
+    }
+    case 'EXPIRE':
+      // A callback scheduled before a manual pause cannot expire a new clock.
+      if ((state.status !== 'playing' && state.status !== 'feedback' && state.status !== 'handoff') ||
+          state.endsAt !== action.endsAt || action.now < action.endsAt) return state;
+      return roundReducer(state, { type: 'FINISH', now: action.now });
     case 'PAUSE': {
-      if (state.status !== 'playing' && state.status !== 'feedback') return state;
+      if (state.status !== 'playing' && state.status !== 'feedback' && state.status !== 'handoff') return state;
+      if (state.mode === 'pass-n-play' && state.endsAt !== null && action.now >= state.endsAt) {
+        return roundReducer(state, { type: 'FINISH', now: action.now });
+      }
       return {
         ...state,
         status: 'paused',
@@ -90,7 +130,15 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
           latestOutcome: null,
         };
       }
+      if (state.pausedStatus === 'handoff') {
+        return { ...state, status: 'handoff', endsAt: action.now + remainingMs,
+          remainingMs: null, pausedStatus: null };
+      }
       if (state.pausedStatus === 'feedback') {
+        if (state.mode === 'pass-n-play' && state.latestOutcome === 'correct') {
+          return { ...state, status: 'handoff', endsAt: action.now + remainingMs,
+            remainingMs: null, pausedStatus: null, latestOutcome: null };
+        }
         const nextIndex = state.currentCardIndex + 1;
         if (nextIndex >= state.cardOrder.length) {
           if (!action.replenishedCardOrder?.length) {
@@ -135,7 +183,8 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
       if (state.status === 'idle' || state.status === 'finished') return state;
       const cardId = state.cardOrder[state.currentCardIndex];
       const shouldRecordNeutral =
-        (state.status === 'ready' || state.status === 'playing') &&
+        (state.status === 'playing' || (state.mode === 'classic' && state.status === 'ready') ||
+          (state.mode === 'pass-n-play' && state.status === 'paused' && state.pausedStatus === 'playing')) &&
         cardId !== undefined;
       return {
         ...state,

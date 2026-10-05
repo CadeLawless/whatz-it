@@ -596,6 +596,9 @@ export default function DeckLibraryScreen() {
             '',
             'Recent app lifecycle timeline',
             buildFlightRecorderTraceText('lifecycle.', 20),
+            '',
+            'Recent SharePlay timeline (metadata only; no cards or wire payloads)',
+            buildFlightRecorderTraceText('shareplay.', 100),
           ].join('\n'));
 
           await MailComposer.composeAsync({
@@ -1963,8 +1966,9 @@ const styles = StyleSheet.create({
   hiddenLibrarySection: {
     position: 'absolute',
     top: 0,
-    left: '110%',
+    left: 0,
     width: '100%',
+    opacity: 0,
   },
   pendingVideo: {
     minHeight: 52,

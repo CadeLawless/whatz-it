@@ -21,6 +21,7 @@ export function DeckDetailsHeader({
   showFeaturedStack = true,
   stackActive = true,
   stackInteraction = 'swipe',
+  containerWidth,
 }: {
   backLabel: string;
   deck: CatalogDeck;
@@ -29,12 +30,13 @@ export function DeckDetailsHeader({
   showFeaturedStack?: boolean;
   stackActive?: boolean;
   stackInteraction?: 'swipe' | 'tap';
+  containerWidth?: number;
 }) {
   const { width } = useWindowDimensions();
   const posterWidth = Math.min(156, Math.max(126, width * 0.36));
   const titleAvailableWidth = Math.max(
     1,
-    (width - spacing.lg * 2 - spacing.xl * 2) * 0.59,
+    ((containerWidth ?? width - spacing.lg * 2) - spacing.xl * 2) * 0.59,
   );
 
   return (
@@ -69,7 +71,7 @@ export function DeckDetailsHeader({
           <View style={styles.heroCopy}>
             <AutoFitDeckTitle
               availableWidth={titleAvailableWidth}
-              key={`${deck.id}-${width}`}
+              key={`${deck.id}-${containerWidth ?? width}`}
               title={deck.title}
             />
 

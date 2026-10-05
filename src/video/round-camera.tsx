@@ -13,6 +13,7 @@ import {
 import {
   prepareRecordingAudio,
   reassertRecordingHaptics,
+  supportsPortraitLiveOverlay,
 } from 'whatz-it-video-export';
 import {
   createLiveOverlayOutput,
@@ -51,6 +52,7 @@ export type RoundCapture = {
 };
 
 type RoundCameraProps = {
+  portrait?: boolean;
   enabled: boolean;
   microphoneEnabled: boolean;
   onError: (error: unknown) => void;
@@ -95,7 +97,7 @@ async function prepareRoundRecordingAudio() {
 }
 
 export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
-  function RoundCamera({ enabled, microphoneEnabled, onError, onReady }, ref) {
+  function RoundCamera({ enabled, microphoneEnabled, onError, onReady, portrait = false }, ref) {
     const device = useCameraDevice('front');
     const microphoneRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
     const videoOutput = useVideoOutput({
@@ -110,14 +112,15 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       fileType: 'mp4',
     });
     const liveOverlayOutput = useMemo<LiveOverlayOutput | null>(() => {
-      if (Platform.OS === 'web') return null;
+      // Older development builds still have landscape-only live writers.
+      if (Platform.OS === 'web' || (portrait && !supportsPortraitLiveOverlay())) return null;
       try {
         return createLiveOverlayOutput();
       } catch (error) {
         warnVideoDiagnostic('live overlay output unavailable; using standard recorder', error);
         return null;
       }
-    }, []);
+    }, [portrait]);
     const cameraOutputs = useMemo(() => {
       // The live path replaces the normal recorder. Attaching both outputs
       // makes the camera encode two 720p streams and was the main source of
@@ -126,10 +129,10 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
       // Apply this before Camera mounts so the first captured frame cannot
       // initialize the writer with transient portrait dimensions.
       for (const output of outputs) {
-        output.outputOrientation = ROUND_CAMERA_ORIENTATION;
+        output.outputOrientation = portrait ? 'up' : ROUND_CAMERA_ORIENTATION;
       }
       return outputs;
-    }, [liveOverlayOutput, videoOutput]);
+    }, [liveOverlayOutput, portrait, videoOutput]);
     const recorderRef = useRef<Recorder | null>(null);
     const resultPromiseRef = useRef<Promise<string> | null>(null);
     const microphoneRef = useRef<{ uri: string; offsetMs: number } | null>(null);

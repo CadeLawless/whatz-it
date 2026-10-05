@@ -1,9 +1,11 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCatalog } from '@/catalog/catalog-provider';
 import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
+import { DeckSetupHeader } from '@/components/deck-setup-header';
 import { FeaturedCardsCarousel } from '@/components/featured-cards-carousel';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
@@ -18,6 +21,9 @@ import { useCommerceProduct } from '@/storefront/commerce-provider';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function StoreDeckDetailsScreen() {
+  const { width } = useWindowDimensions();
+  const isIPad = Platform.OS === 'ios' && Platform.isPad;
+  const contentWidth = Math.min(width - spacing.lg * 2, 640);
   const { catalog } = useCatalog();
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
   const router = useRouter();
@@ -73,51 +79,62 @@ export default function StoreDeckDetailsScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <DeckDetailsHeader
-            backLabel="Back to Explore"
-            deck={deck}
-            onBack={() => router.back()}
-            showFeaturedStack={false}
-          />
-          <FeaturedCardsCarousel cards={deck.featuredCards} isBundleDeck={false} />
+          {isIPad && (
+            <DeckSetupHeader backLabel="Back to Explore" onBack={() => router.back()} />
+          )}
+          <View style={styles.mainContent}>
+            <DeckDetailsHeader
+              backLabel="Back to Explore"
+              containerWidth={contentWidth}
+              deck={deck}
+              onBack={() => router.back()}
+              showBackButton={!isIPad}
+              showFeaturedStack={false}
+            />
+            <FeaturedCardsCarousel
+              cards={deck.featuredCards}
+              fullBleed={width <= 640 + spacing.lg * 2}
+            />
 
-          <View style={styles.copy}>
-            {bundles.length > 0 && (
-              <Pressable
-                accessibilityHint="Shows every bundle that includes this deck"
-                accessibilityRole="button"
-                onPress={() =>
-                  router.push({
-                    pathname: '/store/bundles-for-deck/[deckId]',
-                    params: { deckId: deck.id },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.seeBundlesButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.seeBundlesText}>SEE BUNDLES</Text>
-                <Text style={styles.seeBundlesChevron}>›</Text>
-              </Pressable>
-            )}
-
+            <View style={styles.copy}>
+              {bundles.length > 0 && (
+                <Pressable
+                  accessibilityHint="Shows every bundle that includes this deck"
+                  accessibilityRole="button"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/store/bundles-for-deck/[deckId]',
+                      params: { deckId: deck.id },
+                    })
+                  }
+                  style={({ pressed }) => [
+                    styles.seeBundlesButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.seeBundlesText}>SEE BUNDLES</Text>
+                  <Text style={styles.seeBundlesChevron}>›</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
         </ScrollView>
 
         <View style={styles.purchaseFooter}>
-          <CommercePurchaseCard
-            onOwned={() =>
-              router.push({
-                pathname: '/deck/[deckId]',
-                params: { deckId: deck.id, transition: 'apple-slide' },
-              })
-            }
-            onPurchase={commerce.purchase}
-            onRetry={commerce.retry}
-            state={commerce.state}
-            target={resolvedCommerceTarget}
-          />
+          <View style={styles.footerContent}>
+            <CommercePurchaseCard
+              onOwned={() =>
+                router.push({
+                  pathname: '/deck/[deckId]',
+                  params: { deckId: deck.id, transition: 'apple-slide' },
+                })
+              }
+              onPurchase={commerce.purchase}
+              onRetry={commerce.retry}
+              state={commerce.state}
+              target={resolvedCommerceTarget}
+            />
+          </View>
         </View>
       </SafeAreaView>
     </>
@@ -130,6 +147,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: spacing.lg,
     paddingBottom: spacing.xl,
+  },
+  mainContent: {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   copy: { gap: 13, marginTop: spacing.xl },
   seeBundlesButton: {
@@ -161,6 +184,11 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.xl,
     backgroundColor: colors.surface,
+  },
+  footerContent: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   centered: {
     flex: 1,

@@ -96,6 +96,7 @@ public final class WhatzItVideoExportModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("WhatzItVideoExport")
+    Constant("portraitLiveOverlayVersion") { 1 }
 
     Constant("overlayExportVersion") {
       25
@@ -1515,10 +1516,13 @@ public final class WhatzItVideoExportModule: Module {
     let byline = event.byline.map {
       $0.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }.flatMap { $0.isEmpty ? nil : "by \($0)" }
-    let horizontalPadding = renderSize.width * 0.0198
-    let verticalPadding = renderSize.height * 0.0154
-    let maximumTextWidth = max(1, renderSize.width - horizontalPadding * 2)
-    let baseFontSize = renderSize.height * 0.056
+    let referenceEdge = min(renderSize.width, renderSize.height)
+    let sideMargin = renderSize.height > renderSize.width ? renderSize.width * 0.05 : 0
+    let maximumCardWidth = renderSize.width - sideMargin * 2
+    let horizontalPadding = max(renderSize.width * 0.0198, referenceEdge * 0.035)
+    let verticalPadding = referenceEdge * 0.0154
+    let maximumTextWidth = max(1, maximumCardWidth - horizontalPadding * 2)
+    let baseFontSize = referenceEdge * 0.056
     var fontSize = baseFontSize
     var font = UIFont.systemFont(ofSize: fontSize, weight: .black)
     var textSize = (text as NSString).size(withAttributes: [.font: font])
@@ -1530,7 +1534,7 @@ public final class WhatzItVideoExportModule: Module {
     let bylineFont: UIFont?
     let bylineSize: CGSize
     if let byline {
-      var fontSize = renderSize.height * 0.035
+      var fontSize = referenceEdge * 0.035
       var font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
       var size = (byline as NSString).size(withAttributes: [.font: font])
       while size.width > maximumTextWidth && fontSize > 1 {
@@ -1547,7 +1551,7 @@ public final class WhatzItVideoExportModule: Module {
     let timerFont: UIFont?
     let timerSize: CGSize
     if !timerSegments.isEmpty {
-      let font = UIFont.systemFont(ofSize: renderSize.height * 0.0308, weight: .heavy)
+      let font = UIFont.systemFont(ofSize: referenceEdge * 0.0308, weight: .heavy)
       timerFont = font
       timerSize = timerSegments.reduce(CGSize.zero) { largest, segment in
         let size = (segment.text as NSString).size(withAttributes: [.font: font])
@@ -1559,15 +1563,15 @@ public final class WhatzItVideoExportModule: Module {
     }
     let minimumWidth = renderSize.width * 0.3
     let width = min(
-      renderSize.width,
+      maximumCardWidth,
       max(
         minimumWidth,
         ceil(max(textSize.width, max(bylineSize.width, timerSize.width))) + horizontalPadding * 2
       )
     )
-    let minimumHeight = renderSize.height * 0.123
-    let bylineSpacing = byline == nil ? 0 : renderSize.height * 0.0051
-    let timerSpacing = timerSegments.isEmpty ? 0 : renderSize.height * 0.0051
+    let minimumHeight = referenceEdge * 0.123
+    let bylineSpacing = byline == nil ? 0 : referenceEdge * 0.0051
+    let timerSpacing = timerSegments.isEmpty ? 0 : referenceEdge * 0.0051
     let contentHeight = font.lineHeight
       + (bylineFont?.lineHeight ?? 0)
       + bylineSpacing

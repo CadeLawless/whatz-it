@@ -38,6 +38,7 @@ describe('captureRoundResultSnapshot', () => {
 
     assert.deepEqual(snapshot, {
       version: 1,
+      mode: 'classic',
       deckId: 'party',
       deckTitle: 'Party Time',
       durationSeconds: 60,
@@ -67,5 +68,13 @@ describe('captureRoundResultSnapshot', () => {
       ),
       undefined,
     );
+  });
+
+  it('preserves Pass n\' Play mode in saved results', () => {
+    const snapshot = captureRoundResultSnapshot({
+      deckId: deck.id, durationSeconds: 90, results: [], mode: 'pass-n-play',
+    }, deck);
+    assert.equal(snapshot?.mode, 'pass-n-play');
+    assert.equal(snapshot?.version, 1);
   });
 });

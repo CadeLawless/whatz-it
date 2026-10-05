@@ -16,18 +16,24 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { captureRef } from 'react-native-view-shot';
 import type { PermissionStatus } from 'react-native-vision-camera';
 
 import { useCatalog } from '@/catalog/catalog-provider';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
+import { DeckSetupHeader } from '@/components/deck-setup-header';
+import { useSharePlay } from '@/shareplay/session-provider';
+import { GameModeSelector } from '@/components/game-mode-selector';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import { TimerPicker } from '@/components/timer-picker';
 import { useRound } from '@/game/round-context';
+import { parseGameMode } from '@/game/game-mode';
+import type { GameMode } from '@/game/game-types';
+import { requestModePermissions } from '@/game/round-setup';
 import {
   clampRoundDuration,
   DEFAULT_ROUND_DURATION,
@@ -36,7 +42,9 @@ import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { platformReleaseCapabilities } from '@/release/platform-release';
 import {
   loadRoundDuration,
+  loadRoundMode,
   saveRoundDuration,
+  saveRoundMode,
 } from '@/storage/preferences';
 import {
   clearSettingsReturnDeckId,
@@ -59,11 +67,15 @@ type RoundSetupNotice = {
 const releaseCapabilities = platformReleaseCapabilities(Platform.OS);
 
 export default function DeckDetailsScreen() {
+  const { width } = useWindowDimensions();
+  const isIPad = Platform.OS === 'ios' && Platform.isPad;
+  const sharePlay = useSharePlay();
   const { catalog } = useCatalog();
-  const { deckId, durationSeconds, returnToRoundId } = useLocalSearchParams<{
+  const { deckId, durationSeconds, returnToRoundId, mode: replayMode } = useLocalSearchParams<{
     deckId: string;
     durationSeconds?: string;
     returnToRoundId?: string;
+    mode?: string;
   }>();
   const deck = catalog.getDeckById(deckId);
   const router = useRouter();
@@ -75,23 +87,28 @@ export default function DeckDetailsScreen() {
       ? clampRoundDuration(replayDuration)
       : DEFAULT_ROUND_DURATION;
   const [duration, setDuration] = useState(initialDuration);
+  const [modeSelection, setModeSelection] = useState<{
+    source: string | undefined; value: GameMode; loaded: boolean;
+  }>(() => ({ source: replayMode, value: parseGameMode(replayMode), loaded: replayMode !== undefined }));
+  const mode = modeSelection.source === replayMode ? modeSelection.value : parseGameMode(replayMode);
+  const modeLoaded = modeSelection.source === replayMode && modeSelection.loaded;
   const [isStarting, setIsStarting] = useState(false);
   const [frozenRoundSetupNotice, setFrozenRoundSetupNotice] =
     useState<RoundSetupNotice | null>(null);
   const [motionPermissionStatus, setMotionPermissionStatus] =
     useState<RoundMotionPermissionStatus | 'checking'>('checking');
 
-  const screenRef = useRef<View>(null);
   const settingsReturnPending = useRef(false);
   const settingsReturnWrite = useRef<Promise<void> | null>(null);
   const settingsWasBackgrounded = useRef(false);
+  const starting = useRef(false);
   const {
     cameraStatus: cameraPermissionStatus,
     microphoneStatus: microphonePermissionStatus,
     requestPendingPermissions,
   } = useRoundCameraPermissions();
   const isPortrait = usePortraitScreen();
-  const { beginTransition, revealTransition } = useScreenshotTransition();
+  const { revealTransition } = useScreenshotTransition();
 
   const armSettingsReturn = useCallback(
     (source: 'background' | 'explicit') => {
@@ -123,6 +140,17 @@ export default function DeckDetailsScreen() {
     if (durationSeconds) return;
     loadRoundDuration().then(setDuration);
   }, [durationSeconds]);
+
+  useEffect(() => {
+    let active = true;
+    const load = replayMode !== undefined
+      ? Promise.resolve(parseGameMode(replayMode)) : loadRoundMode();
+    void load.then((loaded) => {
+      if (!active) return;
+      setModeSelection({ source: replayMode, value: loaded, loaded: true });
+    });
+    return () => { active = false; };
+  }, [replayMode]);
 
   useEffect(() => {
     let active = true;
@@ -161,6 +189,7 @@ export default function DeckDetailsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      starting.current = false;
       setIsStarting(false);
       setFrozenRoundSetupNotice(null);
       if (isPortrait) {
@@ -190,40 +219,27 @@ export default function DeckDetailsScreen() {
   }
 
   const handleStart = async () => {
-    if (isStarting) {
+    if (starting.current || !modeLoaded) {
       return;
     }
 
     setFrozenRoundSetupNotice(roundSetupNotice);
     setIsStarting(true);
+    starting.current = true;
     const safeDuration = clampRoundDuration(duration);
 
-    if (!(await configureRound(deck.id, safeDuration))) {
+    if (!(await configureRound(deck.id, safeDuration, mode))) {
       setIsStarting(false);
+      starting.current = false;
       return;
     }
 
-    const motionAccess = await requestRoundMotionAccess();
-    setMotionPermissionStatus(motionAccess);
-    await requestPendingPermissions().catch(() => undefined);
+    await requestModePermissions(mode, async () => {
+      setMotionPermissionStatus(await requestRoundMotionAccess());
+    }, requestPendingPermissions);
 
     saveRoundDuration(safeDuration).catch(() => undefined);
-
-    try {
-      const uri = await captureRef(screenRef, {
-        format: 'jpg',
-        quality: 0.95,
-        result: 'tmpfile',
-      });
-
-      await beginTransition({
-        destination: 'ready',
-        direction: 'left',
-        uri,
-      });
-    } catch {
-      // If capture is unavailable, Ready still opens without a transition.
-    }
+    saveRoundMode(mode).catch(() => undefined);
 
     router.push('/ready' as Href);
   };
@@ -256,7 +272,7 @@ export default function DeckDetailsScreen() {
     router.replace('/');
   };
 
-  const roundSetupNotice = getRoundSetupNotice({
+  const roundSetupNotice = mode === 'pass-n-play' ? null : getRoundSetupNotice({
     cameraStatus: cameraPermissionStatus,
     microphoneStatus: microphonePermissionStatus,
     motionStatus: motionPermissionStatus,
@@ -270,8 +286,6 @@ export default function DeckDetailsScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView
-        ref={screenRef}
-        collapsable={false}
         style={styles.screen}
         edges={['top', 'bottom']}
       >
@@ -280,82 +294,103 @@ export default function DeckDetailsScreen() {
           showsVerticalScrollIndicator={false}
           style={styles.screen}
         >
-          <DeckDetailsHeader
+          {Platform.OS === 'ios' && <DeckSetupHeader
             backLabel={returnToRoundId ? 'Back to Results' : 'Back to Decks'}
-            deck={deck}
             onBack={handleBack}
-          />
+            onSharePlay={sharePlay.enabled ? () => sharePlay.open({
+              deckId: deck.id, deckTitle: deck.title, durationSeconds: duration, access: deck.access,
+            }) : undefined}
+          />}
+          <View style={styles.mainContent}>
+            <DeckDetailsHeader
+              showBackButton={Platform.OS !== 'ios'}
+              backLabel={returnToRoundId ? 'Back to Results' : 'Back to Decks'}
+              containerWidth={Math.min(width - spacing.lg * 2, 640)}
+              deck={deck}
+              onBack={handleBack}
+            />
 
-          <Text style={styles.sectionLabel}>ROUND LENGTH</Text>
+            <Text style={styles.sectionLabel}>ROUND LENGTH</Text>
 
-          <TimerPicker
-            value={duration}
-            onChange={(value) =>
-              setDuration(clampRoundDuration(value))
-            }
-          />
+            <TimerPicker
+              value={duration}
+              onChange={(value) =>
+                setDuration(clampRoundDuration(value))
+              }
+            />
 
-          <View style={styles.startArea}>
-            {displayedRoundSetupNotice && (
-              <View style={styles.roundSetupCard}>
-                <View style={styles.roundSetupHeader}>
-                  <Text style={styles.roundSetupTitle}>
-                    {displayedRoundSetupNotice.title}
-                  </Text>
+            <View style={styles.startArea}>
+              {displayedRoundSetupNotice && (
+                <View style={styles.roundSetupCard}>
+                  <View style={styles.roundSetupHeader}>
+                    <Text style={styles.roundSetupTitle}>
+                      {displayedRoundSetupNotice.title}
+                    </Text>
+                  </View>
+
+                  <View style={styles.roundSetupMessages}>
+                    {displayedRoundSetupNotice.messages.map((message) => (
+                      <View key={message} style={styles.roundSetupMessageRow}>
+                        <View style={styles.roundSetupDot} />
+                        <Text style={styles.roundSetupMessage}>{message}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {displayedRoundSetupNotice.showSettings && (
+                    <Pressable
+                      accessibilityHint="Opens the system settings for WHATZ IT?"
+                      accessibilityRole="link"
+                      onPress={() => void handleOpenSettings()}
+                      style={({ pressed }) => [
+                        styles.settingsLink,
+                        pressed && styles.settingsLinkPressed,
+                      ]}
+                    >
+                      <Text style={styles.settingsLinkText}>CHANGE SETTINGS</Text>
+                    </Pressable>
+                  )}
                 </View>
-
-                <View style={styles.roundSetupMessages}>
-                  {displayedRoundSetupNotice.messages.map((message) => (
-                    <View key={message} style={styles.roundSetupMessageRow}>
-                      <View style={styles.roundSetupDot} />
-                      <Text style={styles.roundSetupMessage}>{message}</Text>
-                    </View>
-                  ))}
-                </View>
-                {displayedRoundSetupNotice.showSettings && (
-                  <Pressable
-                    accessibilityHint="Opens the system settings for WHATZ IT?"
-                    accessibilityRole="link"
-                    onPress={() => void handleOpenSettings()}
-                    style={({ pressed }) => [
-                      styles.settingsLink,
-                      pressed && styles.settingsLinkPressed,
-                    ]}
-                  >
-                    <Text style={styles.settingsLinkText}>CHANGE SETTINGS</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
+              )}
+            </View>
           </View>
         </ScrollView>
 
-        <View style={styles.startFooter}>
-          <Pressable
-            accessibilityRole="button"
-            disabled={isStarting}
-            onPress={handleStart}
-            style={({ pressed }) => [
-              styles.startButton,
-              pressed && styles.startButtonPressed,
-            ]}
-          >
-            <Text style={styles.startButtonText}>
-              LET&apos;S PLAY
-            </Text>
+        <View style={[styles.startFooter, isIPad && styles.tabletFooter]}>
+          <View style={styles.footerContent}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isStarting || !modeLoaded}
+              accessibilityState={{ disabled: isStarting || !modeLoaded, busy: isStarting }}
+              onPress={handleStart}
+              style={({ pressed }) => [
+                styles.startButton,
+                pressed && styles.startButtonPressed,
+              ]}
+            >
+              <Text style={styles.startButtonText}>
+                LET&apos;S PLAY
+              </Text>
 
-            <SymbolView
-              accessibilityElementsHidden
-              name={{
-                android: 'arrow_forward',
-                ios: 'arrow.right',
-                web: 'arrow_forward',
-              }}
-              size={29}
-              style={styles.startArrow}
-              tintColor={colors.white}
-            />
-          </Pressable>
+              <SymbolView
+                accessibilityElementsHidden
+                name={{
+                  android: 'arrow_forward',
+                  ios: 'arrow.right',
+                  web: 'arrow_forward',
+                }}
+                size={29}
+                style={styles.startArrow}
+                tintColor={colors.white}
+              />
+            </Pressable>
+            <View style={styles.modeSelection}>
+              <GameModeSelector value={mode} disabled={isStarting || !modeLoaded}
+                onChange={(selectedMode) => {
+                  setModeSelection({ source: replayMode, value: selectedMode, loaded: true });
+                  void saveRoundMode(selectedMode).catch(() => undefined);
+                }} />
+            </View>
+          </View>
         </View>
       </SafeAreaView>
     </>
@@ -439,6 +474,12 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xl,
   },
+  mainContent: {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
+  },
 
   centered: {
     flex: 1,
@@ -465,9 +506,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: 'Inter_900Black',
     letterSpacing: 0.2,
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
     marginBottom: spacing.md,
   },
+
+  modeSelection: { marginTop: spacing.md },
 
   startArea: {
     marginTop: 'auto',
@@ -478,8 +521,16 @@ const styles = StyleSheet.create({
   startFooter: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: 0,
     backgroundColor: colors.surface,
+  },
+  tabletFooter: {
+    paddingBottom: spacing.xl,
+  },
+  footerContent: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
 
   roundSetupCard: {
