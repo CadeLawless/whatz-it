@@ -3,9 +3,9 @@ module.exports = ({ config }) => {
   const isPreview = appVariant === 'preview';
   const isStaging = appVariant === 'staging';
   const usesTestBranding = isPreview || isStaging;
-  // Phase 0 is deliberately excluded from production, including incoming activities.
+  // Enable SharePlay in release builds as well as development builds.
+  // Keep the existing explicit disable flag for builds that need it.
   const sharePlayPrototypeEnabled =
-    ['development', 'preview', 'staging'].includes(appVariant) &&
     process.env.EXPO_PUBLIC_SHAREPLAY_DISABLED !== 'true';
 
   return {
