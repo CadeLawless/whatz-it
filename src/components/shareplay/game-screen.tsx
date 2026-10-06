@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,23 +9,29 @@ import { PortraitAnswerText, PortraitRoundFeedback } from '@/components/portrait
 import { PortraitTimesUpPanel } from '@/components/portrait-times-up-panel';
 import { formatRoundClock } from '@/game/round-duration';
 import { canShowSharePlayRoundOptions } from '@/shareplay/presentation';
+import { canReactInPhase } from '@/shareplay/reactions';
+import type { SharePlayReactionIndex } from '@/shareplay/reactions';
 import { useSharePlay } from '@/shareplay/session-provider';
 import { useSharePlayReadyFeedback } from '@/shareplay/use-ready-feedback';
 import { useSharePlayRoundCues } from '@/shareplay/use-round-cues';
 import { colors, radius, spacing, typography } from '@/theme';
 import { SharePlayReadyCounter } from './ready-counter';
+import { SharePlayReactionBar, SharePlayReactionBurst } from './round-reactions';
+import { SharePlayRolePickerSheet } from './role-picker-sheet';
 
-function Action({ label, disabled, secondary = false, lightBlue = false, onPress, equalWidth = false }: {
+function Action({ label, disabled, secondary = false, lightBlue = false, onPress, equalWidth = false,
+  compact = false }: {
   label: string; disabled?: boolean; secondary?: boolean; lightBlue?: boolean;
-  onPress: () => void; equalWidth?: boolean;
+  onPress: () => void; equalWidth?: boolean; compact?: boolean;
 }) {
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled}
     onPress={onPress} style={({ pressed }) => [styles.button, secondary && styles.secondaryButton,
       lightBlue && styles.lightBlueButton, equalWidth && styles.equalButton,
+      compact && styles.compactButton,
       disabled && styles.disabled, pressed && styles.pressed]}>
-    <Text style={[styles.buttonText, secondary && styles.secondaryButtonText,
+    <Text numberOfLines={compact ? 2 : undefined} style={[styles.buttonText, secondary && styles.secondaryButtonText,
       lightBlue && styles.lightBlueButtonText,
-      equalWidth && styles.answerButtonText]}>{label}</Text>
+      equalWidth && styles.answerButtonText, compact && styles.compactButtonText]}>{label}</Text>
   </Pressable>;
 }
 
@@ -33,17 +39,43 @@ export function SharePlayGameScreen() {
   const [confirmRoundId, setConfirmRoundId] = useState<string | null>(null);
   const [choosePlayerRoundId, setChoosePlayerRoundId] = useState<string | null>(null);
   const [dismissedTimeUpRoundId, setDismissedTimeUpRoundId] = useState<string | null>(null);
+  const [reactionOrigins, setReactionOrigins] = useState<Partial<Record<SharePlayReactionIndex,
+    { x: number; bottom: number }>>>({});
+  const reactionLayerRef = useRef<View>(null);
+  const measureReactionColumn = useCallback((emoji: SharePlayReactionIndex,
+    x: number, y: number, width: number, height: number) => {
+    reactionLayerRef.current?.measureInWindow((layerX, layerY, _layerWidth, layerHeight) => {
+      const origin = { x: x + width / 2 - layerX,
+        bottom: layerY + layerHeight - y - height / 2 };
+      setReactionOrigins((current) => {
+        const previous = current[emoji];
+        if (previous && Math.abs(previous.x - origin.x) < 0.5 &&
+          Math.abs(previous.bottom - origin.bottom) < 0.5) return current;
+        return { ...current, [emoji]: origin };
+      });
+    });
+  }, []);
   const insets = useSafeAreaInsets();
   const { catalog } = useCatalog();
   const sharePlay = useSharePlay();
   const readyUp = useSharePlayReadyFeedback();
-  const { view, remainingMs, countdown } = sharePlay.game;
+  const { remainingMs, countdown } = sharePlay.game;
+  const view = sharePlay.heldResultsView ?? sharePlay.game.view;
+  const sharedView = sharePlay.game.view;
   const localId = sharePlay.session.localParticipantId;
   useSharePlayRoundCues(view, countdown, remainingMs, localId, sharePlay.gameVisible);
-  const isTurnOwner = !!localId && view?.guesserId === localId;
+  const isTurnOwner = !!localId && (sharedView?.guesserId ?? view?.guesserId) === localId;
   const passNPlay = view?.mode === 'pass-n-play';
   const isGuesser = !!view && (passNPlay ? !isTurnOwner : isTurnOwner);
   const isClueGiver = !!view && !isGuesser;
+  const reactionBar = view && sharedView?.phase === view.phase && canReactInPhase(view.phase) ?
+    <SharePlayReactionBar set={view.phase === 'results' ? 'results' : 'round'}
+      onReact={sharePlay.gameActions.react}
+      onColumnLayout={measureReactionColumn} /> : null;
+  const reactionOrigin = Math.max(insets.bottom, spacing.md) +
+    (view?.phase === 'results' ? isTurnOwner ? 290 : 140 :
+      view?.phase === 'playing' ? isTurnOwner ? 160 : 80 :
+        view?.phase === 'paused' ? 135 : 80);
   const guesserName = view?.guesserId === localId ? sharePlay.localPlayerName :
     sharePlay.playerNames[view?.guesserId ?? ''];
   const deckId = view?.deck.deckId ?? sharePlay.decks.selectedDeckId ?? sharePlay.session.activity?.deckId;
@@ -92,6 +124,7 @@ export function SharePlayGameScreen() {
               {Math.max(1, countdown)}
             </Text>
           </View>}
+          {view?.phase === 'countdown' && <View style={styles.footer}>{reactionBar}</View>}
 
           {view?.phase === 'playing' && <>
             <View style={styles.cardArea}>
@@ -112,6 +145,7 @@ export function SharePlayGameScreen() {
               </View>
             </View>
             <View style={styles.footer}>
+              {reactionBar}
               {isTurnOwner && <View style={styles.answerActions}>
                 <Action label="PASS" secondary equalWidth disabled={!view.canAnswer}
                   onPress={() => sharePlay.gameActions.answer('pass')} />
@@ -130,6 +164,7 @@ export function SharePlayGameScreen() {
               </View>
             </View>
             <View style={styles.footer}>
+              {reactionBar}
               <SharePlayReadyCounter view={view} />
               {!view.ready.includes(localId ?? '') &&
                 <Action label="I’M READY" onPress={readyUp} />}
@@ -154,8 +189,8 @@ export function SharePlayGameScreen() {
               <Text style={styles.listLabel}>YOUR CARDS</Text>
               {view.results?.map((item, index) => <View key={`${index}-${item.answer}`} style={styles.resultRow}>
                 <View style={[styles.outcomeDot, { backgroundColor: item.outcome === 'correct' ? colors.correct :
-                  item.outcome === 'pass' ? colors.pass : colors.muted }]}>
-                  <Text style={styles.outcomeIcon}>{item.outcome === 'correct' ? '✓' : item.outcome === 'pass' ? '×' : '–'}</Text>
+                  item.outcome === 'pass' ? colors.pass : colors.border }]}>
+                  <Text style={styles.outcomeIcon}>{item.outcome === 'correct' ? '✓' : item.outcome === 'pass' ? '×' : '—'}</Text>
                 </View>
                 <Text style={styles.resultText}>{item.answer}</Text>
                 <Text style={styles.outcomeLabel}>{item.outcome === 'correct' ? 'CORRECT' :
@@ -164,6 +199,7 @@ export function SharePlayGameScreen() {
               {!view.results?.length && <Text style={styles.message}>Time ran out before a card was answered.</Text>}
             </ScrollView>
             <View style={[styles.footer, styles.resultsFooter]}>
+              {view.phase === 'results' && reactionBar}
               {view.phase === 'results' && <Text style={styles.nextPlayer}>
                 {passNPlay ? 'NEXT STARTING PLAYER' : 'NEXT GUESSER'}: {isTurnOwner ? 'YOU' :
                   guesserName ?? 'CONNECTING…'}
@@ -173,11 +209,12 @@ export function SharePlayGameScreen() {
                   sharePlay.decks.selectedDeckId !== view.deck.deckId}
                   onPress={sharePlay.gameActions.nextRound} /> :
                 <Action label="BACK TO LOBBY" onPress={sharePlay.closeGame} />}
-              {isTurnOwner && view.phase === 'results' &&
-                <Action label={passNPlay ? 'MAKE SOMEONE ELSE STARTING PLAYER' : 'MAKE SOMEONE ELSE GUESSER'}
-                  secondary onPress={() => setChoosePlayerRoundId(view.roundId)} />}
-              {isTurnOwner && view.phase === 'results' &&
-                <Action label="BACK TO LOBBY" secondary onPress={sharePlay.gameActions.returnToLobby} />}
+              {isTurnOwner && view.phase === 'results' && <View style={styles.resultsActionsRow}>
+                <Action label={passNPlay ? 'SWITCH STARTING PLAYER' : 'SWITCH GUESSER'}
+                  secondary compact onPress={() => setChoosePlayerRoundId(view.roundId)} />
+                <Action label="BACK TO LOBBY" secondary compact
+                  onPress={sharePlay.closeGame} />
+              </View>}
             </View>
           </>}
 
@@ -189,6 +226,16 @@ export function SharePlayGameScreen() {
           {view && ['countdown', 'playing', 'paused'].includes(view.phase) &&
             <Text numberOfLines={2} style={styles.deckTitleBottom}>{deckTitle}</Text>}
         </View>}
+
+      {view && <View ref={reactionLayerRef} pointerEvents="none" style={styles.reactionLayer}>
+        {sharePlay.reactions.filter((reaction) => reaction.roundId === view.roundId).map((reaction) =>
+          <SharePlayReactionBurst key={reaction.id} reaction={reaction}
+            playerName={reaction.participantId === localId ? sharePlay.localPlayerName || 'You' :
+              sharePlay.playerNames[reaction.participantId] || 'Player'}
+            originX={reactionOrigins[reaction.emoji]?.x}
+            originBottom={reactionOrigins[reaction.emoji]?.bottom ?? reactionOrigin}
+            onDone={sharePlay.gameActions.dismissReaction} />)}
+      </View>}
 
       {canShowOptions && confirmRoundId && confirmRoundId === view?.roundId && <View accessibilityViewIsModal
         style={styles.promptOverlay}>
@@ -210,22 +257,12 @@ export function SharePlayGameScreen() {
           </View>
         </View>
       </View>}
-      {view?.phase === 'results' && isTurnOwner && choosePlayerRoundId === view.roundId &&
-        <View accessibilityViewIsModal style={styles.promptOverlay}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close player picker"
-            onPress={() => setChoosePlayerRoundId(null)} style={StyleSheet.absoluteFill} />
-          <View style={styles.promptCard}>
-            <Text accessibilityRole="header" style={styles.promptTitle}>
-              {passNPlay ? 'CHOOSE A STARTING PLAYER' : 'CHOOSE A GUESSER'}
-            </Text>
-            <ScrollView style={styles.playerPicker} contentContainerStyle={styles.promptActions}>
-              {view.participants.filter((id) => id !== localId).map((id) =>
-                <Action key={id} label={sharePlay.playerNames[id] ?? 'Choosing a name…'} onPress={() => {
-                  sharePlay.gameActions.selectGuesser(id); setChoosePlayerRoundId(null);
-                }} />)}
-            </ScrollView>
-          </View>
-        </View>}
+      <SharePlayRolePickerSheet visible={!!view && view.phase === 'results' && isTurnOwner &&
+        choosePlayerRoundId === view.roundId} mode={view?.mode ?? 'classic'}
+        participants={view?.participants ?? []} localId={localId}
+        playerNames={sharePlay.playerNames} localPlayerName={sharePlay.localPlayerName}
+        disabled={!isTurnOwner} onClose={() => setChoosePlayerRoundId(null)}
+        onSelect={(id) => { sharePlay.gameActions.selectGuesser(id); setChoosePlayerRoundId(null); }} />
     </SafeAreaView>;
 }
 
@@ -234,6 +271,7 @@ const styles = StyleSheet.create({
   resultsScreen: { backgroundColor: colors.background },
   timeUpScreen: { backgroundColor: colors.surface },
   feedbackScreen: { padding: 0 },
+  reactionLayer: { ...StyleSheet.absoluteFill, zIndex: 5 },
   panel: { flex: 1, minHeight: 0, borderWidth: 6, borderColor: colors.roundBorder,
     borderRadius: radius.xl, backgroundColor: colors.surface, overflow: 'hidden' },
   countdownPanel: { backgroundColor: colors.surface },
@@ -258,17 +296,19 @@ const styles = StyleSheet.create({
   resultsFooter: { paddingHorizontal: spacing.lg, borderTopWidth: 1,
     borderTopColor: colors.border, backgroundColor: colors.background },
   nextPlayer: { ...typography.body, color: colors.play, fontFamily: 'Inter_900Black', textAlign: 'center' },
-  playerPicker: { maxHeight: 360 },
   answerActions: { flexDirection: 'row', gap: spacing.md },
+  resultsActionsRow: { flexDirection: 'row', gap: spacing.sm },
   button: { minHeight: 56, padding: spacing.md, borderRadius: radius.lg,
     justifyContent: 'center', alignItems: 'center', backgroundColor: colors.play },
   secondaryButton: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
   lightBlueButton: { backgroundColor: colors.playSoft },
   equalButton: { flex: 1, minHeight: 80 },
+  compactButton: { flex: 1, minWidth: 0, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
   buttonText: { ...typography.body, fontFamily: 'Inter_900Black', color: colors.white, textAlign: 'center' },
   secondaryButtonText: { color: colors.ink },
   lightBlueButtonText: { color: colors.play },
   answerButtonText: { fontSize: 22, lineHeight: 28 },
+  compactButtonText: { fontSize: 13, lineHeight: 17 },
   resultsScroll: { flex: 1 },
   resultsContent: { padding: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },
   resultsEyebrow: { color: colors.muted, fontSize: 12, fontFamily: 'Inter_900Black', letterSpacing: 1.8 },

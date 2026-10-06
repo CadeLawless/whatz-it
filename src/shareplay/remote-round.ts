@@ -36,6 +36,7 @@ export type RemoteView = {
   card: RemoteCard | null; feedback: RemoteOutcome | null;
   resultReason: RemoteResultReason | null;
   results: (RemoteCard & { outcome: RemoteResultOutcome })[] | null;
+  resultsViewingIds?: string[];
 };
 
 const identifier = (value: unknown): value is string =>
@@ -113,7 +114,10 @@ export class RemoteRound {
       this.outcomes.push({ ...this.config.cards[this.index], outcome: 'neutral' });
     }
     this.phase = 'results'; this.resultReason = reason;
-    if (this.members.length >= 2) this.rotateGuesser();
+    // In Pass n Play a pass or unanswered card stays with its last clue giver.
+    // A correct final card hands the next round to the following player.
+    if (this.members.length >= 2 && (this.config.mode !== 'pass-n-play' ||
+      this.outcomes.at(-1)?.outcome === 'correct')) this.rotateGuesser();
     this.nonce = null;
   }
 

@@ -45,9 +45,12 @@
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.READ_MEDIA_VIDEO"
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
       ]
     },
     "web": {
@@ -93,9 +96,7 @@
         {
           "photosPermission": false,
           "savePhotosPermission": "Allow WHATZ IT? to save a round video when you tap Save Video.",
-          "granularPermissions": [
-            "video"
-          ]
+          "granularPermissions": []
         }
       ],
       "expo-video",

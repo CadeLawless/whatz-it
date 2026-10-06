@@ -4,7 +4,9 @@ import { colors } from '@/theme';
 
 export function SharePlayReadyCounter({ view }: { view: Pick<RemoteView, 'ready' | 'participants'> }) {
   const ready = view.participants.filter((id) => view.ready.includes(id)).length;
-  return <Text accessibilityLiveRegion="polite" style={styles.counter}>
+  return <Text accessibilityLiveRegion="polite"
+    accessibilityLabel={`${ready} of ${view.participants.length} players ready`}
+    numberOfLines={1} style={styles.counter}>
     {ready} OF {view.participants.length} READY
   </Text>;
 }

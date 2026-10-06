@@ -115,12 +115,31 @@ test('the next card stays on the same deadline and cannot be scored after time e
   assert.equal(round.viewFor('host', 33000)!.resultReason, 'time');
 });
 
-test('round results assign control to the player after the last clue giver', () => {
+test('an unanswered Pass n Play card keeps the final clue giver as next starting player', () => {
   const round = create(); start(round);
   correct(round, 3000);
   assert.equal(round.viewFor('host', 3600)?.guesserId, 'bob');
   assert.equal(round.viewFor('host', 33000)?.phase, 'results');
-  assert.equal(round.viewFor('host', 33000)?.guesserId, 'host');
+  assert.equal(round.viewFor('host', 33000)?.guesserId, 'bob');
+  assert.equal(round.viewFor('host', 33000)?.results?.at(-1)?.outcome, 'neutral');
+});
+
+test('a passed final card keeps its clue giver; a correct final card advances', () => {
+  const passed = create(); start(passed);
+  assert.equal(act(passed, 'alice', 32000, { kind: 'answer', outcome: 'pass',
+    cardNonce: passed.viewFor('alice', 32000)!.cardNonce }), 'accepted');
+  assert.equal(passed.viewFor('host', 33000)?.results?.at(-1)?.outcome, 'pass');
+  assert.equal(passed.viewFor('host', 33000)?.guesserId, 'alice');
+
+  const corrected = create(); start(corrected);
+  correct(corrected, 32000);
+  assert.equal(corrected.viewFor('host', 33000)?.results?.at(-1)?.outcome, 'correct');
+  assert.equal(corrected.viewFor('host', 33000)?.guesserId, 'bob');
+});
+
+test('Classic advances to the next guesser after an unanswered card', () => {
+  const round = create(); round.setLobbyMode('classic'); start(round);
+  assert.equal(round.viewFor('host', 33000)?.guesserId, 'bob');
 });
 
 for (const pauseDuringFeedback of [false, true]) {
@@ -308,4 +327,45 @@ test('the next guesser controls settings and starts the next round directly from
   assert.equal(host.currentView?.guesserId, 'guest');
   assert.equal(host.currentView?.deck.deckId, 'deck');
   assert.notEqual(host.currentView?.roundId, secondRoundId);
+
+  now = 150_000; host.pulse(); await flush();
+  assert.equal(host.currentView?.phase, 'results');
+  assert.equal(host.currentView?.guesserId, 'host');
+  host.selectGuesser('guest'); await flush();
+  assert.equal(host.currentView?.guesserId, 'guest');
+  const resultsRoundId = host.currentView!.roundId;
+  host.exitResults(resultsRoundId); await flush();
+  for (const client of [host, guest]) {
+    assert.equal(client.currentView?.phase, 'lobby');
+    assert.equal(client.currentView?.guesserId, 'guest');
+    assert.equal(client.currentView?.deck.deckId, 'deck');
+    assert.deepEqual(client.currentView?.resultsViewingIds, ['guest']);
+  }
+  host.act('ready'); await flush();
+  assert.deepEqual(host.currentView?.ready, ['host']);
+  guest.setForeground(false); guest.setForeground(true); await flush();
+  assert.deepEqual(guest.currentView?.resultsViewingIds, ['guest']);
+  guest.exitResults(resultsRoundId); await flush();
+  assert.deepEqual(host.currentView?.resultsViewingIds, []);
+  assert.deepEqual(guest.currentView?.resultsViewingIds, []);
+  guest.act('ready'); await flush();
+  assert.deepEqual(host.currentView?.ready, ['host', 'guest']);
+  assert.deepEqual(guest.currentView?.ready, ['host', 'guest']);
+
+  host.act('start'); await flush();
+  now = 200_000; host.pulse(); await flush();
+  assert.equal(host.currentView?.phase, 'results');
+  host.selectGuesser('guest'); await flush();
+  guest.selectGuesser('host'); await flush();
+  const laterResultsRoundId = guest.currentView!.roundId;
+  guest.exitResults(laterResultsRoundId); await flush();
+  for (const client of [host, guest]) {
+    assert.equal(client.currentView?.phase, 'lobby');
+    assert.equal(client.currentView?.guesserId, 'host');
+    assert.deepEqual(client.currentView?.resultsViewingIds, ['host']);
+  }
+  host.nextRound(); await flush();
+  assert.equal(host.currentView?.phase, 'countdown');
+  assert.equal(guest.currentView?.phase, 'countdown');
+  assert.equal(host.currentView?.guesserId, 'host');
 });

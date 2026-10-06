@@ -23,6 +23,7 @@ import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSprin
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 import { SharePlayGameScreen } from './game-screen';
+import { SharePlayRolePickerSheet } from './role-picker-sheet';
 import { SharePlayRejoinPrompt } from './rejoin-prompt';
 
 function Button({ label, onPress, disabled, secondary, danger, arrow }: {
@@ -64,16 +65,12 @@ export function SharePlaySetupSheet() {
   const deckBackdropOpacity = useSharedValue(0);
   const nameTranslateY = useSharedValue(1200);
   const nameBackdropOpacity = useSharedValue(0);
-  const hostTranslateY = useSharedValue(1200);
-  const hostBackdropOpacity = useSharedValue(0);
   const backdropStyle = useAnimatedStyle(() => ({ opacity: backdropOpacity.get() }));
   const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: sheetTranslateY.get() }] }));
   const deckSheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: deckTranslateY.get() }] }));
   const deckBackdropStyle = useAnimatedStyle(() => ({ opacity: deckBackdropOpacity.get() }));
   const nameSheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: nameTranslateY.get() }] }));
   const nameBackdropStyle = useAnimatedStyle(() => ({ opacity: nameBackdropOpacity.get() }));
-  const hostSheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: hostTranslateY.get() }] }));
-  const hostBackdropStyle = useAnimatedStyle(() => ({ opacity: hostBackdropOpacity.get() }));
   const insets = useSafeAreaInsets();
   const { session, setup, peers, busy } = sharePlay;
   const joined = session.status === 'joined';
@@ -96,10 +93,14 @@ export function SharePlaySetupSheet() {
       requestAnimationFrame(() => editNameScroll.current?.scrollToEnd({ animated: true }));
   }, [editingName, keyboardHeight]);
   const hasSession = !!session.sessionId;
+  const reportedController = sharePlay.decks.controllerId;
+  const controllerCandidate = sharePlay.game.view?.phase === 'lobby' ? sharePlay.game.view.guesserId :
+    reportedController && session.participantIds.includes(reportedController) ? reportedController : session.hostParticipantId;
+  const controllerReady = !!controllerCandidate && session.participantIds.includes(controllerCandidate);
   const surface = sharePlaySurface({ enabled: sharePlay.enabled, joined, setupOpen: sharePlay.isOpen,
     localAvailable: ['idle', 'finished'].includes(round.status) && !isRecording && !isVideoFinalizing,
-    gameVisible: sharePlay.gameVisible, phase: sharePlay.game.view?.phase,
-    rejoinOffered: sharePlay.rejoinOffered });
+    gameVisible: sharePlay.gameVisible, phase: sharePlay.heldResultsView?.phase ?? sharePlay.game.view?.phase,
+    rejoinOffered: sharePlay.rejoinOffered, controllerReady });
   const visible = surface !== null;
   const [previousSurface, setPreviousSurface] = useState(surface);
   if (previousSurface !== surface) {
@@ -129,11 +130,9 @@ export function SharePlaySetupSheet() {
       deckBackdropOpacity.set(0);
       nameTranslateY.set(1200);
       nameBackdropOpacity.set(0);
-      hostTranslateY.set(1200);
-      hostBackdropOpacity.set(0);
     }
-  }, [backdropOpacity, deckBackdropOpacity, deckTranslateY, hostBackdropOpacity,
-    hostTranslateY, nameBackdropOpacity, nameTranslateY, reduceMotion, sheetTranslateY, visible]);
+  }, [backdropOpacity, deckBackdropOpacity, deckTranslateY,
+    nameBackdropOpacity, nameTranslateY, reduceMotion, sheetTranslateY, visible]);
   useEffect(() => {
     if (!visible) return;
     deckTranslateY.set(withTiming(deckSearchOpen ? 0 : 1200, { duration: reduceMotion ? 0 : 300 }));
@@ -144,12 +143,8 @@ export function SharePlaySetupSheet() {
     nameTranslateY.set(withTiming(editingName ? 0 : 1200, { duration: reduceMotion ? 0 : 300 }));
     nameBackdropOpacity.set(withTiming(editingName ? 1 : 0, { duration: reduceMotion ? 0 : 220 }));
   }, [editingName, nameBackdropOpacity, nameTranslateY, reduceMotion, visible]);
-  useEffect(() => {
-    if (!visible) return;
-    hostTranslateY.set(withTiming(hostPickerOpen ? 0 : 1200, { duration: reduceMotion ? 0 : 300 }));
-    hostBackdropOpacity.set(withTiming(hostPickerOpen ? 1 : 0, { duration: reduceMotion ? 0 : 220 }));
-  }, [hostBackdropOpacity, hostPickerOpen, hostTranslateY, reduceMotion, visible]);
   const lobby = sharePlay.game.view?.phase === 'lobby' ? sharePlay.game.view : null;
+  const controllerId = controllerReady ? controllerCandidate : null;
   const passNPlay = sharePlay.decks.mode === 'pass-n-play';
   const selectedRole = passNPlay ? 'starting player' : 'guesser';
   const originalSelection = session.activity ?? setup;
@@ -158,7 +153,7 @@ export function SharePlaySetupSheet() {
   const deck = deckId ? catalog.getDeckById(deckId) : undefined;
   const cover = deck ? catalogLocalCoverSources(deck)[0] : undefined;
   const deckTitle = deck?.title ?? (deckId ? originalSelection?.deckTitle : null) ?? 'Choose a deck';
-  const isController = joined && !!lobby && lobby.guesserId === session.localParticipantId;
+  const isController = joined && !!controllerId && controllerId === session.localParticipantId;
   const canChooseDeck = !hasSession || isController;
   const durationSeconds = hasSession ? sharePlay.decks.durationSeconds : originalSelection?.durationSeconds ?? 60;
   const playerLabel = (id: string) => {
@@ -167,8 +162,8 @@ export function SharePlaySetupSheet() {
   };
   const allPlayersNamed = joined && session.participantIds.every((id) => id === session.localParticipantId ?
     !!sharePlay.localPlayerName : !!sharePlay.playerNames[id]);
-  const controllerName = lobby?.guesserId === session.localParticipantId ? sharePlay.localPlayerName :
-    lobby?.guesserId ? sharePlay.playerNames[lobby.guesserId] : null;
+  const controllerName = controllerId === session.localParticipantId ? sharePlay.localPlayerName :
+    controllerId ? sharePlay.playerNames[controllerId] : null;
   const closeNameEdit = useCallback(() => {
     Keyboard.dismiss();
     setNameDraft(sharePlay.localPlayerName);
@@ -236,6 +231,11 @@ export function SharePlaySetupSheet() {
       else close();
     }} statusBarTranslucent>
     {surface === 'rejoin' ? <SharePlayRejoinPrompt /> : surface === 'round' ? <SharePlayGameScreen /> :
+    surface === 'connecting' ? <View style={[styles.overlay, styles.lobbyOverlay, styles.content]}>
+      <Text style={styles.title}>Connecting to players…</Text>
+      <Text style={styles.body}>Preparing the shared lobby and assigning a starting player.</Text>
+      <Button label="LEAVE" secondary disabled={busy} onPress={() => { void sharePlay.leave(); }} />
+    </View> :
     <View style={[styles.overlay, joined && styles.lobbyOverlay, { paddingBottom: nameStep ? keyboardHeight : 0 }]}>
       {joined && <StatusBar style="dark" />}
       {!joined && <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop,
@@ -273,13 +273,13 @@ export function SharePlaySetupSheet() {
           </View>
           <Text style={styles.body}>{hasSession ? 'Keep FaceTime open while your friends join.' :
             'Guess with friends over FaceTime, wherever they are. Everyone joins on their own iPhone with WHATZ IT?'}</Text>
-          {joined && lobby && <View style={styles.hostSection}>
+          {isController && <View style={styles.hostSection}>
             <Text style={styles.label}>{passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>
             <Text style={styles.hostName}>{controllerName ?? 'Connecting…'}{isController ? ' (you)' : ''}</Text>
             {isController && session.participantIds.length > 1 &&
               <Pressable accessibilityRole="button" onPress={() => setHostPickerOpen(true)}
                 style={({ pressed }) => [styles.changeHostButton, pressed && styles.pressed]}>
-                <Text style={styles.changeHostText}>MAKE SOMEONE ELSE {passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>
+                <Text style={styles.changeHostText}>SWITCH {passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>
               </Pressable>}
           </View>}
           {originalSelection && <Pressable accessibilityRole={canChooseDeck ? 'button' : undefined}
@@ -304,11 +304,11 @@ export function SharePlaySetupSheet() {
             </View>
             {canChooseDeck && <Text style={styles.deckChevron}>›</Text>}
           </Pressable>}
-          {isController && <View style={styles.group}>
+          {(!hasSession || isController) && <View style={styles.group}>
             <Text style={styles.label}>GAME MODE</Text>
-            <GameModeSelector sharePlay value={sharePlay.decks.mode}
-              disabled={busy || (!!sharePlay.game.view && sharePlay.game.view.phase !== 'lobby')}
-              onChange={sharePlay.gameActions.selectMode} />
+            <GameModeSelector sharePlay value={hasSession ? sharePlay.decks.mode : sharePlay.setupMode}
+              disabled={busy || (hasSession && !!sharePlay.game.view && sharePlay.game.view.phase !== 'lobby')}
+              onChange={hasSession ? sharePlay.gameActions.selectMode : sharePlay.updateSetupMode} />
           </View>}
           {originalSelection && (!hasSession || isController) && <View style={styles.group}>
             <Text style={styles.label}>ROUND LENGTH</Text>
@@ -340,7 +340,7 @@ export function SharePlaySetupSheet() {
               </Pressable>}
             </View>
             {session.participantIds.map((id) => {
-              const isGuesser = id === lobby?.guesserId;
+              const isGuesser = id === controllerId;
               const connected = id === session.localParticipantId || peers[id] === 'confirmed';
               return <View key={id} style={styles.playerConnectionRow}>
                 <View accessible accessibilityLabel={`${playerLabel(id)}, ${connected ? 'connected' : 'not connected'}`}
@@ -369,7 +369,8 @@ export function SharePlaySetupSheet() {
                   </Text>
                 </View>
                 <Text style={[styles.playerState, lobby?.ready.includes(id) && styles.readyState]}>
-                  {lobby?.ready.includes(id) ? 'READY' : 'WAITING'}</Text>
+                  {lobby?.resultsViewingIds?.includes(id) ? 'IN RESULTS' :
+                    lobby?.ready.includes(id) ? 'READY' : 'WAITING'}</Text>
                 </View>
               </View>;
             })}
@@ -400,10 +401,6 @@ export function SharePlaySetupSheet() {
           {hasSession && <Button label="LEAVE" secondary disabled={busy} onPress={close} />}
         </View>}
         {!deckSearchOpen && !nameStep && hasSession && <View style={styles.lobbyFooter}>
-          {joined && lobby && <Text accessibilityLiveRegion="polite" style={styles.selectedPlayerStatus}>
-            {passNPlay ? 'Starting player' : 'Guesser'}: {lobby.guesserId === session.localParticipantId
-              ? 'You' : playerLabel(lobby.guesserId)}
-          </Text>}
           {joined && lobby && (!lobby.ready.includes(session.localParticipantId ?? '') ?
             <Button label="I’M READY" arrow disabled={busy} onPress={readyUp} /> :
             <Button label="YOU’RE READY" disabled onPress={() => undefined} />)}
@@ -431,10 +428,11 @@ export function SharePlaySetupSheet() {
         <View style={styles.searchSheet}>
           <View style={styles.titleRow}>
             <Pressable accessibilityRole="button" accessibilityLabel="Back to SharePlay Lobby"
-              onPress={closeDeckSearch} style={({ pressed }) => [styles.nameBack, pressed && styles.pressed]}>
+              onPress={closeDeckSearch} style={({ pressed }) => [styles.roleBack, pressed && styles.pressed]}>
               <SymbolView name="chevron.left" size={20} tintColor={colors.play} accessibilityElementsHidden />
             </Pressable>
             <Text style={styles.title}>Choose a deck</Text>
+            <CircularCloseButton accessibilityLabel="Close deck picker" appearance="sheet" onPress={closeDeckSearch} />
           </View>
           <Text style={styles.body}>{hasSession ? 'Choose a deck owned by anyone in this SharePlay session.' :
             'Choose one of your available decks.'}</Text>
@@ -488,7 +486,7 @@ export function SharePlaySetupSheet() {
           }} contentContainerStyle={styles.content}>
           <View style={styles.titleRow}>
             <Pressable accessibilityRole="button" accessibilityLabel="Back to SharePlay Lobby"
-              onPress={closeNameEdit} style={({ pressed }) => [styles.nameBack, pressed && styles.pressed]}>
+              onPress={closeNameEdit} style={({ pressed }) => [styles.roleBack, pressed && styles.pressed]}>
               <SymbolView name="chevron.left" size={20} tintColor={colors.play} accessibilityElementsHidden />
             </Pressable>
             <Text style={styles.title}>Your name</Text>
@@ -504,39 +502,11 @@ export function SharePlaySetupSheet() {
           <Button label="SAVE NAME" arrow disabled={!cleanPlayerName(nameDraft)} onPress={submitName} />
         </View>
       </Animated.View>
-      <Animated.View pointerEvents={hostPickerOpen ? 'auto' : 'none'}
-        style={[StyleSheet.absoluteFill, styles.deckBackdrop, hostBackdropStyle]}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Back to SharePlay Lobby"
-          onPress={() => setHostPickerOpen(false)} style={StyleSheet.absoluteFill} />
-      </Animated.View>
-      <Animated.View pointerEvents={hostPickerOpen ? 'auto' : 'none'} accessibilityViewIsModal
-        importantForAccessibility={hostPickerOpen ? 'auto' : 'no-hide-descendants'}
-        style={[styles.sheet, styles.hostPickerSheet,
-          { maxHeight: Math.max(240, height - insets.top - 12),
-            paddingBottom: Math.max(insets.bottom, 12) }, hostSheetStyle]}>
-        <View accessibilityElementsHidden style={styles.grabberArea}><View style={styles.grabber} /></View>
-        <ScrollView style={styles.mainScroll} contentContainerStyle={styles.content}>
-          <View style={styles.titleRow}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Back to SharePlay Lobby"
-              onPress={() => setHostPickerOpen(false)}
-              style={({ pressed }) => [styles.nameBack, pressed && styles.pressed]}>
-              <SymbolView name="chevron.left" size={20} tintColor={colors.play} accessibilityElementsHidden />
-            </Pressable>
-            <Text style={styles.title}>Choose a {selectedRole}</Text>
-          </View>
-          <Text style={styles.body}>The new {selectedRole} will manage the deck and rounds.</Text>
-          {session.participantIds.filter((id) => id !== session.localParticipantId).map((id) =>
-            <Pressable key={id} accessibilityRole="button"
-              accessibilityLabel={`Make ${playerLabel(id)} ${selectedRole}`}
-              disabled={busy || !isController}
-              onPress={() => { sharePlay.gameActions.selectGuesser(id); setHostPickerOpen(false); }}
-              style={({ pressed }) => [styles.hostChoice, (busy || !isController) && styles.disabled,
-                pressed && styles.pressed]}>
-              <Text style={styles.hostChoiceText}>{playerLabel(id)}</Text>
-              <SymbolView name="chevron.right" size={18} tintColor={colors.play} accessibilityElementsHidden />
-            </Pressable>)}
-        </ScrollView>
-      </Animated.View>
+      <SharePlayRolePickerSheet visible={hostPickerOpen} mode={sharePlay.decks.mode}
+        participants={session.participantIds} localId={session.localParticipantId}
+        playerNames={sharePlay.playerNames} localPlayerName={sharePlay.localPlayerName}
+        disabled={busy || !isController} onClose={() => setHostPickerOpen(false)}
+        onSelect={(id) => { sharePlay.gameActions.selectGuesser(id); setHostPickerOpen(false); }} />
       <ConfirmationPrompt embedded visible={confirmation !== null}
         title={confirmation === 'end' ? 'End Game?' : 'Leave Lobby?'}
         message={confirmation === 'end' ? 'This ends the shared game for every player.' :
@@ -566,7 +536,6 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, overflow: 'hidden' },
   deckSheet: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   nameEditSheet: { position: 'absolute', left: 0, right: 0 },
-  hostPickerSheet: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   grabberArea: { height: 28, alignItems: 'center', justifyContent: 'center' },
   grabber: { width: 38, height: 5, borderRadius: 3, backgroundColor: '#8E8E93' },
   mainScroll: { flexShrink: 1 },
@@ -576,8 +545,6 @@ const styles = StyleSheet.create({
   lobbyFooter: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.sm,
     borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.background },
   footerRow: { flexDirection: 'row', gap: spacing.sm },
-  selectedPlayerStatus: { color: colors.play, fontSize: 14, lineHeight: 20,
-    fontFamily: 'Inter_600SemiBold', textAlign: 'center' },
   footerAction: { flex: 1, minWidth: 0 },
   searchField: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16,
     borderWidth: 2, borderColor: colors.playBorder, borderRadius: radius.lg, backgroundColor: colors.surface },
@@ -586,8 +553,7 @@ const styles = StyleSheet.create({
   nameInput: { minHeight: 76, paddingHorizontal: 20, color: colors.ink, fontSize: 20,
     fontFamily: 'Inter_700Bold', borderWidth: 2, borderColor: colors.playBorder,
     borderRadius: radius.lg, backgroundColor: colors.surface },
-  nameBack: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
-    borderRadius: radius.pill, backgroundColor: colors.surface },
+  roleBack: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   searchClear: { color: colors.muted, fontSize: 28 },
   searchResults: { paddingBottom: 24, flexDirection: 'row', flexWrap: 'wrap' },
   searchList: { flex: 1 },
@@ -608,9 +574,6 @@ const styles = StyleSheet.create({
   changeHostButton: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingHorizontal: 14,
     marginTop: 4, borderRadius: radius.md, backgroundColor: colors.playSoft },
   changeHostText: { color: colors.play, fontSize: 12, fontFamily: 'Inter_900Black' },
-  hostChoice: { minHeight: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: spacing.sm, paddingHorizontal: 16, borderRadius: radius.lg, backgroundColor: colors.surface },
-  hostChoiceText: { color: colors.ink, fontSize: 17, fontFamily: 'Inter_700Bold' },
   cover: { width: 72, height: 108, borderRadius: 7 },
   coverFallback: { backgroundColor: colors.playSoft, alignItems: 'center', justifyContent: 'center' },
   coverIcon: { fontSize: 28, color: colors.play },

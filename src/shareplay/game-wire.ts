@@ -1,6 +1,7 @@
 import type { RemoteCard, RemoteIntent, RemoteView } from './remote-round';
 import type { GameMode } from '../game/game-types';
 import { canSeeSharePlayAnswer } from './round-roles';
+import type { SharePlayReactionIndex, SharePlayReactionSet } from './reactions';
 
 export type GameControl =
   | { action: 'select-guesser'; participantId: string }
@@ -8,6 +9,8 @@ export type GameControl =
   | { action: 'select-mode'; mode: GameMode }
   | { action: 'select-duration'; seconds: number }
   | { action: 'next-round' | 'return-to-lobby' | 'end-game' };
+export type SetupControl = Extract<GameControl, { action: 'select-guesser' | 'select-deck' |
+  'select-mode' | 'select-duration' }>;
 
 export type GameWire =
   | { version: 3; kind: 'view'; view: RemoteView; hostTime: number }
@@ -17,7 +20,12 @@ export type GameWire =
   | { version: 3; kind: 'host-transfer'; targetId: string; term?: number }
   | { version: 3; kind: 'session-end'; term: number }
   | { version: 3; kind: 'presence'; active: boolean; sequence: number }
-  | { version: 3; kind: 'deck-selection'; deckId: string | null; durationSeconds: number; hostTime: number; inLobby: boolean; mode?: GameMode }
+  | { version: 3; kind: 'reaction'; roundId: string; reactionId: string;
+    emoji: SharePlayReactionIndex; set: SharePlayReactionSet }
+  | { version: 3; kind: 'results-exit'; roundId: string }
+  | ({ version: 3; kind: 'setup-control' } & SetupControl)
+  | { version: 3; kind: 'deck-selection'; deckId: string | null; durationSeconds: number;
+    hostTime: number; inLobby: boolean; mode?: GameMode; guesserId?: string }
   | ({ version: 3; kind: 'control'; roundId: string; revision: number } & GameControl)
   | { version: 3; kind: 'clock'; nonce: string }
   | { version: 3; kind: 'clock-reply'; nonce: string; received: number; sent: number }
@@ -46,7 +54,8 @@ export function parseRemoteView(value: unknown, sessionId: string, recipientId: 
   if (!exact(v, ['sessionId', 'roundId', 'revision', 'phase', 'hostId', 'guesserId',
     'participants', 'ready', 'deck', 'durationSeconds', 'startsAt', 'deadline',
     'remainingMs', 'score', 'canAnswer', 'cardNonce', 'card', 'feedback', 'resultReason', 'results',
-    ...(v.mode === undefined ? [] : ['mode'])]) ||
+    ...(v.mode === undefined ? [] : ['mode']),
+    ...(v.resultsViewingIds === undefined ? [] : ['resultsViewingIds'])]) ||
     (v.mode !== undefined && !['classic', 'pass-n-play'].includes(String(v.mode))) ||
     v.sessionId !== sessionId || !id(v.roundId) || !id(v.hostId) || !id(v.guesserId) ||
     !Number.isSafeInteger(v.revision) || (v.revision as number) < 0 ||
@@ -57,6 +66,9 @@ export function parseRemoteView(value: unknown, sessionId: string, recipientId: 
     !participants.includes(v.guesserId) ||
     !Number.isInteger(v.durationSeconds) || (v.durationSeconds as number) < 30 || (v.durationSeconds as number) > 300 ||
     !Array.isArray(v.ready) || !v.ready.every((member: unknown) => id(member) && participants.includes(member)) ||
+    (v.resultsViewingIds !== undefined && (!Array.isArray(v.resultsViewingIds) ||
+      !v.resultsViewingIds.every((member: unknown) => id(member) && participants.includes(member)) ||
+      new Set(v.resultsViewingIds).size !== v.resultsViewingIds.length)) ||
     !v.deck || typeof v.deck !== 'object' || Array.isArray(v.deck) ||
     !exact(v.deck as Record<string, unknown>, ['deckId', 'contentHash', 'sponsorId']) ||
     !id((v.deck as Record<string, unknown>).deckId) ||
@@ -104,6 +116,23 @@ export function parseGameWire(body: string): GameWire | null {
     } else if (v.kind === 'presence') {
       if (!exact(v, ['version', 'kind', 'active', 'sequence']) || typeof v.active !== 'boolean' ||
         !Number.isSafeInteger(v.sequence) || (v.sequence as number) < 0) return null;
+    } else if (v.kind === 'reaction') {
+      if (!exact(v, ['version', 'kind', 'roundId', 'reactionId', 'emoji', 'set']) ||
+        !id(v.roundId) || !id(v.reactionId) || ![0, 1, 2, 3].includes(v.emoji as number) ||
+        !['round', 'results'].includes(String(v.set))) return null;
+    } else if (v.kind === 'results-exit') {
+      if (!exact(v, ['version', 'kind', 'roundId']) || !id(v.roundId)) return null;
+    } else if (v.kind === 'setup-control') {
+      if (v.action === 'select-guesser') {
+        if (!exact(v, ['version', 'kind', 'action', 'participantId']) || !id(v.participantId)) return null;
+      } else if (v.action === 'select-deck') {
+        if (!exact(v, ['version', 'kind', 'action', 'deckId']) || !id(v.deckId)) return null;
+      } else if (v.action === 'select-mode') {
+        if (!exact(v, ['version', 'kind', 'action', 'mode']) || !['classic', 'pass-n-play'].includes(String(v.mode))) return null;
+      } else if (v.action === 'select-duration') {
+        if (!exact(v, ['version', 'kind', 'action', 'seconds']) ||
+          !Number.isInteger(v.seconds) || (v.seconds as number) < 30 || (v.seconds as number) > 300) return null;
+      } else return null;
     } else if (v.kind === 'session-end') {
       if (!exact(v, ['version', 'kind', 'term']) || !Number.isSafeInteger(v.term) ||
         (v.term as number) < 0) return null;
@@ -112,8 +141,9 @@ export function parseGameWire(body: string): GameWire | null {
         !id(v.targetId) || (v.term !== undefined && (!Number.isSafeInteger(v.term) || (v.term as number) < 0))) return null;
     } else if (v.kind === 'deck-selection') {
       if (!exact(v, ['version', 'kind', 'deckId', 'durationSeconds', 'hostTime', 'inLobby',
-        ...(v.mode === undefined ? [] : ['mode'])]) ||
+        ...(v.mode === undefined ? [] : ['mode']), ...(v.guesserId === undefined ? [] : ['guesserId'])]) ||
         (v.mode !== undefined && !['classic', 'pass-n-play'].includes(String(v.mode))) ||
+        (v.guesserId !== undefined && !id(v.guesserId)) ||
         !(v.deckId === null || id(v.deckId)) || !finite(v.hostTime) ||
         typeof v.inLobby !== 'boolean' ||
         !Number.isInteger(v.durationSeconds) || (v.durationSeconds as number) < 30 ||

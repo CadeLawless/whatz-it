@@ -96,6 +96,13 @@ test('wire decoder rejects extra fields, oversize packets and wrong versions', (
   assert.equal(parseGameWire(JSON.stringify({ version: 1, kind: 'view', view: guestView, hostTime: 0 })), null);
   assert.equal(parseGameWire(JSON.stringify({ version: 3, kind: 'view', view: guestView, hostTime: 0, senderId: 'host' })), null);
   assert.equal(parseGameWire('x'.repeat(16_385)), null);
+  const reaction = { version: 3, kind: 'reaction', roundId: 'round', reactionId: 'reaction-1',
+    emoji: 3, set: 'results' };
+  assert.equal(parseGameWire(JSON.stringify(reaction))?.kind, 'reaction');
+  for (const invalid of [{ ...reaction, emoji: 4 }, { ...reaction, emoji: '😂' },
+    { ...reaction, set: 'feedback' }, { ...reaction, senderId: 'guest' },
+    { ...reaction, roundId: '' }])
+    assert.equal(parseGameWire(JSON.stringify(invalid)), null);
 });
 
 test('only the current host and authority generation can end the shared game', () => {
@@ -466,6 +473,133 @@ test('host ends a two-player round on departure and prepares a new lobby when so
   assert.equal(host.currentView?.phase, 'lobby');
   assert.deepEqual(host.currentView?.participants, ['host', 'returning']);
   assert.deepEqual(host.currentView?.ready, []);
+});
+
+test('rejoining players retain a controller and recover when deck cards load after the roster', async (context) => {
+  let now = 1000;
+  context.mock.method(performance, 'now', () => now);
+  let cardsLoaded = false;
+  let sequence = 0;
+  const clients = new Map<string, LiveGame>();
+  const deliveries: Promise<void>[] = [];
+  const controllers: Record<string, string | null> = { host: null, guest: null };
+  const flush = async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await Promise.all(deliveries.splice(0));
+      await Promise.resolve();
+    }
+  };
+  for (const id of ['host', 'guest']) clients.set(id, new LiveGame({ environment: 'test',
+    uuid: () => `rejoin-${++sequence}`, digest: async () => hash,
+    cards: () => cardsLoaded ? [{ answer: 'ANSWER', byline: '' }] : [],
+    availableDeckIds: () => ['deck'], onView: () => undefined,
+    onDecks: (_deck, _available, _duration, _mode, controllerId) => { controllers[id] = controllerId; },
+    onError: (message) => { throw new Error(message); },
+    onActive: () => undefined, onLobby: () => undefined,
+    send: async (body, recipients) => { for (const recipient of recipients)
+      deliveries.push(Promise.resolve().then(() => clients.get(recipient)!.receive({
+        sessionId: 'session', senderId: id, senderIsHost: id === 'host', body }))); },
+  }));
+  const host = clients.get('host')!;
+  const guest = clients.get('guest')!;
+  const rejoinSession = { ...session, activity: { ...session.activity!, deckId: 'missing' } };
+  host.setSession({ ...rejoinSession, localParticipantId: 'host', isHost: true });
+  guest.setSession(rejoinSession);
+  await flush();
+  assert.equal(host.currentView?.phase ?? null, null);
+  assert.equal(guest.currentView?.phase ?? null, null);
+  assert.deepEqual(controllers, { host: 'host', guest: 'host' });
+  guest.selectGuesser('guest'); await flush();
+  assert.deepEqual(controllers, { host: 'host', guest: 'host' });
+  host.selectGuesser('guest'); await flush();
+  assert.deepEqual(controllers, { host: 'guest', guest: 'guest' });
+  guest.selectMode('pass-n-play'); await flush();
+  guest.selectDuration(45); await flush();
+  guest.selectDeck('deck'); await flush();
+  assert.equal(host.currentView?.phase ?? null, null);
+  cardsLoaded = true;
+  host.refreshAvailableDecks(); await flush();
+  assert.equal(host.currentView?.phase, 'lobby');
+  assert.equal(guest.currentView?.phase, 'lobby');
+  assert.equal(host.currentView?.guesserId, 'guest');
+  assert.equal(guest.currentView?.mode, 'pass-n-play');
+  assert.equal(guest.currentView?.durationSeconds, 45);
+  now = 4000;
+  guest.act('ready'); host.act('ready'); await flush();
+  assert.deepEqual(new Set(host.currentView?.ready), new Set(['guest', 'host']));
+});
+
+test('the inviter’s game mode choice carries into the first shared lobby', async () => {
+  const host = new LiveGame({ environment: 'test', uuid: () => 'first-round', digest: async () => hash,
+    send: async () => undefined, cards: () => [{ answer: 'ANSWER', byline: '' }],
+    initialMode: () => 'pass-n-play', availableDeckIds: () => ['deck'],
+    onDecks: () => undefined, onView: () => undefined, onError: () => undefined,
+    onActive: () => undefined, onLobby: () => undefined });
+  host.setSession({ ...session, localParticipantId: 'host', isHost: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(host.currentView?.phase, 'lobby');
+  assert.equal(host.currentView?.mode, 'pass-n-play');
+});
+
+test('all players see the matching reaction set during play and results', async (context) => {
+  let now = 1000;
+  context.mock.method(performance, 'now', () => now);
+  let sequence = 0;
+  let host!: LiveGame;
+  let guest!: LiveGame;
+  const deliveries: Promise<void>[] = [];
+  const hostReactions: string[] = [];
+  const guestReactions: string[] = [];
+  const common = { environment: 'test', uuid: () => `reaction-${++sequence}`,
+    digest: async () => hash, onView: () => undefined, onDecks: () => undefined,
+    onError: (message: string) => { throw new Error(message); },
+    onActive: () => undefined, onLobby: () => undefined };
+  const flush = async () => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await Promise.all(deliveries.splice(0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+  host = new LiveGame({ ...common, cards: () => [{ answer: 'ANSWER', byline: '' }],
+    availableDeckIds: () => ['deck'], onReaction: (reaction) => hostReactions.push(`${reaction.set}:${reaction.emoji}`),
+    send: async (body, ids) => { if (ids.includes('guest')) deliveries.push(Promise.resolve().then(() =>
+      guest.receive({ sessionId: 'session', senderId: 'host', senderIsHost: true, body }))); },
+  });
+  guest = new LiveGame({ ...common, cards: () => null, availableDeckIds: () => [],
+    onReaction: (reaction) => guestReactions.push(`${reaction.set}:${reaction.emoji}`),
+    send: async (body, ids) => { if (ids.includes('host')) deliveries.push(Promise.resolve().then(() =>
+      host.receive({ sessionId: 'session', senderId: 'guest', senderIsHost: false, body }))); },
+  });
+  host.setSession({ ...session, localParticipantId: 'host', isHost: true });
+  guest.setSession(session);
+  await flush();
+  assert.equal(guest.currentView?.phase, 'lobby');
+  host.act('ready'); guest.act('ready');
+  await flush();
+  host.act('start');
+  await flush();
+  assert.equal(guest.currentView?.phase, 'countdown');
+
+  host.react(0);
+  await flush();
+  assert.deepEqual(hostReactions, ['round:0']);
+  assert.deepEqual(guestReactions, ['round:0']);
+  host.react(1); // Same player cannot spam another reaction immediately.
+  await flush();
+  assert.deepEqual(guestReactions, ['round:0']);
+  guest.react(3);
+  await flush();
+  assert.deepEqual(hostReactions, ['round:0', 'round:3']);
+  assert.deepEqual(guestReactions, ['round:0', 'round:3']);
+  now = 65_000;
+  host.pulse();
+  await flush();
+  assert.equal(host.currentView?.phase, 'results');
+  assert.equal(guest.currentView?.phase, 'results');
+  host.react(0);
+  await flush();
+  assert.deepEqual(hostReactions, ['round:0', 'round:3', 'results:0']);
+  assert.deepEqual(guestReactions, ['round:0', 'round:3', 'results:0']);
 });
 
 test('host and a guest without deck ownership reach the same countdown', async () => {

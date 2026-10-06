@@ -19,6 +19,11 @@ test('accepting rejoin keeps the same presentation open from prompt to lobby', (
   assert.equal(sharePlaySurface({ ...joined, enabled: false, rejoinOffered: true }), null);
 });
 
+test('a joined session waits for an assigned controller before showing the lobby', () => {
+  assert.equal(sharePlaySurface({ ...joined, controllerReady: false }), 'connecting');
+  assert.equal(sharePlaySurface({ ...joined, controllerReady: true }), 'lobby');
+});
+
 test('the same joined surface stays on the round through temporary missing snapshots', () => {
   assert.equal(sharePlaySurface({ ...joined, phase: 'playing', gameVisible: true }), 'round');
   assert.equal(sharePlaySurface({ ...joined, gameVisible: true }), 'round');

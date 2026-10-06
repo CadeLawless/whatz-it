@@ -17,6 +17,7 @@ import { REJOIN_SESSION_KEY, SharePlayParticipation, shouldOfferSharePlayRejoin 
 import { parseGameWire } from './game-wire';
 import type { RemoteOutcome, RemoteView } from './remote-round';
 import type { GameMode } from '../game/game-types';
+import { canReactInPhase, type SharePlayReactionEvent, type SharePlayReactionIndex } from './reactions';
 import { logSharePlay, shortSharePlayId, SHAREPLAY_RUNTIME_REVISION } from './diagnostics';
 import { cleanPlayerName, encodePlayerName, parsePlayerName } from './player-names';
 import { acceptsSharePlayHostClaim, recoveryHost, resolveSharePlayHost, shouldRecoverSharePlayHost } from './host-election';
@@ -40,6 +41,7 @@ type SharePlayContextValue = {
   invitationPending: boolean;
   error: string | null;
   setup: Setup | null;
+  setupMode: GameMode;
   session: SharePlaySnapshot;
   peers: Record<string, PeerConnection>;
   playerNames: Record<string, string>;
@@ -47,7 +49,10 @@ type SharePlayContextValue = {
   playerNameLoaded: boolean;
   setLocalPlayerName: (name: string) => void;
   game: { view: RemoteView | null; synchronized: boolean; remainingMs: number; countdown: number };
-  decks: { selectedDeckId: string | null; availableDeckIds: string[]; durationSeconds: number; mode: GameMode };
+  heldResultsView: RemoteView | null;
+  reactions: SharePlayReactionEvent[];
+  decks: { selectedDeckId: string | null; availableDeckIds: string[]; durationSeconds: number;
+    mode: GameMode; controllerId: string | null };
   gameVisible: boolean;
   rejoinOffered: boolean;
   acceptRejoin: () => Promise<void>;
@@ -55,6 +60,8 @@ type SharePlayContextValue = {
   gameActions: {
     ready: () => void; start: () => void; pause: () => void; resume: () => void;
     answer: (outcome: RemoteOutcome) => void;
+    react: (emoji: SharePlayReactionIndex) => void;
+    dismissReaction: (id: string) => void;
     selectMode: (mode: GameMode) => void;
     selectGuesser: (guesserId: string) => void;
     selectDeck: (deckId: string) => void;
@@ -66,6 +73,7 @@ type SharePlayContextValue = {
   closeGame: () => void;
   open: (setup: Setup) => void;
   updateSetupDuration: (seconds: number) => void;
+  updateSetupMode: (mode: GameMode) => void;
   updateSetupDeck: (deckId: string) => void;
   close: () => void;
   invite: () => Promise<void>;
@@ -102,6 +110,8 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const [localPlayerName, setLocalPlayerNameState] = useState('');
   const [playerNameLoaded, setPlayerNameLoaded] = useState(false);
   const [setup, setSetup] = useState<Setup | null>(null);
+  const [setupMode, setSetupMode] = useState<GameMode>('classic');
+  const setupModeRef = useRef<GameMode>('classic');
   const [isOpen, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const operation = useRef(false);
@@ -114,6 +124,18 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const [game, setGame] = useState<{ view: RemoteView | null; synchronized: boolean; remainingMs: number; countdown: number }>({
     view: null, synchronized: false, remainingMs: 0, countdown: 0,
   });
+  const [heldResultsView, setHeldResultsView] = useState<RemoteView | null>(null);
+  const heldResultsRef = useRef<RemoteView | null>(null);
+  const exitedResultsRoundId = useRef<string | null>(null);
+  useEffect(() => {
+    if (heldResultsRef.current && heldResultsRef.current.sessionId !== session.sessionId) {
+      heldResultsRef.current = null; exitedResultsRoundId.current = null;
+      setHeldResultsView(null);
+    }
+  }, [session.sessionId]);
+  const [reactions, setReactions] = useState<SharePlayReactionEvent[]>([]);
+  const dismissReaction = useCallback((id: string) =>
+    setReactions((current) => current.filter((reaction) => reaction.id !== id)), []);
   const [gameVisible, setGameVisible] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -122,8 +144,9 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     }).catch(() => undefined).finally(() => { if (alive) setPlayerNameLoaded(true); });
     return () => { alive = false; };
   }, []);
-  const [decks, setDecks] = useState<{ selectedDeckId: string | null; availableDeckIds: string[]; durationSeconds: number; mode: GameMode }>({
-    selectedDeckId: null, availableDeckIds: [], durationSeconds: 60, mode: 'classic',
+  const [decks, setDecks] = useState<{ selectedDeckId: string | null; availableDeckIds: string[];
+    durationSeconds: number; mode: GameMode; controllerId: string | null }>({
+    selectedDeckId: null, availableDeckIds: [], durationSeconds: 60, mode: 'classic', controllerId: null,
   });
   const gameActive = useRef(false);
   const manualLobby = useRef(false);
@@ -131,6 +154,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const endGameRef = useRef<() => void>(() => undefined);
   useEffect(() => { liveGame.current = new LiveGame({
     environment,
+    initialMode: () => setupModeRef.current,
     trace: logSharePlay,
     uuid: randomUUID,
     digest: (value) => digestStringAsync(CryptoDigestAlgorithm.SHA256, value),
@@ -151,16 +175,31 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     },
     availableDeckIds: () => catalogRef.current.decks
       .filter((deck) => canShareDeck(deck, ownedDeckIdsRef.current)).map((deck) => deck.id),
-    onDecks: (selectedDeckId, availableDeckIds, durationSeconds, mode) =>
-      setDecks({ selectedDeckId, availableDeckIds, durationSeconds, mode }),
+    onDecks: (selectedDeckId, availableDeckIds, durationSeconds, mode, controllerId) =>
+      setDecks({ selectedDeckId, availableDeckIds, durationSeconds, mode, controllerId }),
     onView: (view) => {
-      if (view?.phase === 'lobby' && sessionRef.current.status === 'joined') {
+      if (view?.phase === 'results' && exitedResultsRoundId.current !== view.roundId) {
+        heldResultsRef.current = view; setHeldResultsView(view);
+      } else if (view?.phase === 'lobby' && heldResultsRef.current?.sessionId === view.sessionId) {
+        const held = { ...heldResultsRef.current, guesserId: view.guesserId };
+        heldResultsRef.current = held; setHeldResultsView(held);
+      } else if (view && !['results', 'lobby'].includes(view.phase)) {
+        heldResultsRef.current = null; exitedResultsRoundId.current = null;
+        setHeldResultsView(null);
+      }
+      setReactions((current) => {
+        if (!view || !canReactInPhase(view.phase)) return current.length ? [] : current;
+        const matching = current.filter((reaction) => reaction.roundId === view.roundId);
+        return matching.length === current.length ? current : matching;
+      });
+      if (view?.phase === 'lobby' && !heldResultsRef.current && sessionRef.current.status === 'joined') {
         gameActive.current = false; manualLobby.current = false;
         setGameVisible(false); setOpen(true);
       }
       setGame({ view, synchronized: liveGame.current?.synchronized ?? false,
         remainingMs: liveGame.current?.remainingMs ?? 0, countdown: liveGame.current?.countdown ?? 0 });
     },
+    onReaction: (reaction) => setReactions((current) => [...current.slice(-11), reaction]),
     onError: (message) => {
       if (sessionRef.current.status !== 'joined' || operation.current) return;
       logSharePlay('game.error', { code: 'game-callback' }, true); setError(message);
@@ -176,6 +215,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     },
     onLobby: () => {
       if (startupPending.current || sessionRef.current.status !== 'joined') return;
+      if (heldResultsRef.current) return;
       manualLobby.current = false;
       gameActive.current = false;
       setGameVisible(false); setOpen(true);
@@ -292,6 +332,11 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
         isHost: next.isHost, revision: hostTerm.current });
     }
     sessionRef.current = next;
+    if (next.sessionId !== previous.sessionId || next.hostParticipantId !== previous.hostParticipantId ||
+      next.status === 'ended' || next.status === 'idle') {
+      heldResultsRef.current = null; exitedResultsRoundId.current = null;
+      setHeldResultsView(null);
+    }
     liveGame.current?.setSession(next);
     if (next.sessionId !== previous.sessionId) {
       setPlayerNames({});
@@ -561,7 +606,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
 
   const value: SharePlayContextValue = {
     enabled, available: !!NativeSharePlay, isOpen, busy, initialized, canInvite, invitationPending,
-    error, setup, session, peers,
+    error, setup, setupMode, session, peers,
     rejoinOffered,
     declineRejoin: () => {
       logSharePlay('rejoin.declined');
@@ -596,13 +641,15 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
         logSharePlay('player-name.save-failed', {}, true);
       });
     },
-    game, decks, gameVisible,
+    game, heldResultsView, decks, gameVisible, reactions,
     gameActions: {
       ready: () => liveGame.current?.act('ready'),
       start: () => liveGame.current?.act('start'),
       pause: () => liveGame.current?.act('pause'),
       resume: () => liveGame.current?.act('resume'),
       answer: (outcome) => liveGame.current?.act('answer', outcome),
+      react: (emoji) => liveGame.current?.react(emoji),
+      dismissReaction,
       selectMode: (mode) => liveGame.current?.selectMode(mode),
       selectGuesser: (guesserId) => liveGame.current?.selectGuesser(guesserId),
       selectDeck: (deckId) => liveGame.current?.selectDeck(deckId),
@@ -616,21 +663,34 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       endGame: () => liveGame.current?.endGame(),
     },
     closeGame: () => {
-      const phase = liveGame.current?.currentView?.phase;
+      const phase = heldResultsRef.current?.phase ?? liveGame.current?.currentView?.phase;
       // Active rounds are exited through Leave or explicitly paused in the X
       // menu. A presentation callback must not pause everyone else's game.
       if (phase && ['countdown', 'playing', 'feedback'].includes(phase)) return;
+      if (phase === 'results') {
+        const roundId = heldResultsRef.current?.roundId ?? liveGame.current?.currentView?.roundId;
+        heldResultsRef.current = null; setHeldResultsView(null);
+        exitedResultsRoundId.current = roundId ?? null;
+        setGameVisible(false); gameActive.current = false; manualLobby.current = true; setOpen(true);
+        if (roundId) liveGame.current?.exitResults(roundId);
+        return;
+      }
       setGameVisible(false); gameActive.current = false; manualLobby.current = true; setOpen(true);
       if (sessionRef.current.isHost) liveGame.current?.returnToLobby();
     },
     open(next) {
       if (!enabled) return;
+      setupModeRef.current = 'classic'; setSetupMode('classic');
       setSetup(next); setOpen(true); setSharePlayAudioBlocked(true);
       // Preserve startup failures so an unavailable build has a useful explanation.
       if (initialized) setError(null);
     },
     updateSetupDuration(seconds) {
       setSetup((current) => current ? { ...current, durationSeconds: seconds } : current);
+    },
+    updateSetupMode(mode) {
+      if (mode !== 'classic' && mode !== 'pass-n-play') return;
+      setupModeRef.current = mode; setSetupMode(mode);
     },
     updateSetupDeck(deckId) {
       const deck = catalog.getDeckById(deckId);
