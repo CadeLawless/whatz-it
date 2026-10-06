@@ -1,6 +1,6 @@
 import type { Card, Deck } from '@/types/deck';
 
-export const CARD_COOLDOWN_MS = 5 * 24 * 60 * 60 * 1000;
+export const CARD_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 
 export type StoredCardMemory = Record<string, number>;
 

@@ -64,7 +64,7 @@ for (const hostGuesses of [false, true]) {
       onActive: () => undefined, onLobby: () => undefined });
     game.setSession({ ...session, localParticipantId: 'host', isHost: true });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    if (hostGuesses) game.selectGuesser('host');
+    if (!hostGuesses) game.selectGuesser('guest');
     game.act('ready');
     const view = game.currentView!;
     game.receive({ sessionId: 'session', senderId: 'guest', senderIsHost: false,
@@ -194,6 +194,9 @@ for (const { anotherOwnerRemains, active } of [
       host.act('start');
       await new Promise((resolve) => setTimeout(resolve, 0));
       assert.equal(host.currentView?.phase, 'countdown');
+    } else {
+      host.act('ready'); guest.act('ready');
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
     const remaining = { ...roster, participantIds: ['host', 'guest'] };
     guest.setSession(remaining);
@@ -206,20 +209,21 @@ for (const { anotherOwnerRemains, active } of [
       if (active) {
         assert.equal(host.currentView?.phase, 'countdown');
         assert.equal(guest.currentView?.phase, 'countdown');
-        host.act('end'); host.nextRound();
+        host.act('end'); host.returnToLobby();
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
-      assert.equal(host.currentView, null);
-      assert.equal(guest.currentView, null);
+      assert.equal(host.currentView?.phase, 'lobby');
+      assert.equal(guest.currentView?.phase, 'lobby');
+      if (!active) assert.deepEqual(new Set(host.currentView?.ready), new Set(['host', 'guest']));
       host.act('ready');
-      assert.equal(host.currentView, null);
+      assert.equal(host.currentView?.phase, 'lobby');
       host.selectDeck('other');
       await new Promise((resolve) => setTimeout(resolve, 0));
       const nextHostView = host.currentView as RemoteView | null;
       const nextGuestView = guest.currentView as RemoteView | null;
       assert.equal(nextHostView?.deck.deckId, 'other');
       assert.equal(nextGuestView?.deck.deckId, 'other');
-      assert.deepEqual(nextHostView?.ready, []);
+      assert.deepEqual(new Set(nextHostView?.ready), new Set(active ? ['host'] : ['host', 'guest']));
     }
   });
 }
@@ -257,6 +261,45 @@ test('live guest accepts only native-authenticated host views', () => {
   game.receive({ sessionId: 'session', senderId: 'host', senderIsHost: true, body });
   assert.deepEqual(views, ['round']);
   assert.equal(game.currentView?.card, null);
+});
+
+test('a newer deck-selection packet cannot hide its preceding lobby view', () => {
+  const views: RemoteView[] = [];
+  const game = new LiveGame({ environment: 'test', uuid: () => 'id', digest: async () => hash,
+    send: async () => undefined, cards: () => null, availableDeckIds: () => [],
+    onDecks: () => undefined, onView: (view) => { if (view) views.push(view); }, onError: () => undefined,
+    onActive: () => undefined, onLobby: () => undefined });
+  game.setSession(session);
+  const deliver = (wire: object) => game.receive({ sessionId: 'session', senderId: 'host',
+    senderIsHost: true, body: JSON.stringify(wire) });
+  // The host sends these in this order, but the transport can deliver them in reverse.
+  deliver({ version: 3, kind: 'deck-selection', deckId: 'deck', durationSeconds: 60,
+    hostTime: 101, inLobby: true, mode: 'classic' });
+  deliver({ version: 3, kind: 'view', view: guestView, hostTime: 100 });
+  assert.equal(game.currentView?.phase, 'lobby');
+  assert.equal(game.currentView?.deck.deckId, 'deck');
+  deliver({ version: 3, kind: 'deck-selection', deckId: 'other', durationSeconds: 60,
+    hostTime: 201, inLobby: true, mode: 'classic' });
+  deliver({ version: 3, kind: 'view', view: guestView, hostTime: 200 });
+  assert.equal(views.length, 1);
+});
+
+test('a guesser records the unanswered card from results exactly once', () => {
+  const seen: string[] = [];
+  const game = new LiveGame({ environment: 'test', uuid: () => 'id', digest: async () => hash,
+    send: async () => undefined, cards: () => null, availableDeckIds: () => [],
+    onDecks: () => undefined, onView: () => undefined,
+    onCardSeen: (card) => seen.push(card.answer),
+    onError: () => undefined, onActive: () => undefined, onLobby: () => undefined });
+  game.setSession(session);
+  const resultView: RemoteView = { ...guestView, revision: 1, phase: 'results',
+    resultReason: 'time', startsAt: 3000, deadline: 63000, remainingMs: 0,
+    results: [{ answer: 'SECRET ANSWER', byline: 'SECRET BYLINE', outcome: 'neutral' }] };
+  const message = { sessionId: 'session', senderId: 'host', senderIsHost: true,
+    body: JSON.stringify({ version: 3, kind: 'view', view: resultView, hostTime: 63000 }) };
+  game.receive(message);
+  game.receive(message);
+  assert.deepEqual(seen, ['SECRET ANSWER']);
 });
 
 test('remaining players elect a host and return to a playable lobby when the inviter leaves', async () => {
@@ -467,6 +510,8 @@ test('host and a guest without deck ownership reach the same countdown', async (
   assert.equal(guest.currentView?.phase, 'countdown');
   assert.doesNotMatch(JSON.stringify(guest.currentView), /SECRET ANSWER|SECRET BYLINE/);
   host.act('pause');
+  host.returnToLobby();
+  await Promise.all(deliveries.splice(0));
   host.selectDeck('other');
   await new Promise((resolve) => setTimeout(resolve, 0));
   await Promise.all(deliveries.splice(0));
@@ -508,8 +553,8 @@ test('a guest-owned deck can sponsor a round when the inviter has no cards', asy
   host.act('start');
   await Promise.all(deliveries.splice(0));
   assert.equal(owner.currentView?.phase, 'countdown');
-  assert.equal(owner.currentView?.guesserId, 'guest');
-  assert.doesNotMatch(JSON.stringify(owner.currentView), /PAID ANSWER|PAID BYLINE/);
+  assert.equal(owner.currentView?.guesserId, 'host');
+  assert.doesNotMatch(JSON.stringify(host.currentView), /PAID ANSWER|PAID BYLINE/);
 });
 
 test('host retries a lost deck inventory request after both phones join', async () => {

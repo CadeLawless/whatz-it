@@ -37,6 +37,14 @@ export function rememberCard(card: Pick<Card, 'text' | 'byline'>): void {
   void persistMemory(memory);
 }
 
+export async function rememberSharedCard(
+  card: Pick<Card, 'text' | 'byline'>,
+  decks: readonly Pick<Deck, 'id' | 'cards'>[],
+): Promise<void> {
+  await loadMemory(decks);
+  rememberCard(card);
+}
+
 async function loadMemory(decks: readonly Pick<Deck, 'id' | 'cards'>[]): Promise<StoredCardMemory> {
   if (memory) return memory;
   if (loadingPromise) return loadingPromise;

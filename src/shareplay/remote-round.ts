@@ -4,12 +4,14 @@ import { canSeeSharePlayAnswer } from './round-roles';
 
 export type RemoteCard = { answer: string; byline: string };
 export type RemoteOutcome = 'correct' | 'pass';
-export type RemotePhase = 'lobby' | 'countdown' | 'playing' | 'feedback' | 'handoff' | 'paused' | 'results' | 'ended';
+export type RemoteResultOutcome = RemoteOutcome | 'neutral';
+export type RemotePhase = 'lobby' | 'countdown' | 'playing' | 'feedback' | 'paused' | 'results' | 'ended';
 export type RemoteResultReason = 'time' | 'cards' | 'players';
 export type DeckAgreement = { deckId: string; contentHash: string; sponsorId: string };
 export type RemoteRoundConfig = {
   sessionId: string; environment: string; hostId: string; roundId: string;
   participants: string[]; guesserId: string;
+  initialReady?: string[];
   mode?: GameMode;
   durationSeconds: number; deck: DeckAgreement;
   // Supply a shuffled, immutable order from the verified content sponsor.
@@ -22,7 +24,6 @@ export type RemoteIntent = {
   | { kind: 'ready'; contentHash: string }
   | { kind: 'start' | 'pause' | 'resume' | 'end' }
   | { kind: 'answer'; cardNonce: string; outcome: RemoteOutcome }
-  | { kind: 'reveal'; cardNonce: string }
 );
 export type RemoteView = {
   sessionId: string; roundId: string; revision: number; phase: RemotePhase;
@@ -34,7 +35,7 @@ export type RemoteView = {
   score: number; canAnswer: boolean; cardNonce: string | null;
   card: RemoteCard | null; feedback: RemoteOutcome | null;
   resultReason: RemoteResultReason | null;
-  results: (RemoteCard & { outcome: RemoteOutcome })[] | null;
+  results: (RemoteCard & { outcome: RemoteResultOutcome })[] | null;
 };
 
 const identifier = (value: unknown): value is string =>
@@ -54,9 +55,6 @@ export function parseRemoteIntent(body: string): RemoteIntent | null {
     if (v.kind === 'ready') {
       keys.push('contentHash');
       if (!hash(v.contentHash)) return null;
-    } else if (v.kind === 'reveal') {
-      keys.push('cardNonce');
-      if (!identifier(v.cardNonce)) return null;
     } else if (v.kind === 'answer') {
       keys.push('cardNonce', 'outcome');
       if (!identifier(v.cardNonce) || (v.outcome !== 'correct' && v.outcome !== 'pass')) return null;
@@ -83,7 +81,7 @@ export class RemoteRound {
   private remainingMs: number;
   private feedbackUntil = 0;
   private pendingHandoff = false;
-  private outcomes: (RemoteCard & { outcome: RemoteOutcome })[] = [];
+  private outcomes: (RemoteCard & { outcome: RemoteResultOutcome })[] = [];
   private lastNow = 0;
 
   constructor(config: RemoteRoundConfig, private readonly nextNonce: () => string) {
@@ -105,7 +103,34 @@ export class RemoteRound {
       cards: config.cards.map(({ answer, byline }) => ({ answer, byline })),
     };
     this.members = [...config.participants];
+    this.ready = new Set(config.initialReady?.filter((id) => this.members.includes(id)) ?? []);
     this.remainingMs = config.durationSeconds * 1000;
+  }
+
+  private finish(reason: RemoteResultReason) {
+    if (reason === 'time' && this.phase === 'playing' && this.nonce !== null &&
+      this.index < this.config.cards.length) {
+      this.outcomes.push({ ...this.config.cards[this.index], outcome: 'neutral' });
+    }
+    this.phase = 'results'; this.resultReason = reason;
+    if (this.members.length >= 2) this.rotateGuesser();
+    this.nonce = null;
+  }
+
+  /** The next controller starts a fresh round without another ready cycle. */
+  startNext(now: number) {
+    if (this.phase !== 'lobby' || this.members.length < 2) return false;
+    this.phase = 'countdown'; this.startsAt = now + 3000;
+    this.deadline = this.startsAt + this.remainingMs;
+    this.revision++;
+    return true;
+  }
+
+  resetToLobby() {
+    this.phase = 'lobby'; this.resultReason = null;
+    this.startsAt = null; this.deadline = null; this.nonce = null;
+    this.remainingMs = this.config.durationSeconds * 1000;
+    this.index = 0; this.outcomes = []; this.clearReadiness(); this.revision++;
   }
 
   /** Called with a monotonic host clock, including when no commands arrive. */
@@ -113,13 +138,13 @@ export class RemoteRound {
     if (!Number.isFinite(now) || now < this.lastNow) throw new Error('Host clock must be monotonic');
     this.lastNow = now;
     if (this.deadline !== null && now >= this.deadline && !['paused', 'results', 'ended'].includes(this.phase)) {
-      this.phase = 'results'; this.resultReason = 'time';
-      this.remainingMs = 0; this.nonce = null; this.revision++;
+      this.finish('time'); this.remainingMs = 0; this.revision++;
     } else if (this.phase === 'countdown' && this.startsAt !== null && now >= this.startsAt) {
-      this.phase = this.pendingHandoff ? 'handoff' : 'playing'; this.nonce = this.nextNonce(); this.revision++;
+      this.phase = 'playing'; this.nonce = this.nextNonce(); this.revision++;
     } else if (this.phase === 'feedback' && now >= this.feedbackUntil) {
       if (this.pendingHandoff) this.rotateGuesser();
-      this.phase = this.pendingHandoff ? 'handoff' : 'playing';
+      this.pendingHandoff = false;
+      this.phase = 'playing';
       this.nonce = this.nextNonce(); this.revision++;
     }
   }
@@ -135,7 +160,7 @@ export class RemoteRound {
     // Readiness is concurrent, and answers are guarded by the opaque card nonce.
     // A background pause must still succeed when the sender missed a snapshot.
     // Host start/resume/end controls require the exact current revision.
-    if (!['ready', 'answer', 'reveal', 'pause'].includes(intent.kind) && intent.revision !== this.revision) return 'rejected';
+    if (!['ready', 'answer', 'pause'].includes(intent.kind) && intent.revision !== this.revision) return 'rejected';
     switch (intent.kind) {
       case 'ready':
         if (!['lobby', 'paused'].includes(this.phase) || intent.contentHash !== this.config.deck.contentHash ||
@@ -156,19 +181,13 @@ export class RemoteRound {
           byline: this.config.cards[this.index].byline, outcome: intent.outcome });
         this.index++; this.nonce = null;
         this.phase = this.index === this.config.cards.length ? 'results' : 'feedback';
-        if (this.phase === 'results') this.resultReason = 'cards';
+        if (this.phase === 'results') this.finish('cards');
         this.feedbackUntil = now + 600;
         this.pendingHandoff = this.config.mode === 'pass-n-play' && intent.outcome === 'correct';
         break;
       }
-      case 'reveal':
-        if (this.config.mode !== 'pass-n-play' || this.phase !== 'handoff' ||
-          senderId !== this.config.guesserId || intent.cardNonce !== this.nonce) return 'rejected';
-        this.pendingHandoff = false;
-        this.phase = 'playing'; this.nonce = this.nextNonce();
-        break;
       case 'pause':
-        if (!['countdown', 'playing', 'feedback', 'handoff'].includes(this.phase)) return 'rejected';
+        if (!['countdown', 'playing', 'feedback'].includes(this.phase)) return 'rejected';
         this.pause(now);
         break;
       case 'end':
@@ -182,6 +201,7 @@ export class RemoteRound {
 
   private pause(now: number) {
     if (this.phase === 'feedback' && this.pendingHandoff) this.rotateGuesser();
+    this.pendingHandoff = false;
     this.remainingMs = Math.max(0, (this.deadline ?? now) - Math.max(now, this.startsAt ?? now));
     this.phase = 'paused'; this.nonce = null; this.startsAt = null; this.deadline = null; this.clearReadiness();
   }
@@ -193,14 +213,13 @@ export class RemoteRound {
 
   setLobbyMode(mode: GameMode) {
     if (this.phase !== 'lobby' || !['classic', 'pass-n-play'].includes(mode) || mode === this.config.mode) return false;
-    this.config.mode = mode; this.clearReadiness(); this.revision++;
+    this.config.mode = mode; this.revision++;
     return true;
   }
 
   private clearReadiness() {
     this.ready.clear();
-    // Concurrent ready taps may share a revision, but must acknowledge the most
-    // recent interruption or roster change before a round can start again.
+    // Concurrent ready taps may share a revision, but a pause requires fresh readiness.
     this.readinessRevision = this.revision + 1;
   }
 
@@ -210,16 +229,14 @@ export class RemoteRound {
       seconds === this.config.durationSeconds) return false;
     this.config.durationSeconds = seconds;
     this.remainingMs = seconds * 1000;
-    this.clearReadiness();
     this.revision++;
     return true;
   }
 
   setLobbyGuesser(guesserId: string) {
-    if (this.phase !== 'lobby' || !this.members.includes(guesserId) ||
+    if (!['lobby', 'results'].includes(this.phase) || !this.members.includes(guesserId) ||
       guesserId === this.config.guesserId) return false;
     this.config.guesserId = guesserId;
-    this.clearReadiness();
     this.revision++;
     return true;
   }
@@ -228,8 +245,9 @@ export class RemoteRound {
   removeParticipant(id: string, now: number) {
     this.tick(now);
     if (!this.members.includes(id)) return;
+    const departedIndex = this.members.indexOf(id);
     this.members = this.members.filter((member) => member !== id);
-    this.clearReadiness();
+    this.ready.delete(id);
     if (this.members.length < 2) {
       this.phase = 'results'; this.resultReason = 'players'; this.remainingMs = 0;
       this.startsAt = null; this.deadline = null; this.nonce = null;
@@ -239,15 +257,13 @@ export class RemoteRound {
     } else if (id === this.config.guesserId) {
       // In Classic, a replacement guesser previously saw this answer.
       // In Pass n Play, a replacement clue giver was guessing and never saw it.
-      this.config.guesserId = this.members[0];
+      this.config.guesserId = this.members[departedIndex % this.members.length];
       if (this.phase === 'playing') {
         if (this.config.mode !== 'pass-n-play') this.index++;
         if (this.index >= this.config.cards.length) {
-          this.phase = 'results'; this.resultReason = 'cards'; this.remainingMs = 0;
+          this.finish('cards'); this.remainingMs = 0;
           this.startsAt = null; this.deadline = null; this.nonce = null;
         } else this.nonce = this.nextNonce();
-      } else if (this.phase === 'handoff') {
-        this.nonce = this.nextNonce();
       }
     }
     this.revision++;
@@ -258,7 +274,6 @@ export class RemoteRound {
     if (!identifier(id) || this.members.includes(id) ||
       ['results', 'ended'].includes(this.phase)) return;
     this.members.push(id);
-    this.clearReadiness();
     this.revision++;
   }
 
@@ -280,10 +295,10 @@ export class RemoteRound {
       remainingMs: this.phase === 'results' ? 0 : this.deadline === null ? this.remainingMs : Math.max(0, this.deadline - Math.max(now, this.startsAt ?? now)),
       score: this.outcomes.filter((item) => item.outcome === 'correct').length,
       canAnswer: this.phase === 'playing' && recipient === this.config.guesserId,
-      cardNonce: ['playing', 'handoff'].includes(this.phase) && recipient === this.config.guesserId ? this.nonce : null,
+      cardNonce: this.phase === 'playing' && recipient === this.config.guesserId ? this.nonce : null,
       card: canSeeCard ? { answer: this.config.cards[this.index].answer,
         byline: this.config.cards[this.index].byline } : null,
-      feedback: this.phase === 'feedback' ? this.outcomes.at(-1)?.outcome ?? null : null,
+      feedback: this.phase === 'feedback' ? (this.outcomes.at(-1)?.outcome as RemoteOutcome | undefined) ?? null : null,
       resultReason: this.phase === 'results' ? this.resultReason : null,
       results: this.phase === 'results' ? this.outcomes.map((item) =>
         ({ answer: item.answer, byline: item.byline, outcome: item.outcome })) : null,

@@ -23,7 +23,8 @@ function command(round: RemoteRound, sender: string, now: number, payload: Recor
   });
 }
 function start(round: RemoteRound, participants = ['host', 'guesser']) {
-  for (const id of participants) assert.equal(round.receive(id, command(round, id, 0, { kind: 'ready', contentHash }), 0), 'accepted');
+  for (const id of participants) if (!round.viewFor(id, 0)?.ready.includes(id))
+    assert.equal(round.receive(id, command(round, id, 0, { kind: 'ready', contentHash }), 0), 'accepted');
   assert.equal(round.receive('host', command(round, 'host', 0, { kind: 'start' }), 0), 'accepted');
 }
 
@@ -136,19 +137,19 @@ test('readiness from before a pause cannot acknowledge the new paused state', ()
   assert.equal(round.receive('host', command(round, 'host', 4000, { kind: 'resume' }), 4000), 'accepted');
 });
 
-test('a roster change invalidates ready messages composed for the earlier lobby', () => {
+test('a roster change keeps readiness from remaining players', () => {
   const round = create(['host', 'guesser', 'clue']);
   const delayedReady = command(round, 'guesser', 0, { kind: 'ready', contentHash });
   round.removeParticipant('clue', 0);
-  assert.equal(round.receive('guesser', delayedReady, 0), 'rejected');
+  assert.equal(round.receive('guesser', delayedReady, 0), 'accepted');
   const hostReady = command(round, 'host', 0, { kind: 'ready', contentHash });
   const guestReady = command(round, 'guesser', 0, { kind: 'ready', contentHash });
   assert.equal(round.receive('host', hostReady, 0), 'accepted');
-  assert.equal(round.receive('guesser', guestReady, 0), 'accepted');
+  assert.equal(round.receive('guesser', guestReady, 0), 'rejected');
   assert.equal(round.receive('host', command(round, 'host', 0, { kind: 'start' }), 0), 'accepted');
 });
 
-test('changing the lobby timer keeps the round visible and requires fresh readiness', () => {
+test('changing the lobby timer keeps the round visible and preserves readiness', () => {
   const round = create();
   const delayedReady = command(round, 'guesser', 0, { kind: 'ready', contentHash });
   assert.equal(round.receive('host', command(round, 'host', 0, { kind: 'ready', contentHash }), 0), 'accepted');
@@ -159,10 +160,10 @@ test('changing the lobby timer keeps the round visible and requires fresh readin
   assert.equal(after.phase, 'lobby');
   assert.equal(after.durationSeconds, 75);
   assert.equal(after.remainingMs, 75000);
-  assert.deepEqual(after.ready, []);
-  assert.equal(round.receive('guesser', delayedReady, 0), 'rejected');
+  assert.deepEqual(after.ready, ['host']);
+  assert.equal(round.receive('guesser', delayedReady, 0), 'accepted');
   assert.equal(round.setLobbyDuration(75), false);
-  assert.equal(round.viewFor('host', 0)?.revision, after.revision);
+  assert.equal(round.viewFor('host', 0)?.revision, after.revision + 1);
 });
 
 test('changing the lobby guesser keeps the round visible and updates card visibility', () => {
@@ -175,9 +176,9 @@ test('changing the lobby guesser keeps the round visible and updates card visibi
   assert.equal(after.roundId, before.roundId);
   assert.equal(after.phase, 'lobby');
   assert.equal(after.guesserId, 'host');
-  assert.deepEqual(after.ready, []);
+  assert.deepEqual(after.ready, ['host']);
   assert.ok(after.revision > before.revision);
-  assert.equal(round.receive('guesser', delayedReady, 0), 'rejected');
+  assert.equal(round.receive('guesser', delayedReady, 0), 'accepted');
   assert.equal(round.setLobbyGuesser('host'), false);
   assert.equal(round.setLobbyGuesser('stranger'), false);
   start(round);
@@ -219,13 +220,13 @@ test('a departing guesser hands the running round to another player', () => {
   const round = create(['host', 'guesser', 'clue']); start(round, ['host', 'guesser', 'clue']);
   round.removeParticipant('guesser', 4000);
   assert.equal(round.viewFor('host', 4000)?.phase, 'playing');
-  assert.equal(round.viewFor('host', 4000)?.card, null);
-  assert.equal(round.viewFor('host', 4000)?.guesserId, 'host');
-  assert.deepEqual(round.viewFor('host', 4000)?.ready, []);
+  assert.equal(round.viewFor('host', 4000)?.card?.answer, 'SECRET-1');
+  assert.equal(round.viewFor('host', 4000)?.guesserId, 'clue');
+  assert.deepEqual(new Set(round.viewFor('host', 4000)?.ready), new Set(['host', 'clue']));
   assert.equal(round.viewFor('guesser', 4000), null);
   round.addParticipant('returning', 4500);
   assert.equal(round.viewFor('returning', 4500)?.phase, 'playing');
-  assert.equal(round.viewFor('returning', 4500)?.guesserId, 'host');
+  assert.equal(round.viewFor('returning', 4500)?.guesserId, 'clue');
 });
 
 test('the round ends when a departure leaves only one player', () => {
@@ -239,10 +240,16 @@ test('the round ends when a departure leaves only one player', () => {
 
 test('results identify a timer expiration separately from running out of cards', () => {
   const timed = create(); start(timed);
+  assert.equal(timed.viewFor('host', 3000)?.card?.answer, 'SECRET-0');
   assert.equal(timed.viewFor('host', 33000)?.resultReason, 'time');
+  assert.deepEqual(timed.viewFor('guesser', 33000)?.results, [
+    { answer: 'SECRET-0', byline: 'HINT-0', outcome: 'neutral' },
+  ]);
+  assert.equal(timed.viewFor('guesser', 33000)?.score, 0);
   assert.ok(parseRemoteView(timed.viewFor('guesser', 33000), 'session', 'guesser'));
   assert.equal(parseRemoteView({ ...timed.viewFor('guesser', 33000), resultReason: null },
     'session', 'guesser'), null);
+  assert.equal(timed.viewFor('host', 34000)?.results?.length, 1);
 
   const exhausted = create(['host', 'guesser'], 1); start(exhausted);
   const nonce = exhausted.viewFor('guesser', 3000)?.cardNonce;

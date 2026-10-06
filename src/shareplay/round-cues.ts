@@ -36,14 +36,14 @@ export class SharePlayRoundCues {
     // it must not replay an old answer or end-of-round cue.
     if (sameRound && view.phase !== previous.phase) {
       if (view.phase === 'playing' && previous.phase === 'countdown') cues.push({ sound: 'round-start' });
-      else if (view.phase === 'playing' && ['feedback', 'handoff'].includes(previous.phase))
+      else if (view.phase === 'playing' && previous.phase === 'feedback')
         cues.push({ sound: 'flip', haptic: 'card-flip' });
       else if (view.phase === 'feedback' && view.feedback)
         cues.push({ sound: view.feedback, haptic: view.feedback });
       else if (view.phase === 'results') cues.push({ sound: 'round-end', haptic: 'times-up' });
     }
     const seconds = Math.ceil(remainingMs / 1000);
-    if (['playing', 'feedback', 'handoff'].includes(view.phase) && seconds >= 1 && seconds <= 10) {
+    if (['playing', 'feedback'].includes(view.phase) && seconds >= 1 && seconds <= 10) {
       const key = `tick:${view.sessionId}:${view.roundId}:${view.deadline}:${seconds}`;
       if (this.once(key)) {
         cues.push({ sound: 'final-tick', haptic: 'final-countdown' });

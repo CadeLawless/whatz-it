@@ -8,6 +8,7 @@ import type { SharePlayActivity, SharePlaySnapshot } from '../../modules/whatz-i
 import { ConnectionProbe, type PeerConnection } from './connection-probe';
 import { setSharePlayAudioBlocked } from './audio-policy';
 import { useCatalog } from '@/catalog/catalog-provider';
+import { loadRoundCardIds, rememberSharedCard } from '@/storage/daily-card-memory';
 import { useOwnedDeckIds } from '@/storefront/commerce-provider';
 import { canShareDeck } from './deck-access';
 import { LiveGame } from './live-game';
@@ -54,14 +55,13 @@ type SharePlayContextValue = {
   gameActions: {
     ready: () => void; start: () => void; pause: () => void; resume: () => void;
     answer: (outcome: RemoteOutcome) => void;
-    reveal: () => void;
     selectMode: (mode: GameMode) => void;
     selectGuesser: (guesserId: string) => void;
     selectDeck: (deckId: string) => void;
     selectDuration: (seconds: number) => void;
-    transferHost: (participantId: string) => Promise<boolean>;
     returnToLobby: () => void;
     nextRound: () => void;
+    endGame: () => void;
   };
   closeGame: () => void;
   open: (setup: Setup) => void;
@@ -128,6 +128,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const gameActive = useRef(false);
   const manualLobby = useRef(false);
   const liveGame = useRef<LiveGame | null>(null);
+  const endGameRef = useRef<() => void>(() => undefined);
   useEffect(() => { liveGame.current = new LiveGame({
     environment,
     trace: logSharePlay,
@@ -137,10 +138,16 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       if (!NativeSharePlay) return Promise.reject(new Error('SharePlay unavailable'));
       return NativeSharePlay.sendAsync(body, recipients);
     },
-    cards: (deckId) => {
+    cards: async (deckId) => {
       const deck = catalogRef.current.getDeckById(deckId);
       if (!canShareDeck(deck, ownedDeckIdsRef.current)) return null;
-      return deck!.cards.map((card) => ({ answer: card.text, byline: card.byline ?? '' }));
+      const eligibleIds = new Set(await loadRoundCardIds(deck!.cards, catalogRef.current.decks));
+      return deck!.cards.filter((card) => eligibleIds.has(card.id))
+        .map((card) => ({ answer: card.text, byline: card.byline ?? '' }));
+    },
+    onCardSeen: (card) => {
+      void rememberSharedCard({ text: card.answer, byline: card.byline || undefined },
+        catalogRef.current.decks);
     },
     availableDeckIds: () => catalogRef.current.decks
       .filter((deck) => canShareDeck(deck, ownedDeckIdsRef.current)).map((deck) => deck.id),
@@ -162,7 +169,6 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       if (startupPending.current || sessionRef.current.status !== 'joined') return;
       if (manualLobby.current && phase !== 'countdown') return;
       if (phase === 'countdown') manualLobby.current = false;
-      if (phase === 'paused' && !gameActive.current) return;
       if (gameActive.current) return;
       gameActive.current = true;
       setOpen(false);
@@ -187,6 +193,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       }).catch((error) => logSharePlay('session.end-receive-failed',
         { code: String(error?.code ?? 'native-leave-failed') }, true));
     },
+    onEndGame: () => endGameRef.current(),
     onHostClaim: (participantId, signed, term) => {
       const native = nativeSessionRef.current;
       if (native.status !== 'joined' || !participation.current.isActive(participantId) ||
@@ -532,12 +539,13 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const lobby = game.view;
     if (session.status !== 'joined' || !session.isHost || !lobby || !['lobby', 'paused'].includes(lobby.phase) ||
+      decks.selectedDeckId !== lobby.deck.deckId ||
       lobby.participants.length < 2 || !session.localParticipantId) return;
     if (lobby.participants.every((id) => lobby.ready.includes(id) &&
       !!(id === session.localParticipantId ? localPlayerName : playerNames[id]))) {
       liveGame.current?.act(lobby.phase === 'paused' ? 'resume' : 'start');
     }
-  }, [game.view, localPlayerName, playerNames, session.isHost, session.localParticipantId, session.status]);
+  }, [decks.selectedDeckId, game.view, localPlayerName, playerNames, session.isHost, session.localParticipantId, session.status]);
 
   const run = async (name: string, action: () => Promise<void>) => {
     if (operation.current) return;
@@ -595,36 +603,23 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       pause: () => liveGame.current?.act('pause'),
       resume: () => liveGame.current?.act('resume'),
       answer: (outcome) => liveGame.current?.act('answer', outcome),
-      reveal: () => liveGame.current?.act('reveal'),
       selectMode: (mode) => liveGame.current?.selectMode(mode),
       selectGuesser: (guesserId) => liveGame.current?.selectGuesser(guesserId),
       selectDeck: (deckId) => liveGame.current?.selectDeck(deckId),
       selectDuration: (seconds) => liveGame.current?.selectDuration(seconds),
-      transferHost: async (participantId) => {
-        if (operation.current) return false;
-        operation.current = true; setBusy(true); setError(null);
-        try { return await liveGame.current?.transferHost(participantId) ?? false; }
-        catch {
-          logSharePlay('host.transfer-failed', { participant: shortSharePlayId(participantId) }, true);
-          setError('Could not change the SharePlay host. Check the connection and try again.');
-          return false;
-        } finally { operation.current = false; setBusy(false); }
-      },
       returnToLobby: () => {
-        if (!sessionRef.current.isHost) return;
         liveGame.current?.returnToLobby();
-        setGameVisible(false); gameActive.current = false; manualLobby.current = false; setOpen(true);
       },
       nextRound: () => {
         liveGame.current?.nextRound();
-        setGameVisible(false); gameActive.current = false; manualLobby.current = false; setOpen(true);
       },
+      endGame: () => liveGame.current?.endGame(),
     },
     closeGame: () => {
       const phase = liveGame.current?.currentView?.phase;
       // Active rounds are exited through Leave or explicitly paused in the X
       // menu. A presentation callback must not pause everyone else's game.
-      if (phase && ['countdown', 'playing', 'feedback', 'handoff'].includes(phase)) return;
+      if (phase && ['countdown', 'playing', 'feedback'].includes(phase)) return;
       setGameVisible(false); gameActive.current = false; manualLobby.current = true; setOpen(true);
       if (sessionRef.current.isHost) liveGame.current?.returnToLobby();
     },
@@ -712,6 +707,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       }
     }),
   };
+  useEffect(() => { endGameRef.current = () => { void value.leave(true); }; });
   return <SharePlayContext.Provider value={value}>{children}</SharePlayContext.Provider>;
 }
 

@@ -35,6 +35,6 @@ test('leaving releases the screen and pre-join setup still respects local gamepl
 test('round options cannot cover time-up, other results, or a replacement lobby', () => {
   for (const phase of ['results', 'ended', 'lobby', undefined] as const)
     assert.equal(canShowSharePlayRoundOptions(phase), false);
-  for (const phase of ['playing', 'feedback', 'handoff', 'paused', 'countdown'] as const)
+  for (const phase of ['playing', 'feedback', 'paused', 'countdown'] as const)
     assert.equal(canShowSharePlayRoundOptions(phase), true);
 });

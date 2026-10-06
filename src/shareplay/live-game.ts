@@ -1,7 +1,7 @@
 import type { SharePlayMessage, SharePlaySnapshot } from '../../modules/whatz-it-shareplay/src/WhatzItSharePlay.types';
 import { RemoteClock } from './remote-clock';
 import { parseProbe } from './connection-probe';
-import { parseGameWire, parseRemoteView, type GameWire } from './game-wire';
+import { parseGameWire, parseRemoteView, type GameControl, type GameWire } from './game-wire';
 import { RemoteRound, type RemoteCard, type RemoteIntent, type RemoteOutcome, type RemoteView } from './remote-round';
 import { MAX_ROUND_DURATION, MIN_ROUND_DURATION } from '@/game/round-duration';
 import type { GameMode } from '../game/game-types';
@@ -11,7 +11,8 @@ type Callbacks = {
   uuid: () => string;
   digest: (text: string) => Promise<string>;
   send: (body: string, recipients: string[]) => Promise<void>;
-  cards: (deckId: string) => RemoteCard[] | null;
+  cards: (deckId: string) => RemoteCard[] | null | Promise<RemoteCard[] | null>;
+  onCardSeen?: (card: RemoteCard) => void;
   availableDeckIds: () => string[];
   onDecks: (selectedDeckId: string | null, availableDeckIds: string[], durationSeconds: number, mode: GameMode) => void;
   onView: (view: RemoteView | null) => void;
@@ -22,6 +23,7 @@ type Callbacks = {
   onHostTransfer?: (participantId: string, term: number) => void;
   onHostActivity?: () => void;
   onSessionEnd?: () => void;
+  onEndGame?: () => void;
   trace?: (stage: string, details?: Record<string, string | number | boolean | null>, warning?: boolean) => void;
 };
 
@@ -36,10 +38,14 @@ export class LiveGame {
   private preparing = false;
   private lastSnapshotAt = 0;
   private lastHostTime = -1;
+  private lastViewHostTime = -1;
+  private lastSelectionHostTime = -1;
   private lastPublishAt = 0;
   private lastClockAt = 0;
   private lastInventoryRequestAt = new Map<string, number>();
   private guesserId: string | null = null;
+  private savedReady: string[] = [];
+  private autoStartNext = false;
   private selectedDeckId: string | null = null;
   private selectionCleared = false;
   private selectedDurationSeconds = 60;
@@ -50,6 +56,7 @@ export class LiveGame {
   private foreground = true;
   private lastReply = new Map<string, number>();
   private lastHostClaimAt = 0;
+  private rememberedCards = new Set<string>();
 
   constructor(private callbacks: Callbacks) {}
 
@@ -85,7 +92,7 @@ export class LiveGame {
     this.foreground = active;
     if (!active) {
       if (this.view && this.view.guesserId === this.session?.localParticipantId &&
-        ['countdown', 'playing', 'feedback', 'handoff'].includes(this.view.phase)) this.act('pause');
+        ['countdown', 'playing', 'feedback'].includes(this.view.phase)) this.act('pause');
       // Drop all received answer data while the app is in the app switcher.
       if (!this.session?.isHost) this.setView(null);
       this.clock.reset();
@@ -107,7 +114,8 @@ export class LiveGame {
     }
     if (next.sessionId !== old?.sessionId) {
       this.generation++;
-      this.round = null; this.guesserId = null; this.clock.reset();
+      this.rememberedCards.clear();
+      this.round = null; this.guesserId = null; this.savedReady = []; this.autoStartNext = false; this.clock.reset();
       this.inventories.clear(); this.inventoryParts.clear(); this.pendingDeckRequest = null;
       this.selectedDeckId = next.activity?.deckId ?? null;
       this.selectionCleared = false;
@@ -116,13 +124,15 @@ export class LiveGame {
       this.reportDecks();
       this.lastReply.clear();
       this.lastInventoryRequestAt.clear();
-      this.lastSnapshotAt = 0; this.lastHostTime = -1; this.setView(null);
+      this.lastSnapshotAt = 0; this.lastHostTime = -1;
+      this.lastViewHostTime = -1; this.lastSelectionHostTime = -1; this.setView(null);
     } else if (old && (next.hostParticipantId !== old.hostParticipantId || next.hostTerm !== old.hostTerm)) {
       // The former host's hidden card order and clock cannot be reconstructed
       // from guest views. Start a fresh lobby under the elected host.
       this.generation++;
       this.round = null; this.pendingDeckRequest = null; this.guesserId = null;
       this.clock.reset(); this.lastSnapshotAt = 0; this.lastHostTime = -1;
+      this.lastViewHostTime = -1; this.lastSelectionHostTime = -1;
       this.setView(null);
       if (old.hostParticipantId) this.callbacks.onLobby();
     }
@@ -151,9 +161,10 @@ export class LiveGame {
       if (this.round && this.view) {
         const departed = this.view.participants.filter((id) => !members.includes(id));
         const arrived = members.filter((id) => !this.view!.participants.includes(id));
-        if ((this.view.phase === 'lobby' && (departed.length > 0 || arrived.length > 0)) ||
+        if ((this.view.phase === 'lobby' && this.selectedDeckId !== null &&
+          (departed.length > 0 || arrived.length > 0)) ||
           (['results', 'ended'].includes(this.view.phase) && arrived.length > 0)) {
-          this.round = null; this.setView(null); void this.prepare();
+          this.saveLobbyReady(); this.round = null; this.setView(null); void this.prepare();
         } else {
           for (const member of departed) this.round.removeParticipant(member, performance.now());
           for (const member of arrived) this.round.addParticipant(member, performance.now());
@@ -178,8 +189,19 @@ export class LiveGame {
         synchronized: this.synchronized });
     }
     this.view = view;
+    if (view) {
+      const seen = [view.card, ...(view.results ?? [])];
+      for (const card of seen) {
+        if (!card) continue;
+        const key = JSON.stringify([view.sessionId, view.roundId, card.answer, card.byline]);
+        if (this.rememberedCards.has(key)) continue;
+        this.rememberedCards.add(key);
+        this.callbacks.onCardSeen?.(card);
+      }
+    }
+    if (view && this.session?.isHost) this.guesserId = view.guesserId;
     this.callbacks.onView(view);
-    if (view && !this.session?.isHost && (!this.selectionCleared || view.phase === 'lobby')) {
+    if (view && !this.session?.isHost && !this.selectionCleared) {
       this.selectionCleared = false;
       this.selectedDeckId = view.deck.deckId;
       this.selectedDurationSeconds = view.durationSeconds;
@@ -187,7 +209,7 @@ export class LiveGame {
       this.reportDecks();
     }
     if (view?.phase === 'lobby' && previous && previous.phase !== 'lobby') this.callbacks.onLobby();
-    if (view && ['countdown', 'playing', 'feedback', 'handoff', 'paused', 'results'].includes(view.phase)) this.callbacks.onActive(view.phase);
+    if (view && ['countdown', 'playing', 'feedback', 'paused', 'results'].includes(view.phase)) this.callbacks.onActive(view.phase);
   }
 
   private send(message: GameWire, recipients: string[]) {
@@ -250,10 +272,7 @@ export class LiveGame {
     this.selectionCleared = true;
     this.generation++;
     this.pendingDeckRequest = null;
-    if (this.view?.phase === 'lobby') {
-      this.round = null;
-      this.setView(null);
-    }
+    // Keep the lobby view so its current controller can choose another deck.
     this.callbacks.trace?.('deck.selection-cleared', { code: 'no-connected-owner' });
     this.reportDecks();
     this.sendDeckSelection(session.participantIds.filter((id) => id !== session.localParticipantId));
@@ -294,6 +313,10 @@ export class LiveGame {
     return shuffled.slice(0, 20);
   }
 
+  private saveLobbyReady() {
+    if (this.view?.phase === 'lobby') this.savedReady = [...this.view.ready];
+  }
+
   private async prepare() {
     const current = this.session;
     const deckId = this.selectedDeckId;
@@ -315,11 +338,11 @@ export class LiveGame {
       this.send({ version: 3, kind: 'deck-request', requestId: id, deckId }, [sponsorId]);
       return;
     }
-    const cards = this.callbacks.cards(deckId);
-    if (!cards?.length) { this.callbacks.trace?.('deck.no-cards', {}, true); return; }
     this.preparing = true;
     const generation = ++this.generation;
     try {
+      const cards = await this.callbacks.cards(deckId);
+      if (!cards?.length) { this.callbacks.trace?.('deck.no-cards', {}, true); return; }
       const selected = this.shuffledRound(cards);
       if (!selected.length) return;
       const contentHash = await this.callbacks.digest(JSON.stringify(selected));
@@ -342,14 +365,19 @@ export class LiveGame {
       !current.participantIds.includes(sponsorId) || current.participantIds.length < 2) return;
     const players = current.participantIds;
     const guesserId = this.guesserId && players.includes(this.guesserId)
-      ? this.guesserId : players.find((id) => id !== current.localParticipantId)!;
+      ? this.guesserId : current.localParticipantId;
     this.round = new RemoteRound({
       sessionId: current.sessionId, environment: this.callbacks.environment,
       hostId: current.localParticipantId, roundId: this.callbacks.uuid(), participants: players,
-      guesserId, durationSeconds: this.selectedDurationSeconds, mode: this.selectedMode,
+      guesserId, initialReady: this.savedReady, durationSeconds: this.selectedDurationSeconds, mode: this.selectedMode,
       deck: { deckId, contentHash, sponsorId }, cards,
     }, () => `card-${++this.nonce}-${this.callbacks.uuid()}`);
     this.guesserId = guesserId;
+    this.savedReady = [];
+    if (this.autoStartNext) {
+      this.round.startNext(performance.now());
+      this.autoStartNext = false;
+    }
     this.callbacks.trace?.('round.created', { members: players.length, deckCount: cards.length,
       participant: guesserId.slice(-8) });
     this.publish();
@@ -400,12 +428,13 @@ export class LiveGame {
     if (wire.kind === 'deck-selection') {
       if (session.isHost || !fromHost || wire.hostTime < this.lastHostTime) return;
       this.lastHostTime = wire.hostTime;
+      this.lastSelectionHostTime = wire.hostTime;
       this.selectedDeckId = wire.deckId;
       this.selectionCleared = wire.deckId === null;
       this.selectedDurationSeconds = wire.durationSeconds;
       this.selectedMode = wire.mode ?? 'classic';
-      if (wire.deckId === null && wire.inLobby) {
-        const wasInRound = this.view && this.view.phase !== 'lobby';
+      if (wire.deckId === null && wire.inLobby && this.view?.phase !== 'lobby') {
+        const wasInRound = !!this.view;
         this.setView(null);
         if (wasInRound) this.callbacks.onLobby();
       }
@@ -422,14 +451,17 @@ export class LiveGame {
       if (session.isHost || !fromHost) return;
       const view = parseRemoteView(wire.view, session.sessionId, session.localParticipantId);
       if (!view || view.hostId !== message.senderId ||
-        wire.hostTime < this.lastHostTime ||
+        wire.hostTime < this.lastViewHostTime ||
+        (wire.hostTime < this.lastSelectionHostTime && this.selectedDeckId !== null &&
+          view.deck.deckId !== this.selectedDeckId) ||
         (this.view && view.roundId === this.view.roundId && view.revision < this.view.revision) ||
         (this.view && view.roundId !== this.view.roundId && view.phase !== 'lobby' &&
           !['lobby', 'paused', 'results', 'ended'].includes(this.view.phase))) {
         this.callbacks.trace?.('view.rejected', { code: !view ? 'invalid-view' : 'stale-or-wrong-host' }, true); return;
       }
       this.lastSnapshotAt = now;
-      this.lastHostTime = wire.hostTime;
+      this.lastViewHostTime = wire.hostTime;
+      this.lastHostTime = Math.max(this.lastHostTime, wire.hostTime);
       if (this.foreground) this.setView(view);
       return;
     }
@@ -439,6 +471,10 @@ export class LiveGame {
       this.callbacks.trace?.('intent.result', { kind: wire.intent.kind, result,
         participant: message.senderId.slice(-8) }, result === 'rejected');
       if (result !== 'rejected') this.publish();
+      return;
+    }
+    if (wire.kind === 'control') {
+      if (session.isHost) this.applyControl(message.senderId, wire);
       return;
     }
     if (wire.kind === 'inventory-request') {
@@ -471,11 +507,14 @@ export class LiveGame {
       const key = `${message.senderId}:deck:${wire.requestId}`;
       if (this.lastReply.has(key)) return;
       this.lastReply.set(key, now);
-      const cards = this.callbacks.cards(wire.deckId);
-      if (!cards?.length) return;
-      const selected = this.shuffledRound(cards);
-      if (!selected.length) return;
-      void this.callbacks.digest(JSON.stringify(selected)).then((contentHash) => {
+      void Promise.resolve(this.callbacks.cards(wire.deckId)).then((cards) => {
+        if (!cards?.length) return null;
+        const selected = this.shuffledRound(cards);
+        if (!selected.length) return null;
+        return this.callbacks.digest(JSON.stringify(selected)).then((contentHash) => ({ selected, contentHash }));
+      }).then((prepared) => {
+        if (!prepared) return;
+        const { selected, contentHash } = prepared;
         if (this.session?.sessionId === session.sessionId && this.session.status === 'joined' &&
           this.inventories.get(session.localParticipantId!)?.has(wire.deckId)) {
           this.send({ version: 3, kind: 'deck-cards', requestId: wire.requestId,
@@ -573,7 +612,7 @@ export class LiveGame {
     }
   }
 
-  act(kind: 'ready' | 'start' | 'pause' | 'resume' | 'end' | 'answer' | 'reveal', outcome?: RemoteOutcome) {
+  act(kind: 'ready' | 'start' | 'pause' | 'resume' | 'end' | 'answer', outcome?: RemoteOutcome) {
     const session = this.session;
     const view = this.view;
     if (!session || session.status !== 'joined' || !session.localParticipantId || !view) {
@@ -583,8 +622,6 @@ export class LiveGame {
     if (kind === 'answer' && (!view.canAnswer || !view.cardNonce)) {
       this.callbacks.trace?.('action.blocked', { kind, code: 'not-authorized' }, true); return;
     }
-    if (kind === 'reveal' && (view.phase !== 'handoff' || !view.cardNonce ||
-      view.guesserId !== session.localParticipantId)) return;
     this.callbacks.trace?.('action.request', { kind, phase: view.phase, revision: view.revision,
       isHost: session.isHost });
     const base = { protocol: 1 as const, sessionId: session.sessionId!,
@@ -592,7 +629,6 @@ export class LiveGame {
       intentId: this.callbacks.uuid(), revision: view.revision };
     const intent: RemoteIntent = kind === 'ready' ? { ...base, kind, contentHash: view.deck.contentHash }
       : kind === 'answer' ? { ...base, kind, cardNonce: view.cardNonce!, outcome: outcome! }
-        : kind === 'reveal' ? { ...base, kind, cardNonce: view.cardNonce! }
         : { ...base, kind };
     if (session.isHost && this.round) {
       const result = this.round.receive(session.localParticipantId, JSON.stringify(intent), performance.now());
@@ -602,80 +638,101 @@ export class LiveGame {
   }
 
   selectGuesser(guesserId: string) {
-    const session = this.session;
-    if (!session?.isHost || !this.view || this.view.phase !== 'lobby' ||
-      !session.participantIds.includes(guesserId) || guesserId === this.view.guesserId) return;
-    this.guesserId = guesserId;
-    if (this.round?.setLobbyGuesser(guesserId)) {
-      this.publish();
-      return;
-    }
-    this.pendingDeckRequest = null;
-    this.round = null; this.setView(null); void this.prepare();
+    this.requestControl({ action: 'select-guesser', participantId: guesserId });
   }
 
   selectDeck(deckId: string) {
-    if (!this.session?.isHost || (this.view && !['lobby', 'paused', 'results', 'ended'].includes(this.view.phase)) ||
-      ![...this.inventories.values()].some((ids) => ids.has(deckId))) return;
-    if (deckId === this.selectedDeckId && this.round) return;
-    this.selectedDeckId = deckId;
-    this.selectionCleared = false;
-    this.pendingDeckRequest = null;
-    this.round = null;
-    this.setView(null);
-    this.reportDecks();
-    void this.prepare();
+    this.requestControl({ action: 'select-deck', deckId });
   }
 
   selectMode(mode: GameMode) {
-    if (!this.session?.isHost || this.session.status !== 'joined' ||
-      (this.view && this.view.phase !== 'lobby') || !['classic', 'pass-n-play'].includes(mode) ||
-      mode === this.selectedMode) return;
-    this.selectedMode = mode;
-    this.callbacks.trace?.('round.mode-selected', { kind: mode });
-    this.reportDecks();
-    this.sendDeckSelection(this.session.participantIds.filter((id) => id !== this.session!.localParticipantId));
-    if (this.round?.setLobbyMode(mode)) this.publish();
-    else {
-      this.pendingDeckRequest = null; this.round = null; this.setView(null); void this.prepare();
-    }
+    this.requestControl({ action: 'select-mode', mode });
   }
 
   selectDuration(seconds: number) {
-    if (!this.session?.isHost || (this.view && !['lobby', 'paused', 'results', 'ended'].includes(this.view.phase)) ||
-      !Number.isInteger(seconds) || seconds < MIN_ROUND_DURATION || seconds > MAX_ROUND_DURATION ||
-      seconds === this.selectedDurationSeconds) return;
-    this.selectedDurationSeconds = seconds;
-    this.callbacks.trace?.('round.duration-selected', { seconds });
-    this.reportDecks();
-    if (this.round?.setLobbyDuration(seconds)) {
-      this.publish();
-      return;
-    }
-    this.pendingDeckRequest = null;
-    this.round = null;
-    this.setView(null);
-    void this.prepare();
+    this.requestControl({ action: 'select-duration', seconds });
   }
 
   returnToLobby() {
-    if (!this.session?.isHost || this.session.status !== 'joined' || !this.view ||
-      this.view.phase === 'lobby') return;
-    this.round = null; this.pendingDeckRequest = null; this.guesserId = null;
-    this.setView(null); void this.prepare();
-    this.sendDeckSelection(this.session.participantIds.filter((id) => id !== this.session!.localParticipantId));
+    this.requestControl({ action: 'return-to-lobby' });
   }
 
   nextRound() {
-    if (!this.session?.isHost || !this.view || !['results', 'ended'].includes(this.view.phase)) return;
-    const candidates = this.session.participantIds;
-    if (candidates.length < 2) return;
-    const currentIndex = candidates.indexOf(this.view.guesserId);
-    const guesserId = candidates[(currentIndex + 1) % candidates.length];
-    this.guesserId = guesserId;
-    this.pendingDeckRequest = null;
-    this.round = null; this.setView(null); void this.prepare();
-    this.sendDeckSelection(this.session.participantIds.filter((id) => id !== this.session!.localParticipantId));
+    this.requestControl({ action: 'next-round' });
+  }
+
+  endGame() {
+    this.requestControl({ action: 'end-game' });
+  }
+
+  private requestControl(action: GameControl) {
+    const session = this.session;
+    if (!session || session.status !== 'joined' || !session.localParticipantId || !this.view ||
+      this.view.guesserId !== session.localParticipantId) return;
+    const control = { version: 3 as const, kind: 'control' as const,
+      roundId: this.view.roundId, revision: this.view.revision, ...action };
+    if (session.isHost) this.applyControl(session.localParticipantId, control);
+    else if (session.hostParticipantId) this.send(control, [session.hostParticipantId]);
+  }
+
+  private applyControl(senderId: string, control: Extract<GameWire, { kind: 'control' }>) {
+    const session = this.session;
+    const view = this.view;
+    if (!session?.isHost || !view || control.roundId !== view.roundId ||
+      control.revision !== view.revision || senderId !== view.guesserId ||
+      !session.participantIds.includes(senderId)) return;
+    const lobby = view.phase === 'lobby';
+    if (control.action === 'select-guesser') {
+      if (!(lobby || view.phase === 'results') || !session.participantIds.includes(control.participantId) ||
+        control.participantId === view.guesserId) return;
+      this.guesserId = control.participantId;
+      if (this.round?.setLobbyGuesser(control.participantId)) this.publish();
+      return;
+    }
+    if (control.action === 'select-deck') {
+      if (!lobby || ![...this.inventories.values()].some((ids) => ids.has(control.deckId)) ||
+        control.deckId === this.selectedDeckId) return;
+      this.saveLobbyReady();
+      this.selectedDeckId = control.deckId; this.selectionCleared = false;
+      this.pendingDeckRequest = null; this.round = null; this.setView(null);
+      this.reportDecks(); this.sendDeckSelection(session.participantIds.filter((id) => id !== session.localParticipantId));
+      void this.prepare();
+      return;
+    }
+    if (control.action === 'select-mode') {
+      if (!lobby || control.mode === this.selectedMode) return;
+      this.selectedMode = control.mode; this.reportDecks();
+      this.sendDeckSelection(session.participantIds.filter((id) => id !== session.localParticipantId));
+      if (this.round?.setLobbyMode(control.mode)) this.publish();
+      return;
+    }
+    if (control.action === 'select-duration') {
+      if (!lobby || control.seconds === this.selectedDurationSeconds ||
+        control.seconds < MIN_ROUND_DURATION || control.seconds > MAX_ROUND_DURATION) return;
+      this.selectedDurationSeconds = control.seconds; this.reportDecks();
+      if (this.round?.setLobbyDuration(control.seconds)) this.publish();
+      return;
+    }
+    if (control.action === 'next-round') {
+      if (view.phase !== 'results' || session.participantIds.length < 2) return;
+      this.guesserId = view.guesserId;
+      this.savedReady = []; this.autoStartNext = true;
+      this.pendingDeckRequest = null; this.round = null; this.setView(null); void this.prepare();
+      return;
+    }
+    if (control.action === 'return-to-lobby') {
+      if (lobby) return;
+      this.savedReady = []; this.autoStartNext = false;
+      if (this.selectedDeckId === null && this.round) {
+        this.round.resetToLobby(); this.publish(); return;
+      }
+      this.round = null; this.pendingDeckRequest = null;
+      this.guesserId = view.guesserId;
+      this.setView(null); void this.prepare();
+      this.sendDeckSelection(session.participantIds.filter((id) => id !== session.localParticipantId));
+      return;
+    }
+    if (control.action === 'end-game') this.callbacks.onEndGame?.();
   }
 
   async endSession(): Promise<void> {

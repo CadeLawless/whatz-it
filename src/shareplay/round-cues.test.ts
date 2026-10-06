@@ -8,13 +8,11 @@ const view = (phase: RemoteView['phase'], patch: Partial<RemoteView> = {}) => ({
   revision: 1, feedback: null, ...patch,
 }) as RemoteView;
 
-test('handoffs keep final timer cues and reveal plays the card flip once', () => {
+test('the next card plays the flip once while final timer cues continue', () => {
   const cues = new SharePlayRoundCues();
   cues.next(view('feedback', { mode: 'pass-n-play', feedback: 'correct' }), 0, 12000);
-  assert.deepEqual(cues.next(view('handoff', { mode: 'pass-n-play' }), 0, 10000),
-    [{ sound: 'final-tick', haptic: 'final-countdown' }]);
   assert.deepEqual(cues.next(view('playing', { mode: 'pass-n-play' }), 0, 10000),
-    [{ sound: 'flip', haptic: 'card-flip' }]);
+    [{ sound: 'flip', haptic: 'card-flip' }, { sound: 'final-tick', haptic: 'final-countdown' }]);
   assert.deepEqual(cues.next(view('playing', { mode: 'pass-n-play' }), 0, 10000), []);
 });
 

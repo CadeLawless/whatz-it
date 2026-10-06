@@ -1,7 +1,7 @@
 import { buildFlightRecorderTraceText, recordFlightEvent } from '@/utils/flight-recorder';
 
 type Value = string | number | boolean | null;
-export const SHAREPLAY_RUNTIME_REVISION = 'pass-n-play-v5';
+export const SHAREPLAY_RUNTIME_REVISION = 'role-control-v6';
 // Only these metadata fields may enter the persistent trace. Never record wire bodies,
 // card text, purchase records, signing keys, or invitation nonces.
 const allowed = new Set(['status', 'session', 'participant', 'members', 'isHost', 'kind',

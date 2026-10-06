@@ -23,7 +23,8 @@ function act(round: RemoteRound, sender: string, now: number,
     intentId: `intent-${++intentId}`, ...payload }), now);
 }
 function start(round: RemoteRound, participants = members) {
-  for (const id of participants) assert.equal(act(round, id, 0, { kind: 'ready', contentHash }), 'accepted');
+  for (const id of participants) if (!round.viewFor(id, 0)?.ready.includes(id))
+    assert.equal(act(round, id, 0, { kind: 'ready', contentHash }), 'accepted');
   assert.equal(act(round, 'host', 0, { kind: 'start' }), 'accepted');
   round.tick(3000);
 }
@@ -34,7 +35,7 @@ function correct(round: RemoteRound, now: number) {
     cardNonce: guesser.cardNonce }), 'accepted');
 }
 
-test('pass keeps the clue giver; correct cycles through every player with a running-clock handoff', () => {
+test('pass keeps the clue giver; correct gives each next player the card with a running clock', () => {
   const round = create(); start(round);
   const deadline = round.viewFor('alice', 3000)!.deadline;
   assert.equal(act(round, 'alice', 3000, { kind: 'answer', outcome: 'pass',
@@ -45,16 +46,15 @@ test('pass keeps the clue giver; correct cycles through every player with a runn
   for (const next of ['bob', 'host', 'alice']) {
     correct(round, now);
     now += 600;
-    const handoff = round.viewFor(next, now)!;
-    assert.equal(handoff.phase, 'handoff');
-    assert.equal(handoff.guesserId, next);
-    assert.equal(handoff.deadline, deadline);
+    const nextTurn = round.viewFor(next, now)!;
+    assert.equal(nextTurn.phase, 'playing');
+    assert.equal(nextTurn.guesserId, next);
+    assert.equal(nextTurn.deadline, deadline);
     for (const id of members) {
       const view = round.viewFor(id, now)!;
-      assert.equal(view.card, null);
+      assert.equal(!!view.card, id === next);
       assert.ok(parseRemoteView(view, 'session', id));
     }
-    assert.equal(act(round, next, now, { kind: 'reveal', cardNonce: handoff.cardNonce }), 'accepted');
     assert.ok(round.viewFor(next, now)!.card);
     assert.equal(round.viewFor(next, now)!.canAnswer, true);
     assert.equal(round.viewFor(next === 'host' ? 'alice' : 'host', now)!.card, null);
@@ -63,17 +63,15 @@ test('pass keeps the clue giver; correct cycles through every player with a runn
   assert.equal(round.viewFor('host', now)!.score, 3);
 });
 
-test('only the next clue giver can reveal; previous scoring and handoff tokens cannot score a new card', () => {
+test('only the next clue giver can score the new card; old tokens cannot score it', () => {
   const round = create(); start(round);
   const oldNonce = round.viewFor('alice', 3000)!.cardNonce;
   correct(round, 3000);
-  const handoff = round.viewFor('bob', 3600)!;
-  assert.equal(act(round, 'host', 3600, { kind: 'reveal', cardNonce: handoff.cardNonce }), 'rejected');
-  assert.equal(act(round, 'bob', 3600, { kind: 'answer', outcome: 'correct', cardNonce: handoff.cardNonce }), 'rejected');
-  assert.equal(parseRemoteView({ ...handoff, card: { answer: 'LEAK', byline: '' } }, 'session', 'bob'), null);
-  assert.equal(act(round, 'bob', 3600, { kind: 'reveal', cardNonce: handoff.cardNonce }), 'accepted');
-  assert.equal(act(round, 'bob', 3600, { kind: 'answer', outcome: 'correct', cardNonce: handoff.cardNonce }), 'rejected');
+  const nextTurn = round.viewFor('bob', 3600)!;
+  assert.ok(nextTurn.card);
+  assert.equal(act(round, 'host', 3600, { kind: 'answer', outcome: 'correct', cardNonce: nextTurn.cardNonce }), 'rejected');
   assert.equal(act(round, 'alice', 3600, { kind: 'answer', outcome: 'correct', cardNonce: oldNonce }), 'rejected');
+  assert.equal(act(round, 'bob', 3600, { kind: 'answer', outcome: 'pass', cardNonce: nextTurn.cardNonce }), 'accepted');
 });
 
 for (const count of [8, 32]) test(`${count} players each give clues and the rest of the group never receives the answer`, () => {
@@ -82,10 +80,9 @@ for (const count of [8, 32]) test(`${count} players each give clues and the rest
   let now = 3000;
   for (const next of [...players.slice(2), 'host', 'alice']) {
     correct(round, now); now += 600;
-    const handoff = round.viewFor(next, now)!;
-    assert.equal(handoff.guesserId, next);
-    assert.equal(handoff.card, null);
-    assert.equal(act(round, next, now, { kind: 'reveal', cardNonce: handoff.cardNonce }), 'accepted');
+    const nextTurn = round.viewFor(next, now)!;
+    assert.equal(nextTurn.guesserId, next);
+    assert.ok(nextTurn.card);
     for (const id of players) {
       const view = round.viewFor(id, now)!;
       assert.ok(parseRemoteView(view, 'session', id));
@@ -110,16 +107,24 @@ test('a ninth player can join an existing round', () => {
   assert.ok(parseRemoteView(view, 'session', 'p8'));
 });
 
-test('handoff time counts toward the deadline and cannot reveal after time expires', () => {
+test('the next card stays on the same deadline and cannot be scored after time expires', () => {
   const round = create(); start(round); correct(round, 3000);
-  const handoff = round.viewFor('bob', 3600)!;
+  const nextTurn = round.viewFor('bob', 3600)!;
   assert.equal(round.viewFor('host', 10000)!.remainingMs, 23000);
-  assert.equal(act(round, 'bob', 33000, { kind: 'reveal', cardNonce: handoff.cardNonce }), 'rejected');
+  assert.equal(act(round, 'bob', 33000, { kind: 'answer', outcome: 'correct', cardNonce: nextTurn.cardNonce }), 'rejected');
   assert.equal(round.viewFor('host', 33000)!.resultReason, 'time');
 });
 
+test('round results assign control to the player after the last clue giver', () => {
+  const round = create(); start(round);
+  correct(round, 3000);
+  assert.equal(round.viewFor('host', 3600)?.guesserId, 'bob');
+  assert.equal(round.viewFor('host', 33000)?.phase, 'results');
+  assert.equal(round.viewFor('host', 33000)?.guesserId, 'host');
+});
+
 for (const pauseDuringFeedback of [false, true]) {
-  test(`pause during ${pauseDuringFeedback ? 'correct feedback' : 'handoff'} resumes the same next clue giver after readiness`, () => {
+  test(`pause during ${pauseDuringFeedback ? 'correct feedback' : 'next turn'} resumes the same next clue giver after readiness`, () => {
     const round = create(); start(round); correct(round, 3000);
     const pausedAt = pauseDuringFeedback ? 3100 : 3700;
     assert.equal(act(round, 'host', pausedAt, { kind: 'pause' }), 'accepted');
@@ -127,31 +132,32 @@ for (const pauseDuringFeedback of [false, true]) {
     for (const id of members) assert.equal(act(round, id, 5000, { kind: 'ready', contentHash }), 'accepted');
     assert.equal(act(round, 'host', 5000, { kind: 'resume' }), 'accepted');
     const resumed = round.viewFor('bob', 8000)!;
-    assert.equal(resumed.phase, 'handoff');
+    assert.equal(resumed.phase, 'playing');
     assert.equal(resumed.guesserId, 'bob');
     assert.equal(resumed.remainingMs, 33000 - pausedAt);
-    assert.equal(act(round, 'bob', 8000, { kind: 'reveal', cardNonce: resumed.cardNonce }), 'accepted');
+    assert.ok(resumed.card);
   });
 }
 
-test('a departing next clue giver is replaced without revealing a card or pausing the timer', () => {
+test('a departing next clue giver is replaced without pausing the timer', () => {
   const round = create(); start(round); correct(round, 3000);
   const before = round.viewFor('bob', 3600)!;
   round.removeParticipant('bob', 3700);
   const after = round.viewFor('host', 3700)!;
-  assert.equal(after.phase, 'handoff');
+  assert.equal(after.phase, 'playing');
   assert.equal(after.guesserId, 'host');
+  assert.ok(after.card);
   assert.equal(after.deadline, before.deadline);
   assert.notEqual(after.cardNonce, before.cardNonce);
   round.removeParticipant('alice', 3800);
   assert.equal(round.viewFor('host', 3800)!.resultReason, 'players');
 });
 
-test('changing lobby mode clears readiness and cannot alter an active round', () => {
+test('changing lobby mode preserves readiness and cannot alter an active round', () => {
   const round = create();
   act(round, 'host', 0, { kind: 'ready', contentHash });
   assert.equal(round.setLobbyMode('classic'), true);
-  assert.deepEqual(round.viewFor('host', 0)!.ready, []);
+  assert.deepEqual(round.viewFor('host', 0)!.ready, ['host']);
   assert.equal(round.viewFor('host', 0)!.mode, 'classic');
   start(round);
   assert.equal(round.setLobbyMode('pass-n-play'), false);
@@ -164,7 +170,7 @@ test('the host-selected starting player takes the first turn before rotation beg
   const round = create();
   act(round, 'alice', 0, { kind: 'ready', contentHash });
   assert.equal(round.setLobbyGuesser('bob'), true);
-  assert.deepEqual(round.viewFor('host', 0)!.ready, []);
+  assert.deepEqual(round.viewFor('host', 0)!.ready, ['alice']);
   start(round);
   assert.equal(round.viewFor('bob', 3000)!.canAnswer, true);
   assert.equal(round.viewFor('alice', 3000)!.canAnswer, false);
@@ -172,7 +178,7 @@ test('the host-selected starting player takes the first turn before rotation beg
   assert.equal(round.viewFor('host', 3600)!.guesserId, 'host');
 });
 
-test('two live clients synchronize mode, rotate turns and recover handoff snapshots', async (context) => {
+test('two live clients synchronize mode, rotate turns and recover next-card snapshots', async (context) => {
   let now = 1000;
   context.mock.method(performance, 'now', () => now);
   const clients = new Map<string, LiveGame>();
@@ -205,12 +211,11 @@ test('two live clients synchronize mode, rotate turns and recover handoff snapsh
   now = 4000; host.pulse(); await flush();
   guest.act('answer', 'correct'); await flush();
   now = 4600; host.pulse(); await flush();
-  assert.equal(host.currentView!.phase, 'handoff');
+  assert.equal(host.currentView!.phase, 'playing');
   assert.equal(host.currentView!.guesserId, 'host');
-  guest.act('reveal'); await flush(); assert.equal(host.currentView!.phase, 'handoff');
+  assert.ok(host.currentView!.card);
   guest.setForeground(false); guest.setForeground(true); await flush();
-  assert.equal(guest.currentView!.phase, 'handoff');
-  host.act('reveal'); await flush();
+  assert.equal(guest.currentView!.phase, 'playing');
   assert.ok(host.currentView!.card);
   assert.equal(guest.currentView!.card, null);
   const previousRoundId = host.currentView!.roundId;
@@ -234,6 +239,73 @@ test('replacing a clue giver keeps the card because the replacement has not seen
   const answer = round.viewFor('alice', 3000)!.card;
   assert.equal(round.viewFor('host', 3000)!.card, null);
   round.removeParticipant('alice', 3100);
-  assert.deepEqual(round.viewFor('host', 3100)!.card, answer);
-  assert.equal(round.viewFor('bob', 3100)!.card, null);
+  assert.deepEqual(round.viewFor('bob', 3100)!.card, answer);
+  assert.equal(round.viewFor('host', 3100)!.card, null);
+});
+
+test('the next guesser controls settings and starts the next round directly from results', async (context) => {
+  let now = 1000;
+  context.mock.method(performance, 'now', () => now);
+  const clients = new Map<string, LiveGame>();
+  const deliveries: Promise<void>[] = [];
+  let sequence = 0;
+  const roster: SharePlaySnapshot = { revision: 1, status: 'joined', sessionId: 'session',
+    localParticipantId: 'guest', participantIds: ['host', 'guest'], isHost: false, hostParticipantId: 'host',
+    activity: { protocolVersion: 4, environment: 'test', nonce: 'activity', deckId: 'deck',
+      deckTitle: 'Deck', durationSeconds: 30, hostPublicKey: 'key' } };
+  const flush = async () => {
+    for (let i = 0; i < 12; i++) { await Promise.all(deliveries.splice(0)); await Promise.resolve(); }
+  };
+  for (const id of ['host', 'guest']) clients.set(id, new LiveGame({ environment: 'test',
+    uuid: () => `control-${++sequence}`, digest: async () => contentHash,
+    cards: () => [{ answer: 'FIRST', byline: '' }, { answer: 'SECOND', byline: '' }],
+    availableDeckIds: () => ['deck'], onDecks: () => undefined, onView: () => undefined,
+    onActive: () => undefined, onLobby: () => undefined, onError: (error) => { throw new Error(error); },
+    send: async (body, recipients) => { for (const recipient of recipients)
+      deliveries.push(Promise.resolve().then(() => clients.get(recipient)!.receive({
+        sessionId: 'session', senderId: id, senderIsHost: id === 'host', body }))); },
+  }));
+  const host = clients.get('host')!;
+  const guest = clients.get('guest')!;
+  host.setSession({ ...roster, localParticipantId: 'host', isHost: true }); guest.setSession(roster);
+  await flush();
+  assert.equal(host.currentView?.guesserId, 'host');
+  guest.selectDuration(45); await flush();
+  assert.equal(host.currentView?.durationSeconds, 30);
+  host.selectGuesser('guest'); await flush();
+  guest.selectDuration(45); await flush();
+  assert.equal(host.currentView?.durationSeconds, 45);
+  assert.equal(guest.currentView?.durationSeconds, 45);
+  host.selectMode('pass-n-play'); await flush();
+  assert.equal(guest.currentView?.mode, 'classic');
+  guest.act('ready'); host.act('ready'); await flush(); host.act('start'); await flush();
+  const oldRoundId = host.currentView!.roundId;
+  now = 49_000; host.pulse(); await flush();
+  assert.equal(host.currentView?.phase, 'results');
+  assert.equal(host.currentView?.guesserId, 'host');
+  guest.nextRound(); await flush();
+  assert.equal(host.currentView?.roundId, oldRoundId);
+  host.nextRound(); await flush();
+  assert.equal(host.currentView?.phase, 'countdown');
+  assert.notEqual(host.currentView?.roundId, oldRoundId);
+  assert.equal(host.currentView?.deck.deckId, 'deck');
+  assert.equal(host.currentView?.guesserId, 'host');
+  assert.equal(guest.currentView?.phase, 'countdown');
+  now = 100_000; host.pulse(); await flush();
+  assert.equal(host.currentView?.phase, 'results');
+  assert.equal(host.currentView?.guesserId, 'guest');
+  const secondRoundId = host.currentView!.roundId;
+  guest.selectGuesser('host'); await flush();
+  assert.equal(host.currentView?.guesserId, 'host');
+  guest.nextRound(); await flush();
+  assert.equal(host.currentView?.roundId, secondRoundId);
+  host.selectGuesser('guest'); await flush();
+  assert.equal(host.currentView?.guesserId, 'guest');
+  host.nextRound(); await flush();
+  assert.equal(host.currentView?.roundId, secondRoundId);
+  guest.nextRound(); await flush();
+  assert.equal(host.currentView?.phase, 'countdown');
+  assert.equal(host.currentView?.guesserId, 'guest');
+  assert.equal(host.currentView?.deck.deckId, 'deck');
+  assert.notEqual(host.currentView?.roundId, secondRoundId);
 });

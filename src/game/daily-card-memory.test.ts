@@ -19,7 +19,7 @@ describe('card cooldown memory', () => {
     { id: 'four', text: 'Song' },
   ];
 
-  it('hides exact content across card IDs and decks for five full days', () => {
+  it('hides exact content across card IDs and decks for three full days', () => {
     const memory = { [cardContentKey(cards[0])]: now };
     assert.deepEqual(getAvailableCardIds([{ id: 'other-deck-id', text: 'Same value' }], memory, now + CARD_COOLDOWN_MS - 1), []);
     assert.deepEqual(getAvailableCardIds([{ id: 'other-deck-id', text: 'Same value' }], memory, now + CARD_COOLDOWN_MS), ['other-deck-id']);

@@ -2,6 +2,13 @@ import type { RemoteCard, RemoteIntent, RemoteView } from './remote-round';
 import type { GameMode } from '../game/game-types';
 import { canSeeSharePlayAnswer } from './round-roles';
 
+export type GameControl =
+  | { action: 'select-guesser'; participantId: string }
+  | { action: 'select-deck'; deckId: string }
+  | { action: 'select-mode'; mode: GameMode }
+  | { action: 'select-duration'; seconds: number }
+  | { action: 'next-round' | 'return-to-lobby' | 'end-game' };
+
 export type GameWire =
   | { version: 3; kind: 'view'; view: RemoteView; hostTime: number }
   | { version: 3; kind: 'intent'; intent: RemoteIntent }
@@ -11,6 +18,7 @@ export type GameWire =
   | { version: 3; kind: 'session-end'; term: number }
   | { version: 3; kind: 'presence'; active: boolean; sequence: number }
   | { version: 3; kind: 'deck-selection'; deckId: string | null; durationSeconds: number; hostTime: number; inLobby: boolean; mode?: GameMode }
+  | ({ version: 3; kind: 'control'; roundId: string; revision: number } & GameControl)
   | { version: 3; kind: 'clock'; nonce: string }
   | { version: 3; kind: 'clock-reply'; nonce: string; received: number; sent: number }
   | { version: 3; kind: 'inventory'; generation: string; index: number; total: number; deckIds: string[] }
@@ -42,8 +50,7 @@ export function parseRemoteView(value: unknown, sessionId: string, recipientId: 
     (v.mode !== undefined && !['classic', 'pass-n-play'].includes(String(v.mode))) ||
     v.sessionId !== sessionId || !id(v.roundId) || !id(v.hostId) || !id(v.guesserId) ||
     !Number.isSafeInteger(v.revision) || (v.revision as number) < 0 ||
-    !['lobby', 'countdown', 'playing', 'feedback', 'handoff', 'paused', 'results', 'ended'].includes(String(v.phase)) ||
-    (v.phase === 'handoff' && v.mode !== 'pass-n-play') ||
+    !['lobby', 'countdown', 'playing', 'feedback', 'paused', 'results', 'ended'].includes(String(v.phase)) ||
     !Array.isArray(v.participants) || participants.length < 1 ||
     !participants.every(id) || new Set(participants).size !== participants.length ||
     !participants.includes(recipientId) || !participants.includes(v.hostId) ||
@@ -66,16 +73,14 @@ export function parseRemoteView(value: unknown, sessionId: string, recipientId: 
       v.results.every((item: unknown) => !!item && typeof item === 'object' &&
         exact(item as Record<string, unknown>, ['answer', 'byline', 'outcome']) &&
         card({ answer: (item as Record<string, unknown>).answer, byline: (item as Record<string, unknown>).byline }) &&
-        ['correct', 'pass'].includes(String((item as Record<string, unknown>).outcome)))))) return null;
+        ['correct', 'pass', 'neutral'].includes(String((item as Record<string, unknown>).outcome)))))) return null;
   if (!canSeeSharePlayAnswer(v.mode as GameMode | undefined, recipientId, v.guesserId as string) &&
     v.card !== null) return null;
   if (recipientId !== v.guesserId && (v.cardNonce !== null || v.canAnswer !== false)) return null;
   if (v.phase === 'playing' && recipientId === v.guesserId &&
     (v.canAnswer !== true || !id(v.cardNonce))) return null;
   if (v.phase !== 'results' && v.results !== null) return null;
-  if (v.phase === 'handoff' && (v.card !== null || v.canAnswer !== false ||
-    (recipientId === v.guesserId && !id(v.cardNonce)))) return null;
-  if (!['playing', 'handoff'].includes(String(v.phase)) &&
+  if (v.phase !== 'playing' &&
     (v.card !== null || v.cardNonce !== null || v.canAnswer !== false)) return null;
   return v as RemoteView;
 }
@@ -113,6 +118,19 @@ export function parseGameWire(body: string): GameWire | null {
         typeof v.inLobby !== 'boolean' ||
         !Number.isInteger(v.durationSeconds) || (v.durationSeconds as number) < 30 ||
         (v.durationSeconds as number) > 300) return null;
+    } else if (v.kind === 'control') {
+      if (!id(v.roundId) || !Number.isSafeInteger(v.revision) || (v.revision as number) < 0) return null;
+      if (v.action === 'select-guesser') {
+        if (!exact(v, ['version', 'kind', 'action', 'roundId', 'revision', 'participantId']) || !id(v.participantId)) return null;
+      } else if (v.action === 'select-deck') {
+        if (!exact(v, ['version', 'kind', 'action', 'roundId', 'revision', 'deckId']) || !id(v.deckId)) return null;
+      } else if (v.action === 'select-mode') {
+        if (!exact(v, ['version', 'kind', 'action', 'roundId', 'revision', 'mode']) || !['classic', 'pass-n-play'].includes(String(v.mode))) return null;
+      } else if (v.action === 'select-duration') {
+        if (!exact(v, ['version', 'kind', 'action', 'roundId', 'revision', 'seconds']) ||
+          !Number.isInteger(v.seconds) || (v.seconds as number) < 30 || (v.seconds as number) > 300) return null;
+      } else if (!['next-round', 'return-to-lobby', 'end-game'].includes(String(v.action)) ||
+        !exact(v, ['version', 'kind', 'action', 'roundId', 'revision'])) return null;
     } else if (v.kind === 'clock') {
       if (!exact(v, ['version', 'kind', 'nonce']) || !id(v.nonce)) return null;
     } else if (v.kind === 'clock-reply') {

@@ -13,5 +13,5 @@ export function sharePlaySurface({ enabled, joined, setupOpen, localAvailable, g
 }
 
 export function canShowSharePlayRoundOptions(phase: RemotePhase | undefined) {
-  return phase !== undefined && ['countdown', 'playing', 'feedback', 'handoff', 'paused'].includes(phase);
+  return phase !== undefined && ['countdown', 'playing', 'feedback', 'paused'].includes(phase);
 }

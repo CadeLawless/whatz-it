@@ -15,23 +15,23 @@ import { useSharePlayRoundCues } from '@/shareplay/use-round-cues';
 import { colors, radius, spacing, typography } from '@/theme';
 import { SharePlayReadyCounter } from './ready-counter';
 
-function Action({ label, disabled, secondary = false, lightBlue = false, onPress, equalWidth = false, large = false }: {
+function Action({ label, disabled, secondary = false, lightBlue = false, onPress, equalWidth = false }: {
   label: string; disabled?: boolean; secondary?: boolean; lightBlue?: boolean;
-  onPress: () => void; equalWidth?: boolean; large?: boolean;
+  onPress: () => void; equalWidth?: boolean;
 }) {
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled}
     onPress={onPress} style={({ pressed }) => [styles.button, secondary && styles.secondaryButton,
       lightBlue && styles.lightBlueButton, equalWidth && styles.equalButton,
-      large && styles.largeButton,
       disabled && styles.disabled, pressed && styles.pressed]}>
     <Text style={[styles.buttonText, secondary && styles.secondaryButtonText,
       lightBlue && styles.lightBlueButtonText,
-      equalWidth && styles.answerButtonText, large && styles.largeButtonText]}>{label}</Text>
+      equalWidth && styles.answerButtonText]}>{label}</Text>
   </Pressable>;
 }
 
 export function SharePlayGameScreen() {
   const [confirmRoundId, setConfirmRoundId] = useState<string | null>(null);
+  const [choosePlayerRoundId, setChoosePlayerRoundId] = useState<string | null>(null);
   const [dismissedTimeUpRoundId, setDismissedTimeUpRoundId] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const { catalog } = useCatalog();
@@ -50,7 +50,7 @@ export function SharePlayGameScreen() {
   const deckTitle = (deckId ? catalog.getDeckById(deckId)?.title : null) ??
     sharePlay.session.activity?.deckTitle ?? 'SharePlay';
   const close = () => {
-    if (view && ['countdown', 'playing', 'feedback', 'handoff', 'paused'].includes(view.phase)) setConfirmRoundId(view.roundId);
+    if (view && ['countdown', 'playing', 'feedback', 'paused'].includes(view.phase)) setConfirmRoundId(view.roundId);
     else sharePlay.closeGame();
   };
   const clock = formatRoundClock(Math.ceil(remainingMs / 1000));
@@ -136,24 +136,6 @@ export function SharePlayGameScreen() {
             </View>
           </>}
 
-          {view?.phase === 'handoff' && <>
-            <View style={styles.cardArea}>
-              <View style={styles.content}>
-                <Text style={styles.clock}>{clock}</Text>
-                <Text accessibilityRole="header" style={styles.title}>
-                  {isTurnOwner ? 'YOUR TURN' : 'NEXT CLUE GIVER'}
-                </Text>
-                <Text accessibilityLiveRegion="polite" style={styles.message}>
-                  {isTurnOwner ? 'Ready to give clues? Your friends will guess.' :
-                    `Waiting for ${guesserName || 'the next clue giver'} to start their turn.`}
-                </Text>
-                {isTurnOwner && <View style={styles.revealArea}>
-                  <Action label="Show my card" large onPress={sharePlay.gameActions.reveal} />
-                </View>}
-              </View>
-            </View>
-          </>}
-
           {results && <>
             <ScrollView style={styles.resultsScroll} contentContainerStyle={styles.resultsContent}>
               <Text style={styles.resultsEyebrow}>SHAREPLAY ROUND RESULTS</Text>
@@ -165,27 +147,37 @@ export function SharePlayGameScreen() {
                   <Text style={styles.scoreLabel}>CORRECT</Text>
                 </View>
                 <View style={[styles.scoreCard, { backgroundColor: colors.pass }]}>
-                  <Text style={styles.scoreNumber}>{view.results?.filter((item) => item.outcome !== 'correct').length ?? 0}</Text>
+                  <Text style={styles.scoreNumber}>{view.results?.filter((item) => item.outcome === 'pass').length ?? 0}</Text>
                   <Text style={styles.scoreLabel}>PASSED</Text>
                 </View>
               </View>
               <Text style={styles.listLabel}>YOUR CARDS</Text>
               {view.results?.map((item, index) => <View key={`${index}-${item.answer}`} style={styles.resultRow}>
-                <View style={[styles.outcomeDot, { backgroundColor: item.outcome === 'correct' ? colors.correct : colors.pass }]}>
-                  <Text style={styles.outcomeIcon}>{item.outcome === 'correct' ? '✓' : '×'}</Text>
+                <View style={[styles.outcomeDot, { backgroundColor: item.outcome === 'correct' ? colors.correct :
+                  item.outcome === 'pass' ? colors.pass : colors.muted }]}>
+                  <Text style={styles.outcomeIcon}>{item.outcome === 'correct' ? '✓' : item.outcome === 'pass' ? '×' : '–'}</Text>
                 </View>
                 <Text style={styles.resultText}>{item.answer}</Text>
-                <Text style={styles.outcomeLabel}>{item.outcome === 'correct' ? 'CORRECT' : 'PASSED'}</Text>
+                <Text style={styles.outcomeLabel}>{item.outcome === 'correct' ? 'CORRECT' :
+                  item.outcome === 'pass' ? 'PASSED' : 'UNANSWERED'}</Text>
               </View>)}
               {!view.results?.length && <Text style={styles.message}>Time ran out before a card was answered.</Text>}
             </ScrollView>
             <View style={[styles.footer, styles.resultsFooter]}>
-              {sharePlay.session.isHost && view.phase === 'results' ?
-                <Action label="PLAY AGAIN" disabled={sharePlay.session.participantIds.length < 2}
+              {view.phase === 'results' && <Text style={styles.nextPlayer}>
+                {passNPlay ? 'NEXT STARTING PLAYER' : 'NEXT GUESSER'}: {isTurnOwner ? 'YOU' :
+                  guesserName ?? 'CONNECTING…'}
+              </Text>}
+              {isTurnOwner && view.phase === 'results' ?
+                <Action label="PLAY AGAIN" disabled={sharePlay.session.participantIds.length < 2 ||
+                  sharePlay.decks.selectedDeckId !== view.deck.deckId}
                   onPress={sharePlay.gameActions.nextRound} /> :
                 <Action label="BACK TO LOBBY" onPress={sharePlay.closeGame} />}
-              {sharePlay.session.isHost && view.phase === 'results' &&
-                <Action label="BACK TO LOBBY" secondary onPress={sharePlay.closeGame} />}
+              {isTurnOwner && view.phase === 'results' &&
+                <Action label={passNPlay ? 'MAKE SOMEONE ELSE STARTING PLAYER' : 'MAKE SOMEONE ELSE GUESSER'}
+                  secondary onPress={() => setChoosePlayerRoundId(view.roundId)} />}
+              {isTurnOwner && view.phase === 'results' &&
+                <Action label="BACK TO LOBBY" secondary onPress={sharePlay.gameActions.returnToLobby} />}
             </View>
           </>}
 
@@ -194,7 +186,7 @@ export function SharePlayGameScreen() {
             <Text style={styles.message}>Return to the Lobby to choose players and start.</Text>
             <Action label="BACK TO LOBBY" onPress={sharePlay.closeGame} />
           </View>}
-          {view && ['countdown', 'playing', 'handoff', 'paused'].includes(view.phase) &&
+          {view && ['countdown', 'playing', 'paused'].includes(view.phase) &&
             <Text numberOfLines={2} style={styles.deckTitleBottom}>{deckTitle}</Text>}
         </View>}
 
@@ -210,14 +202,30 @@ export function SharePlayGameScreen() {
             {view?.phase !== 'paused' && <Action label="PAUSE" lightBlue onPress={() => {
               setConfirmRoundId(null); sharePlay.gameActions.pause();
             }} />}
-            <Action label={sharePlay.session.isHost ? 'BACK TO LOBBY' : 'LEAVE'} onPress={() => {
+            <Action label={isTurnOwner ? 'BACK TO LOBBY' : 'LEAVE'} onPress={() => {
               setConfirmRoundId(null);
-              if (sharePlay.session.isHost) sharePlay.gameActions.returnToLobby();
+              if (isTurnOwner) sharePlay.gameActions.returnToLobby();
               else void sharePlay.leave();
             }} />
           </View>
         </View>
       </View>}
+      {view?.phase === 'results' && isTurnOwner && choosePlayerRoundId === view.roundId &&
+        <View accessibilityViewIsModal style={styles.promptOverlay}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close player picker"
+            onPress={() => setChoosePlayerRoundId(null)} style={StyleSheet.absoluteFill} />
+          <View style={styles.promptCard}>
+            <Text accessibilityRole="header" style={styles.promptTitle}>
+              {passNPlay ? 'CHOOSE A STARTING PLAYER' : 'CHOOSE A GUESSER'}
+            </Text>
+            <ScrollView style={styles.playerPicker} contentContainerStyle={styles.promptActions}>
+              {view.participants.filter((id) => id !== localId).map((id) =>
+                <Action key={id} label={sharePlay.playerNames[id] ?? 'Choosing a name…'} onPress={() => {
+                  sharePlay.gameActions.selectGuesser(id); setChoosePlayerRoundId(null);
+                }} />)}
+            </ScrollView>
+          </View>
+        </View>}
     </SafeAreaView>;
 }
 
@@ -237,9 +245,6 @@ const styles = StyleSheet.create({
   clock: { ...typography.title, color: colors.muted, textAlign: 'center', fontVariant: ['tabular-nums'] },
   content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg, gap: spacing.md },
   title: { ...typography.hero, color: colors.play, textAlign: 'center' },
-  revealArea: { width: '100%', maxWidth: 420, marginTop: spacing.lg },
-  largeButton: { minHeight: 112, paddingVertical: spacing.xl },
-  largeButtonText: { ...typography.title, color: colors.white, textAlign: 'center' },
   message: { ...typography.body, color: colors.muted, textAlign: 'center' },
   clueInstruction: { ...typography.body, fontSize: 14, lineHeight: 20,
     color: colors.muted, textAlign: 'center', paddingHorizontal: spacing.sm },
@@ -252,6 +257,8 @@ const styles = StyleSheet.create({
   footer: { padding: spacing.md, gap: spacing.sm },
   resultsFooter: { paddingHorizontal: spacing.lg, borderTopWidth: 1,
     borderTopColor: colors.border, backgroundColor: colors.background },
+  nextPlayer: { ...typography.body, color: colors.play, fontFamily: 'Inter_900Black', textAlign: 'center' },
+  playerPicker: { maxHeight: 360 },
   answerActions: { flexDirection: 'row', gap: spacing.md },
   button: { minHeight: 56, padding: spacing.md, borderRadius: radius.lg,
     justifyContent: 'center', alignItems: 'center', backgroundColor: colors.play },

@@ -23,7 +23,6 @@ import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSprin
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 import { SharePlayGameScreen } from './game-screen';
-import { SharePlayReadyCounter } from './ready-counter';
 import { SharePlayRejoinPrompt } from './rejoin-prompt';
 
 function Button({ label, onPress, disabled, secondary, danger, arrow }: {
@@ -53,7 +52,7 @@ export function SharePlaySetupSheet() {
   const editNameInput = useRef<TextInput>(null);
   const sharePlay = useSharePlay();
   // This persistent owner observes resets for lobby and round screens once.
-  const readyUp = useSharePlayReadyFeedback(true);
+  const readyUp = useSharePlayReadyFeedback();
   const { catalog } = useCatalog();
   const ownedDeckIds = useOwnedDeckIds();
   const { round, isRecording, isVideoFinalizing } = useRound();
@@ -159,7 +158,8 @@ export function SharePlaySetupSheet() {
   const deck = deckId ? catalog.getDeckById(deckId) : undefined;
   const cover = deck ? catalogLocalCoverSources(deck)[0] : undefined;
   const deckTitle = deck?.title ?? (deckId ? originalSelection?.deckTitle : null) ?? 'Choose a deck';
-  const canChooseDeck = !hasSession || (joined && session.isHost);
+  const isController = joined && !!lobby && lobby.guesserId === session.localParticipantId;
+  const canChooseDeck = !hasSession || isController;
   const durationSeconds = hasSession ? sharePlay.decks.durationSeconds : originalSelection?.durationSeconds ?? 60;
   const playerLabel = (id: string) => {
     const name = id === session.localParticipantId ? sharePlay.localPlayerName : sharePlay.playerNames[id];
@@ -167,9 +167,8 @@ export function SharePlaySetupSheet() {
   };
   const allPlayersNamed = joined && session.participantIds.every((id) => id === session.localParticipantId ?
     !!sharePlay.localPlayerName : !!sharePlay.playerNames[id]);
-  const hostId = session.hostParticipantId ?? sharePlay.game.view?.hostId;
-  const hostName = hostId === session.localParticipantId ? sharePlay.localPlayerName :
-    hostId ? sharePlay.playerNames[hostId] : null;
+  const controllerName = lobby?.guesserId === session.localParticipantId ? sharePlay.localPlayerName :
+    lobby?.guesserId ? sharePlay.playerNames[lobby.guesserId] : null;
   const closeNameEdit = useCallback(() => {
     Keyboard.dismiss();
     setNameDraft(sharePlay.localPlayerName);
@@ -274,13 +273,13 @@ export function SharePlaySetupSheet() {
           </View>
           <Text style={styles.body}>{hasSession ? 'Keep FaceTime open while your friends join.' :
             'Guess with friends over FaceTime, wherever they are. Everyone joins on their own iPhone with WHATZ IT?'}</Text>
-          {hasSession && session.isHost && <View style={styles.hostSection}>
-            <Text style={styles.label}>HOST</Text>
-            <Text style={styles.hostName}>{hostName ?? 'Connecting…'}{session.isHost ? ' (you)' : ''}</Text>
-            {joined && (!sharePlay.game.view || lobby) && session.isHost && session.participantIds.length > 1 &&
+          {joined && lobby && <View style={styles.hostSection}>
+            <Text style={styles.label}>{passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>
+            <Text style={styles.hostName}>{controllerName ?? 'Connecting…'}{isController ? ' (you)' : ''}</Text>
+            {isController && session.participantIds.length > 1 &&
               <Pressable accessibilityRole="button" onPress={() => setHostPickerOpen(true)}
                 style={({ pressed }) => [styles.changeHostButton, pressed && styles.pressed]}>
-                <Text style={styles.changeHostText}>MAKE SOMEONE ELSE HOST</Text>
+                <Text style={styles.changeHostText}>MAKE SOMEONE ELSE {passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>
               </Pressable>}
           </View>}
           {originalSelection && <Pressable accessibilityRole={canChooseDeck ? 'button' : undefined}
@@ -291,7 +290,7 @@ export function SharePlaySetupSheet() {
               <View style={[styles.cover, styles.coverFallback]}><Text style={styles.coverIcon}>▣</Text></View>}
             <View style={styles.deckDetails}>
               <Text style={styles.deckTitle}>{deckTitle}</Text>
-              {hasSession && !session.isHost && <>
+              {hasSession && !isController && <>
                 <View style={styles.deckMetadataRow}>
                   <SymbolView name="die.face.5.fill" size={15} tintColor={colors.muted} accessibilityElementsHidden />
                   <Text style={styles.deckMetadataText}>{passNPlay ? "Pass n' Play" : 'Classic'}</Text>
@@ -305,15 +304,15 @@ export function SharePlaySetupSheet() {
             </View>
             {canChooseDeck && <Text style={styles.deckChevron}>›</Text>}
           </Pressable>}
-          {joined && session.isHost && <View style={styles.group}>
+          {isController && <View style={styles.group}>
             <Text style={styles.label}>GAME MODE</Text>
             <GameModeSelector sharePlay value={sharePlay.decks.mode}
               disabled={busy || (!!sharePlay.game.view && sharePlay.game.view.phase !== 'lobby')}
               onChange={sharePlay.gameActions.selectMode} />
           </View>}
-          {originalSelection && (!hasSession || session.isHost) && <View style={styles.group}>
+          {originalSelection && (!hasSession || isController) && <View style={styles.group}>
             <Text style={styles.label}>ROUND LENGTH</Text>
-            {(!hasSession || (joined && session.isHost)) ?
+            {(!hasSession || isController) ?
               <TimerPicker value={durationSeconds} onChange={(seconds) => {
                 if (hasSession) sharePlay.gameActions.selectDuration(seconds);
                 else sharePlay.updateSetupDuration(seconds);
@@ -326,7 +325,7 @@ export function SharePlaySetupSheet() {
           </Text>}
           {joined && !lobby && <Text style={styles.muted}>{session.participantIds.length < 2
             ? 'Waiting for another player to join. A new round will appear when they rejoin.' : !selectedDeckId
-              ? session.isHost ? 'Choose an available deck to get ready.' : 'Waiting for the host to choose a deck.' : session.isHost &&
+              ? isController ? 'Choose an available deck to get ready.' : `Waiting for the ${selectedRole} to choose a deck.` : isController &&
               !sharePlay.decks.availableDeckIds.includes(selectedDeckId)
               ? 'Waiting for someone who owns this deck…' :
                 'Connecting to the other players and preparing the shared deck…'}</Text>}
@@ -340,11 +339,8 @@ export function SharePlaySetupSheet() {
                 <Text style={styles.addPeopleText}>+ ADD PEOPLE</Text>
               </Pressable>}
             </View>
-            {session.isHost && lobby && lobby.participants.length > 1 &&
-              <Text style={styles.guesserHint}>Tap a player to select a different {selectedRole}.</Text>}
             {session.participantIds.map((id) => {
               const isGuesser = id === lobby?.guesserId;
-              const canSelectGuesser = session.isHost && !!lobby;
               const connected = id === session.localParticipantId || peers[id] === 'confirmed';
               return <View key={id} style={styles.playerConnectionRow}>
                 <View accessible accessibilityLabel={`${playerLabel(id)}, ${connected ? 'connected' : 'not connected'}`}
@@ -354,13 +350,7 @@ export function SharePlaySetupSheet() {
                     accessibilityElementsHidden />
                   {!connected && <View style={styles.connectionSlash} />}
                 </View>
-                <Pressable accessibilityRole={canSelectGuesser ? 'button' : undefined}
-                accessibilityLabel={canSelectGuesser ? `${playerLabel(id)}, ${isGuesser ? `current ${selectedRole}` : `select as ${selectedRole}`}` : undefined}
-                accessibilityState={canSelectGuesser ? { selected: isGuesser } : undefined}
-                onPress={() => {
-                  if (canSelectGuesser && !isGuesser) sharePlay.gameActions.selectGuesser(id);
-                }} style={({ pressed }) => [styles.playerRow, isGuesser && styles.guesserRow,
-                pressed && canSelectGuesser && styles.pressed]}>
+                <View style={[styles.playerRow, isGuesser && styles.guesserRow]}>
                 <View style={styles.playerIdentity}>
                   {isGuesser && <Text style={styles.guesserLabel}>{passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>}
                   <Text style={styles.playerName}>
@@ -378,10 +368,9 @@ export function SharePlaySetupSheet() {
                     </Text>}
                   </Text>
                 </View>
-                {id === hostId && <Text style={styles.playerHostLabel}>HOST</Text>}
                 <Text style={[styles.playerState, lobby?.ready.includes(id) && styles.readyState]}>
                   {lobby?.ready.includes(id) ? 'READY' : 'WAITING'}</Text>
-                </Pressable>
+                </View>
               </View>;
             })}
             {!allPlayersNamed && <Text style={styles.muted}>Waiting for everyone to enter a name…</Text>}
@@ -411,7 +400,6 @@ export function SharePlaySetupSheet() {
           {hasSession && <Button label="LEAVE" secondary disabled={busy} onPress={close} />}
         </View>}
         {!deckSearchOpen && !nameStep && hasSession && <View style={styles.lobbyFooter}>
-          {joined && lobby && <SharePlayReadyCounter view={lobby} />}
           {joined && lobby && <Text accessibilityLiveRegion="polite" style={styles.selectedPlayerStatus}>
             {passNPlay ? 'Starting player' : 'Guesser'}: {lobby.guesserId === session.localParticipantId
               ? 'You' : playerLabel(lobby.guesserId)}
@@ -421,7 +409,7 @@ export function SharePlaySetupSheet() {
             <Button label="YOU’RE READY" disabled onPress={() => undefined} />)}
           <View style={styles.footerRow}>
             <View style={styles.footerAction}><Button label="LEAVE" secondary disabled={busy} onPress={close} /></View>
-            {joined && session.isHost && session.participantIds.length > 1 && <View style={styles.footerAction}>
+          {isController && session.participantIds.length > 1 && <View style={styles.footerAction}>
               <Button label="END GAME" danger disabled={busy} onPress={() => setConfirmation('end')} />
             </View>}
           </View>
@@ -534,17 +522,15 @@ export function SharePlaySetupSheet() {
               style={({ pressed }) => [styles.nameBack, pressed && styles.pressed]}>
               <SymbolView name="chevron.left" size={20} tintColor={colors.play} accessibilityElementsHidden />
             </Pressable>
-            <Text style={styles.title}>Choose a host</Text>
+            <Text style={styles.title}>Choose a {selectedRole}</Text>
           </View>
-          <Text style={styles.body}>Choose who will manage the deck and rounds.</Text>
+          <Text style={styles.body}>The new {selectedRole} will manage the deck and rounds.</Text>
           {session.participantIds.filter((id) => id !== session.localParticipantId).map((id) =>
             <Pressable key={id} accessibilityRole="button"
-              accessibilityLabel={`Make ${playerLabel(id)} host`}
-              disabled={busy || !session.isHost}
-              onPress={() => { void sharePlay.gameActions.transferHost(id).then((changed) => {
-                if (changed) setHostPickerOpen(false);
-              }); }}
-              style={({ pressed }) => [styles.hostChoice, (busy || !session.isHost) && styles.disabled,
+              accessibilityLabel={`Make ${playerLabel(id)} ${selectedRole}`}
+              disabled={busy || !isController}
+              onPress={() => { sharePlay.gameActions.selectGuesser(id); setHostPickerOpen(false); }}
+              style={({ pressed }) => [styles.hostChoice, (busy || !isController) && styles.disabled,
                 pressed && styles.pressed]}>
               <Text style={styles.hostChoiceText}>{playerLabel(id)}</Text>
               <SymbolView name="chevron.right" size={18} tintColor={colors.play} accessibilityElementsHidden />
@@ -559,7 +545,9 @@ export function SharePlaySetupSheet() {
         confirmLabel={confirmation === 'end' ? 'END GAME' : 'LEAVE'}
         destructive busy={busy} onCancel={() => setConfirmation(null)}
         onConfirm={() => { const end = confirmation === 'end' && session.participantIds.length > 1;
-          setConfirmation(null); void sharePlay.leave(end); }} />
+          setConfirmation(null);
+          if (end) sharePlay.gameActions.endGame();
+          else void sharePlay.leave(); }} />
       <ConfirmationPrompt embedded visible={inviteHelpOpen}
         title="Add People"
         message="To add players to the game, add people to your FaceTime call directly"
@@ -653,7 +641,7 @@ const styles = StyleSheet.create({
   playerName: { flexShrink: 1, color: colors.ink, fontSize: 16, fontFamily: 'Inter_700Bold' },
   playerState: { color: colors.muted, fontSize: 12, fontFamily: 'Inter_900Black' },
   playerHostLabel: { color: colors.play, fontSize: 12, fontFamily: 'Inter_900Black' },
-  readyState: { color: colors.correctText },
+  readyState: { color: colors.connectionGreen },
   error: { color: '#B42318', fontSize: 15, lineHeight: 21, fontFamily: 'Inter_700Bold' },
   debugCard: { padding: 14, borderRadius: radius.lg, backgroundColor: colors.surface, gap: 10 },
   debugToggle: { color: colors.play, fontSize: 13, fontFamily: 'Inter_900Black' },
