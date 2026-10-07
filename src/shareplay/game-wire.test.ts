@@ -21,6 +21,22 @@ const session: SharePlaySnapshot = {
     deckId: 'deck', deckTitle: 'Deck', durationSeconds: 60, hostPublicKey: 'key' },
 };
 
+test('a request from a perceived host does not keep a stalled election alive', () => {
+  let hostActivity = 0;
+  const game = new LiveGame({ environment: 'test', uuid: () => 'heartbeat-test',
+    digest: async () => hash, send: async () => undefined, cards: () => null,
+    availableDeckIds: () => [], onDecks: () => undefined, onView: () => undefined,
+    onError: () => undefined, onActive: () => undefined, onLobby: () => undefined,
+    onHostActivity: () => { hostActivity++; } });
+  game.setSession({ ...session, electedHost: true });
+  game.receive({ sessionId: 'session', senderId: 'host', senderIsHost: false,
+    body: JSON.stringify({ version: 3, kind: 'snapshot-request' }) });
+  assert.equal(hostActivity, 0);
+  game.receive({ sessionId: 'session', senderId: 'host', senderIsHost: false,
+    body: JSON.stringify({ version: 3, kind: 'view', view: guestView, hostTime: 1000 }) });
+  assert.equal(hostActivity, 1);
+});
+
 for (const phase of ['countdown', 'playing', 'feedback'] as const) {
   for (const guesser of [true, false]) {
     test(`backgrounding a guest ${guesser ? 'guesser pauses' : 'clue giver keeps'} ${phase}`, () => {

@@ -30,7 +30,8 @@ test('native roster refreshes preserve a declined rejoin until explicit acceptan
   participants.sync({ ...session, revision: 3 });
   assert.deepEqual(participants.project(session).participantIds, ['guest']);
   assert.equal(participants.project(session).isHost, false);
-  assert.equal(resolveSharePlayHost(participants.project(session), true).hostParticipantId, 'guest');
+  // This withdrawn phone cannot elect a host on behalf of active phones.
+  assert.equal(resolveSharePlayHost(participants.project(session), true).electedHost, undefined);
   participants.update('host', true, 10);
   assert.deepEqual(participants.project(session).participantIds, ['host', 'guest']);
 });

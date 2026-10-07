@@ -1,6 +1,16 @@
 import type { SharePlaySnapshot } from '../../modules/whatz-it-shareplay/src/WhatzItSharePlay.types';
 
 export const HOST_SILENCE_TIMEOUT_MS = 5_000;
+export const REJOIN_LOBBY_TIMEOUT_MS = 8_000;
+export function rejoinLobbyRecoveryTarget(snapshot: SharePlaySnapshot, acceptedSessionId: string | null,
+  allConnected: boolean, missingSince: number | null, now: number) {
+  if (snapshot.status !== 'joined' || !snapshot.sessionId ||
+    snapshot.sessionId !== acceptedSessionId || !snapshot.localParticipantId ||
+    !snapshot.participantIds.includes(snapshot.localParticipantId) ||
+    snapshot.participantIds.length < 2 || !allConnected || missingSince === null ||
+    now - missingSince < REJOIN_LOBBY_TIMEOUT_MS) return null;
+  return [...snapshot.participantIds].sort()[0];
+}
 export function shouldRecoverSharePlayHost(snapshot: SharePlaySnapshot, lastSeenAt: number,
   now: number, foreground: boolean) {
   return foreground && snapshot.status === 'joined' && !snapshot.isHost &&
@@ -11,7 +21,8 @@ export function shouldRecoverSharePlayHost(snapshot: SharePlaySnapshot, lastSeen
 export function resolveSharePlayHost(snapshot: SharePlaySnapshot, electUnknownHost = false,
   incumbentId: string | null = null): SharePlaySnapshot {
   if (snapshot.status !== 'joined' || !snapshot.sessionId || !snapshot.localParticipantId ||
-    snapshot.participantIds.length === 0) return snapshot;
+    snapshot.participantIds.length === 0 ||
+    !snapshot.participantIds.includes(snapshot.localParticipantId)) return snapshot;
   if (incumbentId && snapshot.participantIds.includes(incumbentId)) {
     return { ...snapshot, hostParticipantId: incumbentId,
       isHost: snapshot.localParticipantId === incumbentId, electedHost: true };

@@ -460,7 +460,8 @@ export class LiveGame {
     }
     const fromHost = message.senderId === session.hostParticipantId &&
       (message.senderIsHost || session.electedHost === true);
-    if (fromHost) this.callbacks.onHostActivity?.();
+    if (fromHost && ['view', 'deck-selection', 'clock-reply', 'host-transfer', 'session-end'].includes(wire.kind))
+      this.callbacks.onHostActivity?.();
     if (wire.kind === 'session-end') {
       if (fromHost && wire.term === (session.hostTerm ?? 0)) this.callbacks.onSessionEnd?.();
       return;

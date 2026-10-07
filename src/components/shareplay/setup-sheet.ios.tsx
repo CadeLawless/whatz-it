@@ -231,9 +231,14 @@ export function SharePlaySetupSheet() {
       else close();
     }} statusBarTranslucent>
     {surface === 'rejoin' ? <SharePlayRejoinPrompt /> : surface === 'round' ? <SharePlayGameScreen /> :
-    surface === 'connecting' ? <View style={[styles.overlay, styles.lobbyOverlay, styles.content]}>
-      <Text style={styles.title}>Connecting to players…</Text>
-      <Text style={styles.body}>Preparing the shared lobby and assigning a starting player.</Text>
+    surface === 'connecting' ? <View style={[styles.connectingScreen,
+      { paddingTop: insets.top + spacing.lg, paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+      <View style={styles.connectingMessage}>
+        <Text style={[styles.title, styles.connectingText]}>Connecting to players…</Text>
+        <Text style={[styles.body, styles.connectingText]}>
+          Preparing the shared lobby and assigning a starting player.
+        </Text>
+      </View>
       <Button label="LEAVE" secondary disabled={busy} onPress={() => { void sharePlay.leave(); }} />
     </View> :
     <View style={[styles.overlay, joined && styles.lobbyOverlay, { paddingBottom: nameStep ? keyboardHeight : 0 }]}>
@@ -530,6 +535,10 @@ export function SharePlaySetupSheet() {
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   lobbyOverlay: { backgroundColor: colors.background, justifyContent: 'flex-start' },
+  connectingScreen: { flex: 1, backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg * 2 },
+  connectingMessage: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
+  connectingText: { textAlign: 'center' },
   lobbyScreen: { flex: 1, minHeight: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
   backdrop: { backgroundColor: 'rgba(15, 23, 42, 0.36)' },
   deckBackdrop: { backgroundColor: 'rgba(15, 23, 42, 0.18)' },

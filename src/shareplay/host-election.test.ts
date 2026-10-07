@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SharePlaySnapshot } from '../../modules/whatz-it-shareplay/src/WhatzItSharePlay.types';
-import { acceptsSharePlayHostClaim, recoveryHost, resolveSharePlayHost, shouldRecoverSharePlayHost } from './host-election';
+import { acceptsSharePlayHostClaim, recoveryHost, rejoinLobbyRecoveryTarget,
+  resolveSharePlayHost, shouldRecoverSharePlayHost } from './host-election';
+import { SharePlayParticipation } from './participation';
 
 const base: SharePlaySnapshot = {
   revision: 1, status: 'joined', sessionId: 'session', localParticipantId: 'alice',
@@ -58,4 +60,29 @@ test('rejoining and simultaneous host claims converge without a player vote', ()
   assert.equal(acceptsSharePlayHostClaim('alice', 1, 'bob', 2, false), true);
   assert.equal(acceptsSharePlayHostClaim('alice', 2, 'bob', 1, false), false);
   assert.equal(acceptsSharePlayHostClaim('alice', 2, 'alice', 2, false), true);
+});
+
+test('simultaneous cold rejoin does not elect the other player while each phone is withdrawn', () => {
+  const alice = { ...base, participantIds: ['alice', 'bob'], hostParticipantId: null };
+  const bob = { ...alice, localParticipantId: 'bob' };
+  const alicePresence = new SharePlayParticipation();
+  const bobPresence = new SharePlayParticipation();
+  alicePresence.sync(alice); bobPresence.sync(bob);
+  alicePresence.exclude('alice'); bobPresence.exclude('bob');
+  assert.equal(resolveSharePlayHost(alicePresence.project(alice), true).hostParticipantId, null);
+  assert.equal(resolveSharePlayHost(bobPresence.project(bob), true).hostParticipantId, null);
+  alicePresence.update('alice', true, 1); bobPresence.update('bob', true, 1);
+  assert.equal(resolveSharePlayHost(alicePresence.project(alice), true).hostParticipantId, 'alice');
+  assert.equal(resolveSharePlayHost(bobPresence.project(bob), true).hostParticipantId, 'alice');
+});
+
+test('connected rejoiners choose the same fallback host after eight seconds without a lobby', () => {
+  const alice = { ...base, sessionId: 'rejoined', participantIds: ['alice', 'bob'], hostParticipantId: 'bob' };
+  const bob = { ...alice, localParticipantId: 'bob', hostParticipantId: 'alice' };
+  for (const snapshot of [alice, bob]) {
+    assert.equal(rejoinLobbyRecoveryTarget(snapshot, 'rejoined', true, 1000, 8999), null);
+    assert.equal(rejoinLobbyRecoveryTarget(snapshot, 'rejoined', true, 1000, 9000), 'alice');
+    assert.equal(rejoinLobbyRecoveryTarget(snapshot, 'rejoined', false, 1000, 9000), null);
+    assert.equal(rejoinLobbyRecoveryTarget(snapshot, 'other-session', true, 1000, 9000), null);
+  }
 });

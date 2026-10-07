@@ -20,7 +20,8 @@ import type { GameMode } from '../game/game-types';
 import { canReactInPhase, type SharePlayReactionEvent, type SharePlayReactionIndex } from './reactions';
 import { logSharePlay, shortSharePlayId, SHAREPLAY_RUNTIME_REVISION } from './diagnostics';
 import { cleanPlayerName, encodePlayerName, parsePlayerName } from './player-names';
-import { acceptsSharePlayHostClaim, recoveryHost, resolveSharePlayHost, shouldRecoverSharePlayHost } from './host-election';
+import { acceptsSharePlayHostClaim, recoveryHost, rejoinLobbyRecoveryTarget,
+  resolveSharePlayHost, shouldRecoverSharePlayHost, REJOIN_LOBBY_TIMEOUT_MS } from './host-election';
 
 const enabled = Platform.OS === 'ios' && process.env.EXPO_PUBLIC_SHAREPLAY_DISABLED !== 'true' &&
   (__DEV__ || Constants.expoConfig?.extra?.sharePlayPrototypeEnabled === true);
@@ -101,6 +102,9 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const presenceAnnouncement = useRef('');
   const [rejoinOffered, setRejoinOffered] = useState(false);
   const rejoinSession = useRef<string | null>(null);
+  const acceptedRejoinSession = useRef<string | null>(null);
+  const unpreparedLobbySince = useRef<number | null>(null);
+  const lastLobbyRecoveryAt = useRef(-Infinity);
   const applySnapshotRef = useRef<(snapshot: SharePlaySnapshot, electUnknownHost?: boolean) => void>(() => undefined);
   const probe = useRef<ConnectionProbe | null>(null);
   const lastProbeAt = useRef<Record<string, number>>({});
@@ -286,6 +290,9 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       electedHostId.current = null;
       hostTerm.current = 0;
       lastHostSeenAt.current = performance.now();
+      if (acceptedRejoinSession.current !== incoming.sessionId) {
+        acceptedRejoinSession.current = null; unpreparedLobbySince.current = null;
+      }
     }
     participation.current.sync(incoming);
     if (!startupRejoinChecked.current && incoming.sessionId &&
@@ -293,6 +300,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       startupRejoinChecked.current = true;
       if (shouldOfferSharePlayRejoin(incoming, savedRejoinNonce.current)) {
         participation.current.exclude(incoming.localParticipantId!);
+        hostElectionActive.current = false; electedHostId.current = null; hostTerm.current = 0;
         rejoinSession.current = incoming.sessionId;
         setRejoinOffered(true); setOpen(false); setGameVisible(false);
         logSharePlay('rejoin.offered', { source: 'cold-launch' });
@@ -433,6 +441,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
             return;
           }
           if (wire?.kind === 'host-claim' && sessionRef.current.status !== 'joined') {
+            if (!participation.current.isActive(native.localParticipantId)) return;
             const term = wire.term ?? 0;
             if (participation.current.isActive(message.senderId) && acceptsSharePlayHostClaim(
               sessionRef.current.hostParticipantId, hostTerm.current, message.senderId, term, message.senderIsHost)) {
@@ -517,7 +526,31 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       const current = sessionRef.current;
       if (alive && current.status === 'joined' && NativeSharePlay && probe.current) {
         const statuses = probe.current.snapshot();
-        if (shouldRecoverSharePlayHost(current, lastHostSeenAt.current, now, AppState.currentState === 'active')) {
+        const allConnected = current.participantIds.length >= 2 && current.participantIds.every((id) =>
+          id === current.localParticipantId || statuses[id] === 'confirmed');
+        const unpreparedRejoin = acceptedRejoinSession.current === current.sessionId &&
+          !gameActive.current && !liveGame.current?.currentView && allConnected;
+        if (unpreparedRejoin) {
+          unpreparedLobbySince.current ??= now;
+          const participantId = rejoinLobbyRecoveryTarget(current, acceptedRejoinSession.current,
+            allConnected, unpreparedLobbySince.current, now);
+          if (participantId && now - lastLobbyRecoveryAt.current >= REJOIN_LOBBY_TIMEOUT_MS) {
+            lastLobbyRecoveryAt.current = now;
+            if (current.hostParticipantId !== participantId ||
+              current.isHost !== (current.localParticipantId === participantId)) {
+              hostTerm.current++;
+              electedHostId.current = participantId;
+              hostElectionActive.current = true;
+              lastHostSeenAt.current = now;
+              logSharePlay('host.rejoin-recovery', { participant: shortSharePlayId(participantId),
+                revision: hostTerm.current, code: 'lobby-timeout' }, true);
+              applySnapshotRef.current(nativeSessionRef.current, true);
+            }
+            liveGame.current?.refreshAvailableDecks();
+          }
+        } else unpreparedLobbySince.current = null;
+        if (!unpreparedRejoin && shouldRecoverSharePlayHost(current, lastHostSeenAt.current, now,
+          AppState.currentState === 'active')) {
           const participantId = recoveryHost(current,
             Object.entries(statuses).filter(([, status]) => status === 'confirmed').map(([id]) => id));
           if (participantId) {
@@ -622,8 +655,11 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       if (!joined || !['joined', 'waiting'].includes(joined.status)) throw new Error('SharePlay: notJoined');
       nativeSessionRef.current = joined;
       manualLobby.current = true; gameActive.current = false;
+      acceptedRejoinSession.current = joined.sessionId;
+      unpreparedLobbySince.current = null; lastLobbyRecoveryAt.current = -Infinity;
       try { await sendPresence(true); }
       catch (error) {
+        acceptedRejoinSession.current = null;
         participation.current.exclude(joined.localParticipantId!);
         applySnapshot(joined, true); setOpen(false);
         throw error;
