@@ -37,6 +37,7 @@ import {
   useCommerceTesting,
   useOwnedDeckIds,
   useRestorePurchases,
+  useStorefrontAvailability,
 } from '@/storefront/commerce-provider';
 import { successfulRestoreNotice } from '@/storefront/restore-purchases-notice';
 import {
@@ -131,6 +132,7 @@ export const StorefrontExplore = forwardRef<
   const restore = useRestorePurchases();
   const commerceTesting = useCommerceTesting();
   const ownedDeckIds = useOwnedDeckIds();
+  const availability = useStorefrontAvailability(catalog);
   const restoreNoticePending = useRef(false);
   const [testingPrompt, setTestingPrompt] = useState<'new-device' | 'reset-ownership' | null>(null);
   const searchInputRef = useRef<TextInput>(null);
@@ -158,15 +160,15 @@ export const StorefrontExplore = forwardRef<
   const activeSectionPosition = useSharedValue(section === 'decks' ? 1 : 0);
   const displayedDecks = useMemo(
     () => sortStorefrontItems(
-      decks,
+      decks.filter((deck) => availability.deckIds.has(deck.id)),
       alphabeticalStorefrontOrder(decks),
       (deck) => ownedDeckIds.has(deck.id),
     ),
-    [decks, ownedDeckIds],
+    [availability.deckIds, decks, ownedDeckIds],
   );
   const displayedBundles = useMemo(
     () => sortStorefrontItems(
-      bundles,
+      bundles.filter((bundle) => availability.bundleIds.has(bundle.id)),
       catalog.bundles
         .filter((bundle) => bundle.access === 'paid')
         .sort((left, right) => left.order - right.order)
@@ -174,7 +176,7 @@ export const StorefrontExplore = forwardRef<
       (bundle) => bundle.deckIds.length > 0
         && bundle.deckIds.every((deckId) => ownedDeckIds.has(deckId)),
     ),
-    [bundles, catalog.bundles, ownedDeckIds],
+    [availability.bundleIds, bundles, catalog.bundles, ownedDeckIds],
   );
 
   useEffect(() => {
@@ -343,7 +345,7 @@ export const StorefrontExplore = forwardRef<
         )}
       </View>
 
-      {section === 'bundles' && search.trim().length === 0 && (
+      {section === 'bundles' && displayedBundles.length > 0 && search.trim().length === 0 && (
         <Text style={styles.bundleSavingsIntro}>Save more when you buy decks as a bundle!</Text>
       )}
 
@@ -353,7 +355,7 @@ export const StorefrontExplore = forwardRef<
         style={styles.resultSurface}
       >
           {section === 'bundles' ? (
-            bundles.length > 0 ? (
+            displayedBundles.length > 0 ? (
               <View style={styles.bundleList}>
                 {displayedBundles.map((bundle) => (
                   <BundleBrowseCard
@@ -370,9 +372,9 @@ export const StorefrontExplore = forwardRef<
                 ))}
               </View>
             ) : (
-              <EmptyResults search={search} type="bundles" />
+              <AvailabilityResults availability={availability} search={search} type="bundles" />
             )
-          ) : decks.length > 0 ? (
+          ) : displayedDecks.length > 0 ? (
             <>
               <View style={styles.deckList}>
                 {displayedDecks.map((deck) => (
@@ -391,7 +393,7 @@ export const StorefrontExplore = forwardRef<
               </View>
             </>
           ) : (
-            <EmptyResults search={search} type="decks" />
+            <AvailabilityResults availability={availability} search={search} type="decks" />
           )}
       </Animated.View>
 
@@ -640,7 +642,25 @@ function DeckBrowseCard({
   );
 }
 
-function EmptyResults({ search, type }: { search: string; type: string }) {
+function AvailabilityResults({ availability, search, type }: {
+  availability: ReturnType<typeof useStorefrontAvailability>;
+  search: string;
+  type: string;
+}) {
+  if (availability.checking) {
+    return <View accessibilityLiveRegion="polite" style={styles.messageCard}>
+      <ActivityIndicator color={colors.play} />
+      <Text style={styles.messageTitle}>Checking availability…</Text>
+    </View>;
+  }
+  if (availability.unavailable) {
+    return <View accessibilityLiveRegion="polite" style={styles.messageCard}>
+      <Text style={styles.messageTitle}>Store temporarily unavailable</Text>
+      <Pressable accessibilityRole="button" onPress={() => { void availability.refresh(); }}>
+        <Text style={styles.restorePurchasesText}>TRY AGAIN</Text>
+      </Pressable>
+    </View>;
+  }
   return (
     <View style={styles.messageCard}>
       <Text style={styles.messageTitle}>No {type} found</Text>

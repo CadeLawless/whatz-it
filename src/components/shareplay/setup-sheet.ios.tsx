@@ -395,12 +395,14 @@ export function SharePlaySetupSheet() {
               <Text selectable style={styles.debugText}>{debugTrace}</Text>
             </>}
           </View>}
-          {!hasSession && <Button label="INVITE FRIENDS" arrow disabled={busy || !sharePlay.available ||
-            !sharePlay.initialized || !sharePlay.canInvite || sharePlay.invitationPending}
-            onPress={() => { void sharePlay.invite(); }} />}
           {session.status === 'waiting' && <Button label="JOIN SESSION" arrow disabled={busy}
             onPress={() => { void sharePlay.join(); }} />}
         </ScrollView>}
+        {!deckSearchOpen && !nameStep && !hasSession && <View style={styles.lobbyFooter}>
+          <Button label="INVITE FRIENDS" arrow disabled={busy || !sharePlay.available ||
+            !sharePlay.initialized || !sharePlay.canInvite || sharePlay.invitationPending}
+            onPress={() => { void sharePlay.invite(); }} />
+        </View>}
         {!deckSearchOpen && nameStep && <View style={styles.lobbyFooter}>
           {sharePlay.playerNameLoaded && <Button label="CONTINUE" arrow disabled={!cleanPlayerName(nameDraft)} onPress={submitName} />}
           {hasSession && <Button label="LEAVE" secondary disabled={busy} onPress={close} />}

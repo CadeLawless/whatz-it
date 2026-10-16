@@ -6,7 +6,7 @@ import { canReactInPhase, REACTION_COOLDOWN_MS, SHAREPLAY_REACTIONS,
 
 test('reaction choices stay in the requested order', () => {
   assert.deepEqual(SHAREPLAY_REACTIONS.map(({ emoji }) => emoji), ['😂', '🤨', '😳', '🗑️']);
-  assert.deepEqual(SHAREPLAY_RESULTS_REACTIONS.map(({ emoji }) => emoji), ['👏', '😬', '😳', '🫣']);
+  assert.deepEqual(SHAREPLAY_RESULTS_REACTIONS.map(({ emoji }) => emoji), ['👏', '😎', '😳', '🫣']);
   assert.equal(canReactInPhase('feedback'), false);
   assert.equal(canReactInPhase('results'), true);
 });

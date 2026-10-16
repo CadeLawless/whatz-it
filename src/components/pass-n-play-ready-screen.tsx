@@ -179,6 +179,9 @@ export function PassNPlayReadyScreen() {
             <Text accessibilityRole="header" style={styles.title}>GET READY</Text>
           )}
         </ScrollView>
+        <Text style={styles.instruction}>
+          Get your friends to guess the card, then pass the phone.
+        </Text>
         {isRecording && focused && appActive && <RecordingIndicator position="bottom-left" />}
       </View>
     </SafeAreaView>
@@ -193,6 +196,8 @@ const styles = StyleSheet.create({
   deckTitle: { flex: 1, ...typography.body, color: colors.white, textAlign: 'right', textTransform: 'uppercase' },
   content: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg, gap: spacing.lg },
   title: { ...typography.hero, color: colors.white, textAlign: 'center' },
+  instruction: { ...typography.body, color: colors.white, textAlign: 'center',
+    paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
   count: { fontFamily: 'Inter_900Black', fontSize: 128, lineHeight: 145,
     color: colors.white, textAlign: 'center', fontVariant: ['tabular-nums'] },
 });

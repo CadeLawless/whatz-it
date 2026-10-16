@@ -1,8 +1,8 @@
 import NetInfo from '@react-native-community/netinfo';
 import Constants from 'expo-constants';
-import { getAvailablePurchases, type Purchase, useIAP } from 'expo-iap';
+import { fetchProducts, getAvailablePurchases, type Product, type Purchase, useIAP } from 'expo-iap';
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { openCatalogDatabase } from '@/catalog/catalog-database';
 import { useCatalog } from '@/catalog/catalog-provider';
@@ -39,6 +39,7 @@ import { installEntitledDeck } from './entitled-deck-installer';
 import {
   EntitledDeckPreparationError,
   EntitledDeckPreparationQueue,
+  entitlementsForPreparation,
 } from './entitled-deck-preparation';
 import { resetLocalPaidOwnership } from './commerce-testing';
 import { describeCommerceError, logCommerceDiagnostic } from './commerce-diagnostics';
@@ -47,13 +48,24 @@ import {
   commerceProductIndexFromFingerprint,
 } from './commerce-product-index';
 import {
+  productsForCurrentCatalog,
+  refreshCommerceSession,
+  unownedCommerceState,
+  type CommerceConnectionState,
+  type StoreProductRequestState,
+} from './commerce-availability';
+import {
   loadOrCreateInstallationIdentity,
   resetInstallationIdentity,
   type InstallationIdentity,
 } from './installation-identity';
 
 type OwnedProduct = CommerceEntitlements['products'][number];
-type StoreProductRequestState = 'waiting' | 'loading' | 'complete' | 'error';
+type StoreProductSnapshot = {
+  fingerprint: string;
+  status: StoreProductRequestState;
+  products: Product[];
+};
 
 const STORE_CONNECTION_TIMEOUT_MS = 10_000;
 const STORE_PROMPT_DELAY_NOTICE_MS = 8_000;
@@ -78,14 +90,17 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const [operationStates, setOperationStates] = useState<Map<string, CommerceProductState>>(new Map());
   const [restoreState, setRestoreState] = useState<CommerceRestoreState>({ status: 'idle' });
   const [testingState, setTestingState] = useState<CommerceTestingState>({ status: 'idle' });
-  const [serverReachable, setServerReachable] = useState(true);
-  const [storeProductRequestState, setStoreProductRequestState] =
-    useState<StoreProductRequestState>('waiting');
+  const [serviceState, setServiceState] = useState<CommerceConnectionState>('loading');
+  const [networkOffline, setNetworkOffline] = useState(false);
+  const [storeSnapshot, setStoreSnapshot] = useState<StoreProductSnapshot>({
+    fingerprint: '', status: 'waiting', products: [],
+  });
   const processedTransactions = useRef(new Set<string>());
   const failedPurchases = useRef(new Map<string, Purchase>());
   const restoreInFlight = useRef(false);
   const connectionRefreshRef = useRef<Promise<boolean> | null>(null);
-  const storeProductRefreshRef = useRef<Promise<void> | null>(null);
+  const storeProductRefreshRef = useRef<{ fingerprint: string; request: Promise<void> } | null>(null);
+  const storeRequestGeneration = useRef(0);
   const activePurchaseRef = useRef<ActivePurchase | null>(null);
 
   const storePlatform: StorePlatform | null = Platform.OS === 'ios'
@@ -99,6 +114,16 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const storeProducts = useMemo(
     () => commerceProductIndexFromFingerprint(storeProductFingerprint),
     [storeProductFingerprint],
+  );
+  const currentFingerprintRef = useRef(storeProductFingerprint);
+  useEffect(() => {
+    currentFingerprintRef.current = storeProductFingerprint;
+  }, [storeProductFingerprint]);
+  const storeProductRequestState = storeSnapshot.fingerprint === storeProductFingerprint
+    ? storeSnapshot.status : 'waiting';
+  const products = useMemo(
+    () => productsForCurrentCatalog(storeSnapshot, storeProductFingerprint),
+    [storeProductFingerprint, storeSnapshot],
   );
 
   const setTargetState = useCallback((target: { kind: string; id: string }, state?: CommerceProductState) => {
@@ -169,13 +194,14 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   const prepareEntitledDecks = useCallback(async (
     entitlements: CommerceEntitlements,
     currentIdentity: InstallationIdentity,
+    requiredDeckIds?: readonly string[],
   ) => {
     if (!apiBaseUrl) return;
     const database = await openCatalogDatabase();
     try {
       await preparationQueue.prepare(
         currentIdentity.installationId,
-        entitlements,
+        entitlementsForPreparation(entitlements, requiredDeckIds),
         { database, identity: currentIdentity },
       );
     } catch (error) {
@@ -206,13 +232,23 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     const startedAt = Date.now();
     logCommerceDiagnostic('server-refresh-started');
     const request = (async () => {
-      const currentIdentity = await loadOrCreateInstallationIdentity();
-      setIdentity(currentIdentity);
-      await registerInstallation(apiBaseUrl, currentIdentity, storePlatform);
-      const entitlements = await fetchEntitlements(apiBaseUrl, currentIdentity);
-      await persistEntitlements(entitlements);
-      await prepareEntitledDecks(entitlements, currentIdentity);
-      setServerReachable(true);
+      const { entitlements } = await refreshCommerceSession({
+        connect: async () => {
+          const currentIdentity = await loadOrCreateInstallationIdentity();
+          setIdentity(currentIdentity);
+          await registerInstallation(apiBaseUrl, currentIdentity, storePlatform);
+          const entitlements = await fetchEntitlements(apiBaseUrl, currentIdentity);
+          await persistEntitlements(entitlements);
+          return { currentIdentity, entitlements };
+        },
+        ready: () => setServiceState('ready'),
+        prepare: ({ currentIdentity, entitlements }) => prepareEntitledDecks(entitlements, currentIdentity),
+        preparationFailed: (error) => {
+          logCommerceDiagnostic('server-refresh-content-preparation-failed', {
+            error: describeCommerceError(error),
+          }, 'warn');
+        },
+      });
       logCommerceDiagnostic('server-refresh-completed', {
         durationMs: Date.now() - startedAt,
         productCount: entitlements.products.length,
@@ -225,7 +261,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
           error: describeCommerceError(error),
         }, 'warn');
         console.warn('[StoreCommerce] Commerce connection refresh failed', error);
-        setServerReachable(false);
+        setServiceState('error');
         return false;
       })
       .finally(() => {
@@ -282,15 +318,12 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
         error: describeCommerceError(error),
       }, 'warn');
       console.error('[StoreCommerce] App Store request failed', error);
-      setStoreProductRequestState('error');
     },
   });
 
   const {
     connected,
-    fetchProducts,
     finishTransaction,
-    products,
     reconnect,
     requestPurchase,
     restorePurchases: restoreStorePurchases,
@@ -316,8 +349,12 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
 
   const refreshStoreProducts = useCallback(() => {
     if (!storePlatform || storeProducts.size === 0) return Promise.resolve();
-    if (storeProductRefreshRef.current) return storeProductRefreshRef.current;
-    setStoreProductRequestState('loading');
+    if (storeProductRefreshRef.current?.fingerprint === storeProductFingerprint) {
+      return storeProductRefreshRef.current.request;
+    }
+    const fingerprint = storeProductFingerprint;
+    const generation = ++storeRequestGeneration.current;
+    setStoreSnapshot({ fingerprint, status: 'loading', products: [] });
     const startedAt = Date.now();
     logCommerceDiagnostic('store.products-requested', {
       connected,
@@ -331,11 +368,16 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
           throw new Error('The App Store connection is unavailable.');
         }
 
-        await fetchProducts({ skus: [...storeProducts.keys()], type: 'in-app' });
-        setStoreProductRequestState('complete');
+        // The hook merges results with previous products. Use the raw response so a
+        // removed product or an older catalog request cannot keep an offer visible.
+        const result = await fetchProducts({ skus: [...storeProducts.keys()], type: 'in-app' });
+        if (currentFingerprintRef.current !== fingerprint || storeRequestGeneration.current !== generation) return;
+        const returnedProducts = (result ?? []) as Product[];
+        setStoreSnapshot({ fingerprint, status: 'complete', products: returnedProducts });
         logCommerceDiagnostic('store.products-request-returned', {
           durationMs: Date.now() - startedAt,
           requestedProductCount: storeProducts.size,
+          missingProductIds: [...storeProducts.keys()].filter((id) => !returnedProducts.some((product) => product.id === id)),
         });
       } catch (error) {
         logCommerceDiagnostic('store.products-request-failed', {
@@ -344,17 +386,19 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
           requestedProductCount: storeProducts.size,
         }, 'warn');
         console.error('[StoreCommerce] Product loading failed', error);
-        setStoreProductRequestState('error');
+        if (currentFingerprintRef.current === fingerprint && storeRequestGeneration.current === generation) {
+          setStoreSnapshot({ fingerprint, status: 'error', products: [] });
+        }
       }
     })().finally(() => {
-      if (storeProductRefreshRef.current === request) {
+      if (storeProductRefreshRef.current?.request === request) {
         storeProductRefreshRef.current = null;
       }
     });
 
-    storeProductRefreshRef.current = request;
+    storeProductRefreshRef.current = { fingerprint, request };
     return request;
-  }, [connected, fetchProducts, reconnect, storePlatform, storeProducts]);
+  }, [connected, reconnect, storePlatform, storeProducts, storeProductFingerprint]);
 
   const processPurchase = useCallback(async (purchase: Purchase) => {
     const currentActive = activePurchaseRef.current;
@@ -463,10 +507,12 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
         productId: purchase.productId,
       });
       if (target) setTargetState(target, { status: 'preparing' });
-      await prepareEntitledDecks(entitlements, identity);
+      const requiredDeckIds = target?.kind === 'deck' ? [target.id]
+        : target ? catalog.getBundleById(target.id)?.deckIds : undefined;
+      await prepareEntitledDecks(entitlements, identity, requiredDeckIds);
       if (target) failedPurchases.current.delete(`${target.kind}:${target.id}`);
       if (target) setTargetState(target);
-      setServerReachable(true);
+      setServiceState('ready');
       if (activePurchaseRef.current?.operationId === active?.operationId) {
         activePurchaseRef.current = null;
       }
@@ -499,7 +545,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
         });
       }
     }
-  }, [apiBaseUrl, finishTransaction, identity, persistEntitlements, prepareEntitledDecks, setTargetState, storePlatform, storeProducts]);
+  }, [apiBaseUrl, catalog, finishTransaction, identity, persistEntitlements, prepareEntitledDecks, setTargetState, storePlatform, storeProducts]);
   useEffect(() => {
     processPurchaseRef.current = processPurchase;
   }, [processPurchase]);
@@ -522,7 +568,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       }
       if (!cancelled) await refreshCommerceConnection();
     })().catch(() => {
-      if (!cancelled) setServerReachable(false);
+      if (!cancelled) setServiceState('error');
     });
     return () => { cancelled = true; };
   }, [refreshCommerceConnection]);
@@ -531,19 +577,26 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     if (!apiBaseUrl || !storePlatform) return;
     let wasOnline: boolean | null = null;
     return NetInfo.addEventListener((network) => {
-      const online = network.isConnected === true
-        && network.isInternetReachable !== false;
-      if (!online) {
-        if (network.isConnected === false || network.isInternetReachable === false) {
-          setServerReachable(false);
-        }
-      } else if (wasOnline !== true) {
+      // Reachability probes and server failures are not proof the device is offline.
+      setNetworkOffline(network.isConnected === false);
+      const online = network.isConnected === true;
+      if (online && wasOnline !== true) {
         void refreshCommerceConnection();
         void refreshStoreProducts();
       }
       wasOnline = online;
     });
   }, [apiBaseUrl, refreshCommerceConnection, refreshStoreProducts, storePlatform]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refreshCommerceConnection();
+        void refreshStoreProducts();
+      }
+    });
+    return () => subscription.remove();
+  }, [refreshCommerceConnection, refreshStoreProducts]);
 
   useEffect(() => {
     if (!connected || !storePlatform || storeProducts.size === 0) return;
@@ -557,12 +610,13 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (connected || !storePlatform || storeProducts.size === 0) return;
     const timeout = setTimeout(() => {
-      setStoreProductRequestState((current) =>
-        current === 'waiting' ? 'error' : current,
-      );
+      setStoreSnapshot((current) => current.fingerprint !== storeProductFingerprint
+        || current.status === 'waiting'
+        ? { fingerprint: storeProductFingerprint, status: 'error', products: [] }
+        : current);
     }, STORE_CONNECTION_TIMEOUT_MS);
     return () => clearTimeout(timeout);
-  }, [connected, storePlatform, storeProducts]);
+  }, [connected, storePlatform, storeProducts, storeProductFingerprint]);
 
   const targetProductId = useCallback((target: CommerceTarget) => {
     if (!storePlatform) return undefined;
@@ -600,17 +654,14 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       return entitledCommerceState(direct ? 'purchase' : 'bundle', [target.installationStatus]);
     }
     const productId = targetProductId(target);
-    if (!productId || !storePlatform || !apiBaseUrl) {
-      return { status: 'unavailable', reason: 'not_configured' };
-    }
-    const price = prices.get(productId);
-    if (!serverReachable) return { status: 'offline', ...(price ? { lastKnownPrice: price } : {}) };
-    if (price) return { status: 'available', localizedPrice: price };
-    if (storeProductRequestState === 'error' || storeProductRequestState === 'complete') {
-      return { status: 'unavailable', reason: 'store_unavailable' };
-    }
-    return { status: 'loading' };
-  }, [apiBaseUrl, catalog, operationStates, ownedDeckIds, ownedProducts, prices, serverReachable, storePlatform, storeProductRequestState, targetProductId]);
+    return unownedCommerceState({
+      configured: Boolean(productId && storePlatform && apiBaseUrl),
+      networkOffline,
+      serviceState,
+      storeState: !connected && storeProductRequestState === 'complete' ? 'error' : storeProductRequestState,
+      localizedPrice: productId ? prices.get(productId) : undefined,
+    });
+  }, [apiBaseUrl, catalog, connected, operationStates, ownedDeckIds, ownedProducts, prices, networkOffline, serviceState, storePlatform, storeProductRequestState, targetProductId]);
 
   const getBundleOffer = useCallback((bundleId: string) => {
     const bundle = catalog.getBundleById(bundleId);
@@ -618,6 +669,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
   }, [catalog, ownedDeckIds, storePlatform, storePrices]);
 
   const purchase = useCallback(async (target: CommerceTarget) => {
+    if (getProductState(target).status !== 'available') return;
     const productId = targetProductId(target);
     if (!productId || !identity || !storePlatform) {
       logCommerceDiagnostic('store.request-skipped', {
@@ -689,7 +741,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       }
       setTargetState(target);
     }
-  }, [connected, identity, prices, requestPurchase, setTargetState, storePlatform, targetProductId]);
+  }, [connected, getProductState, identity, prices, requestPurchase, setTargetState, storePlatform, targetProductId]);
 
   const restorePurchases = useCallback(async () => {
     if (restoreInFlight.current) return;
@@ -771,7 +823,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       const newlyRestoredProductCount = result.entitlements.products.filter(
         (product) => !ownedBeforeRestore.has(product.productId),
       ).length;
-      setServerReachable(true);
+      setServiceState('ready');
       setRestoreState({
         status: 'success',
         newlyRestoredProductCount,
@@ -823,16 +875,18 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     try {
       const entitlements = await fetchEntitlements(apiBaseUrl, identity);
       await persistEntitlements(entitlements);
-      await prepareEntitledDecks(entitlements, identity);
+      const requiredDeckIds = target.kind === 'deck' ? [target.id]
+        : catalog.getBundleById(target.id)?.deckIds;
+      await prepareEntitledDecks(entitlements, identity, requiredDeckIds);
       setTargetState(target);
-      setServerReachable(true);
+      setServiceState('ready');
     } catch (error) {
       setTargetState(target, {
         status: 'retry',
         message: purchaseFailureMessage(error),
       });
     }
-  }, [apiBaseUrl, identity, persistEntitlements, prepareEntitledDecks, processPurchase, setTargetState]);
+  }, [apiBaseUrl, catalog, identity, persistEntitlements, prepareEntitledDecks, processPurchase, setTargetState]);
 
   const testingEnabled =
     process.env.EXPO_PUBLIC_COMMERCE_TESTING === 'enabled'
@@ -858,7 +912,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
       const newIdentity = await resetInstallationIdentity();
       await registerInstallation(apiBaseUrl, newIdentity, 'apple');
       setIdentity(newIdentity);
-      setServerReachable(true);
+      setServiceState('ready');
       setTestingState({
         status: 'success',
         message: 'A new test installation is ready. Tap Restore Purchases to recover this Apple Account’s decks.',
@@ -884,7 +938,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     try {
       const result = await resetSandboxPurchases(apiBaseUrl, identity);
       await clearLocalOwnership();
-      setServerReachable(true);
+      setServiceState('ready');
       setTestingState({
         status: 'success',
         message: `${result.revokedEntitlementCount} sandbox entitlement${result.revokedEntitlementCount === 1 ? '' : 's'} reset. Clear the Sandbox Apple Account purchase history before buying again.`,
@@ -902,7 +956,7 @@ export function StoreCommerceProvider({ children }: PropsWithChildren) {
     getBundleOffer,
     getOwnedDeckIds: () => ownedDeckIds,
     purchase,
-    refreshCommerceConnection: () => { void refreshCommerceConnection(); },
+    refreshCommerceConnection: async () => { await refreshCommerceConnection(); },
     refreshStoreProducts,
     restorePurchases: storePlatform && apiBaseUrl ? restorePurchases : undefined,
     restoreState,
@@ -940,7 +994,7 @@ function createCommerceOperationId() {
 function purchaseFailureMessage(error: unknown) {
   if (error instanceof CommerceApiError) {
     if (error.code === 'network_error' || error.code === 'request_timeout') {
-      return 'Check your internet connection, then tap Try Again.';
+      return 'The download could not finish. Please try again.';
     }
   }
   return 'Your purchase went through, but we couldn’t finish the download. Tap Try Again to finish.';

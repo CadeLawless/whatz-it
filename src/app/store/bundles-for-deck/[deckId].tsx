@@ -14,6 +14,7 @@ import { AppSheet, type AppSheetRef } from '@/components/app-sheet';
 import { CatalogCoverImage } from '@/components/catalog-cover-image';
 import { CircularCloseButton } from '@/components/circular-close-button';
 import { colors, radius, spacing } from '@/theme';
+import { useStorefrontAvailability } from '@/storefront/commerce-provider';
 
 const FAN_WIDTH = 96;
 const FAN_CARD_WIDTH = 48;
@@ -25,7 +26,8 @@ export default function BundlesForDeckSheet() {
   const router = useRouter();
   const sheetRef = useRef<AppSheetRef>(null);
   const deck = catalog.getDeckById(deckId);
-  const bundles = catalog.getBundlesForDeck(deckId);
+  const availability = useStorefrontAvailability(catalog);
+  const bundles = catalog.getBundlesForDeck(deckId).filter((bundle) => availability.bundleIds.has(bundle.id));
 
   return (
     <AppSheet
@@ -56,6 +58,7 @@ export default function BundlesForDeckSheet() {
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
         >
+          {bundles.length === 0 && <Text style={styles.subtitle}>No bundles are available right now.</Text>}
           {bundles.map((bundle) => {
             const previewDecks = bundle.decks.slice(0, 4);
             const fanCenter = (previewDecks.length - 1) / 2;

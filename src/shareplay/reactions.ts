@@ -7,7 +7,7 @@ export const SHAREPLAY_REACTIONS = [
 
 export const SHAREPLAY_RESULTS_REACTIONS = [
   { emoji: '👏', label: 'Clapping Hands' },
-  { emoji: '😬', label: 'Grimacing Face' },
+  { emoji: '😎', label: 'Smiling Face with Sunglasses' },
   { emoji: '😳', label: 'Flushed Face' },
   { emoji: '🫣', label: 'Face with Peeking Eye' },
 ] as const;

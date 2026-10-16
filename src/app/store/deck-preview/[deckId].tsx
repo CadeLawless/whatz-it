@@ -27,6 +27,7 @@ import { CommercePurchaseCard } from '@/components/commerce-purchase-card';
 import { DeckDetailsHeader } from '@/components/deck-details-header';
 import { bundlePurchaseHint as bundlePurchaseHintForOffer } from '@/storefront/bundle-offer';
 import { localizedCommercePrice, useBundleOffer, useCommerceProduct } from '@/storefront/commerce-provider';
+import { commerceListingVisible } from '@/storefront/commerce-availability';
 import { colors, spacing } from '@/theme';
 
 export default function DeckPreviewSheet() {
@@ -292,7 +293,7 @@ export default function DeckPreviewSheet() {
             {deck.access === 'paid' && (
               <View style={styles.purchaseFooter}>
                 <View style={styles.purchaseArea}>
-                  <CommercePurchaseCard
+                  {(!bundle || commerceListingVisible(deckCommerce.state)) && <CommercePurchaseCard
                     key={deck.id}
                     onOwned={() =>
                       router.dismissTo({
@@ -307,7 +308,7 @@ export default function DeckPreviewSheet() {
                     showTargetTitle
                     state={deckCommerce.state}
                     target={deckCommerceTarget}
-                  />
+                  />}
                   {bundle && bundleCommerce.state.status !== 'owned' && (
                     <CommercePurchaseCard
                       comparisonPrice={bundlePurchaseHint ? bundleOffer?.comparisonPrice : null}

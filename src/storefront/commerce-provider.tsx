@@ -1,4 +1,4 @@
-import { createContext, type PropsWithChildren, use } from 'react';
+import { createContext, type PropsWithChildren, use, useMemo } from 'react';
 
 import {
   fallbackCommerceState,
@@ -6,6 +6,8 @@ import {
   type CommerceTarget,
 } from './commerce-state';
 import type { BundleOffer } from './bundle-offer';
+import type { CatalogSnapshot } from '@/catalog/catalog-snapshot';
+import { commerceListingVisible, commerceTarget } from './commerce-availability';
 
 export type CommerceAdapter = {
   getProductState: (target: CommerceTarget) => CommerceProductState;
@@ -65,15 +67,12 @@ export function useCommerceProduct(target: CommerceTarget) {
         ? () => adapter.purchase?.(target)
         : undefined,
     retry:
-      state.status === 'offline' && adapter.refreshCommerceConnection
-        ? () => adapter.refreshCommerceConnection?.()
+      (state.status === 'offline' || (state.status === 'unavailable'
+        && (state.reason === 'store_unavailable' || state.reason === 'service_unavailable')))
+        ? () => Promise.all([adapter.refreshCommerceConnection?.(), adapter.refreshStoreProducts?.()])
         : state.status === 'retry' && adapter.retryPreparation
         ? () => adapter.retryPreparation?.(target)
-        : state.status === 'unavailable'
-          && state.reason === 'store_unavailable'
-          && adapter.refreshStoreProducts
-          ? () => adapter.refreshStoreProducts?.()
-          : undefined,
+        : undefined,
     state,
   };
 }
@@ -82,8 +81,28 @@ export function localizedCommercePrice(state: CommerceProductState) {
   if (state.status === 'available' || state.status === 'purchasing') {
     return state.localizedPrice;
   }
-  if (state.status === 'offline') return state.lastKnownPrice;
   return undefined;
+}
+
+export function useStorefrontAvailability(catalog: CatalogSnapshot) {
+  const adapter = use(CommerceContext);
+  return useMemo(() => {
+    const deckStates = catalog.decks.map((deck) => [
+      deck.id, adapter.getProductState(commerceTarget(deck, 'deck')),
+    ] as const);
+    const bundleStates = catalog.bundles.map((bundle) => [
+      bundle.id, adapter.getProductState(commerceTarget(bundle, 'bundle')),
+    ] as const);
+    const states = [...deckStates, ...bundleStates].map(([, state]) => state);
+    return {
+      deckIds: new Set(deckStates.filter(([, state]) => commerceListingVisible(state)).map(([id]) => id)),
+      bundleIds: new Set(bundleStates.filter(([, state]) => commerceListingVisible(state)).map(([id]) => id)),
+      checking: states.some((state) => state.status === 'loading'),
+      unavailable: states.some((state) => state.status === 'offline' || (state.status === 'unavailable'
+        && (state.reason === 'store_unavailable' || state.reason === 'service_unavailable'))),
+      refresh: () => Promise.all([adapter.refreshCommerceConnection?.(), adapter.refreshStoreProducts?.()]),
+    };
+  }, [adapter, catalog]);
 }
 
 export function useBundleOffer(bundleId: string) {

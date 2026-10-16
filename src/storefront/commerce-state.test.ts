@@ -78,13 +78,13 @@ describe('storefront commerce state', () => {
 
   it('lets users retry the commerce service after reconnecting', () => {
     const presentation = commercePresentation(
-      { status: 'offline', lastKnownPrice: '$1.99' },
+      { status: 'offline' },
       paidDeck,
     );
 
     assert.equal(presentation.action, 'retry');
     assert.equal(presentation.buttonLabel, 'TRY AGAIN');
-    assert.match(presentation.copy, /\$1\.99/);
+    assert.doesNotMatch(presentation.copy, /last seen|connect to the internet|\$/i);
   });
 
   it('uses a clear retry label when a purchased download does not finish', () => {

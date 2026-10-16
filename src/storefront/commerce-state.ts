@@ -10,8 +10,8 @@ export type CommerceTarget = {
 
 export type CommerceProductState =
   | { status: 'loading' }
-  | { status: 'unavailable'; reason: 'not_configured' | 'store_unavailable' }
-  | { status: 'offline'; lastKnownPrice?: string }
+  | { status: 'unavailable'; reason: 'not_configured' | 'product_unavailable' | 'store_unavailable' | 'service_unavailable' }
+  | { status: 'offline' }
   | { status: 'available'; localizedPrice: string }
   | { status: 'purchasing'; localizedPrice: string; waitingForStore?: boolean }
   | { status: 'pending' }
@@ -82,7 +82,7 @@ export function commercePresentation(
         tone: 'muted',
       };
     case 'unavailable':
-      return state.reason === 'not_configured'
+      return state.reason === 'not_configured' || state.reason === 'product_unavailable'
         ? {
             action: 'none',
             busy: false,
@@ -95,8 +95,8 @@ export function commercePresentation(
             action: 'retry',
             busy: false,
             buttonLabel: 'TRY AGAIN',
-            copy: 'Check your internet connection, then tap Try Again.',
-            title: 'Can’t connect to the App Store',
+            copy: 'Purchases are temporarily unavailable. Please try again.',
+            title: state.reason === 'service_unavailable' ? 'Purchases unavailable' : 'Store unavailable',
             tone: 'warning',
           };
     case 'offline':
@@ -104,10 +104,8 @@ export function commercePresentation(
         action: 'retry',
         busy: false,
         buttonLabel: 'TRY AGAIN',
-        copy: state.lastKnownPrice
-          ? `Connect to the internet, then tap Try Again. Last seen: ${state.lastKnownPrice}.`
-          : 'Connect to the internet, then tap Try Again.',
-        title: 'You’re offline',
+        copy: 'Purchases are unavailable while this device is disconnected.',
+        title: 'No connection',
         tone: 'warning',
       };
     case 'available':

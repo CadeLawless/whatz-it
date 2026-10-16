@@ -5,9 +5,36 @@ import type { CommerceEntitlements } from './commerce-api';
 import {
   EntitledDeckPreparationError,
   EntitledDeckPreparationQueue,
+  entitlementsForPreparation,
 } from './entitled-deck-preparation';
 
 describe('entitled deck preparation queue', () => {
+  it('finishes a new purchase without retrying an unrelated removed test deck', async () => {
+    const entitlements = fixtureEntitlements(['fall-favorties', 'fall-favorites']);
+    const calls: string[] = [];
+    const queue = new EntitledDeckPreparationQueue(async (deckId: string) => {
+      calls.push(deckId);
+      if (deckId === 'fall-favorties') throw new Error('No published artifact');
+    }, async () => undefined);
+    const scoped = entitlementsForPreparation(entitlements, ['fall-favorites']);
+    await queue.prepare('installation-1', scoped, undefined);
+    assert.deepEqual(calls, ['fall-favorites']);
+    assert.deepEqual(entitlements.deckIds, ['fall-favorties', 'fall-favorites']);
+    assert.equal(scoped.products, entitlements.products);
+    assert.equal(entitlementsForPreparation(entitlements), entitlements);
+  });
+
+  it('prepares all purchased bundle members while ignoring unrelated entitlements', async () => {
+    const calls: string[] = [];
+    const queue = new EntitledDeckPreparationQueue(async (deckId: string) => {
+      calls.push(deckId);
+    }, async () => undefined);
+    await queue.prepare('installation-1', entitlementsForPreparation(
+      fixtureEntitlements(['unrelated', 'deck-a', 'deck-b']), ['deck-a', 'deck-b'],
+    ), undefined);
+    assert.deepEqual(calls, ['deck-a', 'deck-b']);
+  });
+
   it('does not reload the catalog for an empty entitlement set', async () => {
     let refreshes = 0;
     const queue = new EntitledDeckPreparationQueue(

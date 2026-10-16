@@ -17,7 +17,7 @@ import { DeckSetupHeader } from '@/components/deck-setup-header';
 import { FeaturedCardsCarousel } from '@/components/featured-cards-carousel';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
-import { useCommerceProduct } from '@/storefront/commerce-provider';
+import { useCommerceProduct, useStorefrontAvailability } from '@/storefront/commerce-provider';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function StoreDeckDetailsScreen() {
@@ -29,7 +29,8 @@ export default function StoreDeckDetailsScreen() {
   const router = useRouter();
   const isPortrait = usePortraitScreen();
   const deck = catalog.getDeckById(deckId);
-  const bundles = catalog.getBundlesForDeck(deckId);
+  const availability = useStorefrontAvailability(catalog);
+  const bundles = catalog.getBundlesForDeck(deckId).filter((bundle) => availability.bundleIds.has(bundle.id));
   const commerceTarget = deck
     ? {
         access: deck.access,

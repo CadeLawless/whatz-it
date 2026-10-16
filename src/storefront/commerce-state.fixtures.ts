@@ -3,7 +3,7 @@ import type { CommerceProductState } from './commerce-state';
 export const commerceStateFixtures = {
   loading: { status: 'loading' },
   unavailable: { status: 'unavailable', reason: 'store_unavailable' },
-  offline: { status: 'offline', lastKnownPrice: '$2.99' },
+  offline: { status: 'offline' },
   available: { status: 'available', localizedPrice: '$2.99' },
   purchasing: { status: 'purchasing', localizedPrice: '$2.99' },
   waitingForStore: {

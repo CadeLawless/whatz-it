@@ -27,8 +27,8 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 75,
-    "updatedAt": "2026-09-18T14:18:35Z",
+    "revision": 76,
+    "updatedAt": "2026-10-15T18:11:59Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
@@ -14109,9 +14109,9 @@ const bundleCatalog: PortableCatalog =
             "cards": []
         },
         {
-            "id": "fall-favorties",
+            "id": "fall-favorites",
             "order": 27,
-            "title": "Fall Favorties",
+            "title": "Fall Favorites",
             "description": "Pumpkin Spice and everything Fall!",
             "coverImage": "assets/images/decks/baseline/10ebcc882e3dd32c678085295641bb776cd38243c3f0fe5c9b9ab455b6ae41f0.webp",
             "version": 1,
@@ -14150,7 +14150,7 @@ const bundleCatalog: PortableCatalog =
             "price": 1.99,
             "storeProducts": {
                 "apple": {
-                    "productId": "com.cadelawless.whatzit.deck.fall_favorties",
+                    "productId": "com.cadelawless.whatzit.deck.fall_favorites",
                     "status": "available"
                 }
             },
@@ -14719,7 +14719,7 @@ const bundleCatalog: PortableCatalog =
             "description": "Cozy up with our seasonal mix of fall decks, including Halloween, Thanksgiving, Fall Favorites, and Horror Movies.",
             "access": "paid",
             "price": 6.99,
-            "version": 2,
+            "version": 3,
             "storeProducts": {
                 "apple": {
                     "productId": "com.cadelawless.whatzit.bundle.hello_fall",
@@ -14743,7 +14743,7 @@ const bundleCatalog: PortableCatalog =
             "deckIds": [
                 "halloween",
                 "thanksgiving",
-                "fall-favorties",
+                "fall-favorites",
                 "horror-movies"
             ]
         },
@@ -14808,7 +14808,7 @@ const bundleCatalog: PortableCatalog =
             "action-movies",
             "dramas",
             "halloween",
-            "fall-favorties",
+            "fall-favorites",
             "thanksgiving",
             "horror-movies",
             "around-the-world",

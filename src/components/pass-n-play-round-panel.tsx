@@ -60,6 +60,9 @@ export function PassNPlayRoundPanel(props: Props) {
               <>
                 <PortraitAnswerText key={props.answer.text} text={props.answer.text} />
                 {props.answer.byline && <Text style={styles.byline}>{props.answer.byline}</Text>}
+                <Text style={styles.clueInstruction}>
+                  Try to get your friends to guess this answer.
+                </Text>
               </>
             ) : (
               <>
@@ -119,6 +122,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase' },
   content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg, gap: spacing.md },
   cardArea: { flex: 1, minHeight: 0 },
+  clueInstruction: { ...typography.body, fontSize: 14, lineHeight: 20,
+    color: colors.muted, textAlign: 'center', paddingHorizontal: spacing.sm },
   byline: { ...typography.body, fontSize: 21, lineHeight: 28,
     fontFamily: 'Inter_700Bold', color: colors.muted, textAlign: 'center' },
   title: { ...typography.hero, color: colors.play, textAlign: 'center' },

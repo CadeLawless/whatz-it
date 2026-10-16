@@ -25,6 +25,15 @@ type PreparationEntitlements = Pick<
   'deckIds' | 'products'
 >;
 
+export function entitlementsForPreparation<T extends PreparationEntitlements>(
+  entitlements: T,
+  requiredDeckIds?: readonly string[],
+): T {
+  if (requiredDeckIds === undefined) return entitlements;
+  const required = new Set(requiredDeckIds);
+  return { ...entitlements, deckIds: entitlements.deckIds.filter((id) => required.has(id)) };
+}
+
 export class EntitledDeckPreparationQueue<Context> {
   private readonly batches = new Map<string, Promise<void>>();
   private tail: Promise<void> = Promise.resolve();
