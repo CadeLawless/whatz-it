@@ -25,7 +25,8 @@ function command(round: RemoteRound, sender: string, now: number, payload: Recor
 function start(round: RemoteRound, participants = ['host', 'guesser']) {
   for (const id of participants) if (!round.viewFor(id, 0)?.ready.includes(id))
     assert.equal(round.receive(id, command(round, id, 0, { kind: 'ready', contentHash }), 0), 'accepted');
-  assert.equal(round.receive('host', command(round, 'host', 0, { kind: 'start' }), 0), 'accepted');
+  const starter = round.viewFor('host', 0)!.guesserId;
+  assert.equal(round.receive(starter, command(round, starter, 0, { kind: 'start' }), 0), 'accepted');
 }
 
 test('a prepared round can resume after its deck owner leaves, once all remaining players ready again', () => {
@@ -41,7 +42,7 @@ test('a prepared round can resume after its deck owner leaves, once all remainin
   assert.equal(round.receive('host', command(round, 'host', 3002, { kind: 'ready', contentHash }), 3002), 'accepted');
   assert.equal(round.receive('host', command(round, 'host', 3002, { kind: 'resume' }), 3002), 'rejected');
   assert.equal(round.receive('guesser', command(round, 'guesser', 3003, { kind: 'ready', contentHash }), 3003), 'accepted');
-  assert.equal(round.receive('host', command(round, 'host', 3003, { kind: 'resume' }), 3003), 'accepted');
+  assert.equal(round.receive('guesser', command(round, 'guesser', 3003, { kind: 'resume' }), 3003), 'accepted');
   assert.equal(round.viewFor('host', 3003)?.phase, 'countdown');
 });
 
@@ -115,7 +116,7 @@ test('readiness requires matching deck content and every participant; resume req
   assert.equal(round.viewFor('host', 5000)?.remainingMs, 28000);
   assert.equal(round.receive('host', command(round, 'host', 6000, { kind: 'resume' }), 6000), 'rejected');
   for (const id of ['host', 'guesser']) round.receive(id, command(round, id, 6000, { kind: 'ready', contentHash }), 6000);
-  assert.equal(round.receive('host', command(round, 'host', 6000, { kind: 'resume' }), 6000), 'accepted');
+  assert.equal(round.receive('guesser', command(round, 'guesser', 6000, { kind: 'resume' }), 6000), 'accepted');
   assert.equal(round.viewFor('host', 6000)?.deadline, 37000);
   assert.equal(round.viewFor('host', 8999)?.card, null);
   assert.equal(round.viewFor('host', 9000)?.phase, 'playing');
@@ -134,7 +135,7 @@ test('readiness from before a pause cannot acknowledge the new paused state', ()
   const guestReady = command(round, 'guesser', 4000, { kind: 'ready', contentHash });
   assert.equal(round.receive('host', hostReady, 4000), 'accepted');
   assert.equal(round.receive('guesser', guestReady, 4000), 'accepted');
-  assert.equal(round.receive('host', command(round, 'host', 4000, { kind: 'resume' }), 4000), 'accepted');
+  assert.equal(round.receive('guesser', command(round, 'guesser', 4000, { kind: 'resume' }), 4000), 'accepted');
 });
 
 test('a roster change keeps readiness from remaining players', () => {
@@ -146,7 +147,7 @@ test('a roster change keeps readiness from remaining players', () => {
   const guestReady = command(round, 'guesser', 0, { kind: 'ready', contentHash });
   assert.equal(round.receive('host', hostReady, 0), 'accepted');
   assert.equal(round.receive('guesser', guestReady, 0), 'rejected');
-  assert.equal(round.receive('host', command(round, 'host', 0, { kind: 'start' }), 0), 'accepted');
+  assert.equal(round.receive('guesser', command(round, 'guesser', 0, { kind: 'start' }), 0), 'accepted');
 });
 
 test('changing the lobby timer keeps the round visible and preserves readiness', () => {
@@ -198,7 +199,7 @@ test('a member can pause after a missed countdown transition, but cannot resume 
   assert.equal(round.viewFor('host', 3000)?.remainingMs, 30000);
   for (const id of ['host', 'guesser']) round.receive(id, command(round, id, 3000, { kind: 'ready', contentHash }), 3000);
   assert.equal(round.receive('host', staleResume, 3000), 'rejected');
-  assert.equal(round.receive('host', command(round, 'host', 3000, { kind: 'resume' }), 3000), 'accepted');
+  assert.equal(round.receive('guesser', command(round, 'guesser', 3000, { kind: 'resume' }), 3000), 'accepted');
 });
 
 test('projections copy only approved card and deck fields from runtime objects', () => {

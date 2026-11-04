@@ -173,8 +173,8 @@ export class RemoteRound {
         break;
       case 'start':
       case 'resume':
-        if (senderId !== this.config.hostId || this.phase !== (intent.kind === 'start' ? 'lobby' : 'paused') ||
-          this.members.length < 2 || !this.members.every((id) => this.ready.has(id)) ||
+        if (senderId !== this.config.guesserId || this.phase !== (intent.kind === 'start' ? 'lobby' : 'paused') ||
+          this.members.length < 2 ||
           !this.members.includes(this.config.guesserId) ||
           (intent.kind === 'start' && !this.members.includes(this.config.deck.sponsorId))) return 'rejected';
         this.phase = 'countdown'; this.startsAt = now + 3000; this.deadline = this.startsAt + this.remainingMs;

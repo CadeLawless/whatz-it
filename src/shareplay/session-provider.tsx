@@ -9,6 +9,7 @@ import { ConnectionProbe, type PeerConnection } from './connection-probe';
 import { setSharePlayAudioBlocked } from './audio-policy';
 import { useCatalog } from '@/catalog/catalog-provider';
 import { loadRoundCardIds, rememberSharedCard } from '@/storage/daily-card-memory';
+import { saveRoundResult } from '@/storage/round-history';
 import { useOwnedDeckIds } from '@/storefront/commerce-provider';
 import { canShareDeck } from './deck-access';
 import { LiveGame } from './live-game';
@@ -48,7 +49,7 @@ type SharePlayContextValue = {
   playerNames: Record<string, string>;
   localPlayerName: string;
   playerNameLoaded: boolean;
-  setLocalPlayerName: (name: string) => void;
+  setLocalPlayerName: (name: string) => Promise<boolean>;
   game: { view: RemoteView | null; synchronized: boolean; remainingMs: number; countdown: number };
   heldResultsView: RemoteView | null;
   reactions: SharePlayReactionEvent[];
@@ -92,6 +93,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const hostElectionActive = useRef(false);
   const electedHostId = useRef<string | null>(null);
   const hostTerm = useRef(0);
+  const signedInviterSeen = useRef(false);
   const lastHostSeenAt = useRef(0);
   const nativeSessionRef = useRef(emptySession);
   const participation = useRef(new SharePlayParticipation());
@@ -112,6 +114,8 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const [peers, setPeers] = useState<Record<string, PeerConnection>>({});
   const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
   const [localPlayerName, setLocalPlayerNameState] = useState('');
+  const nameWrites = useRef<Promise<void>>(Promise.resolve());
+  const savedSharedRoundIds = useRef(new Set<string>());
   const [playerNameLoaded, setPlayerNameLoaded] = useState(false);
   const [setup, setSetup] = useState<Setup | null>(null);
   const [setupMode, setSetupMode] = useState<GameMode>('classic');
@@ -182,6 +186,29 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     onDecks: (selectedDeckId, availableDeckIds, durationSeconds, mode, controllerId) =>
       setDecks({ selectedDeckId, availableDeckIds, durationSeconds, mode, controllerId }),
     onView: (view) => {
+      if (view?.phase === 'results' && view.results && !savedSharedRoundIds.current.has(view.roundId)) {
+        savedSharedRoundIds.current.add(view.roundId);
+        const deck = catalogRef.current.getDeckById(view.deck.deckId);
+        const completedAt = Date.now();
+        void saveRoundResult({
+          id: `shareplay:${view.sessionId}:${view.roundId}`, deckId: view.deck.deckId,
+          createdAt: view.startsAt ?? completedAt, sharePlay: true,
+          resultSnapshot: {
+            version: 1, mode: view.mode ?? 'classic', deckId: view.deck.deckId,
+            deckTitle: deck?.title ?? sessionRef.current.activity?.deckTitle ?? 'SharePlay round',
+            durationSeconds: view.durationSeconds,
+            results: view.results.map((result, index) => ({
+              cardId: `${view.roundId}:${index}`, text: result.answer,
+              ...(result.byline ? { byline: result.byline } : {}),
+              outcome: result.outcome === 'pass' ? 'passed' : result.outcome,
+              answeredAt: completedAt,
+            })),
+          },
+        }).catch(() => {
+          savedSharedRoundIds.current.delete(view.roundId);
+          logSharePlay('round-history.save-failed', {}, true);
+        });
+      }
       if (view?.phase === 'results' && exitedResultsRoundId.current !== view.roundId) {
         heldResultsRef.current = view; setHeldResultsView(view);
       } else if (view?.phase === 'lobby' && heldResultsRef.current?.sessionId === view.sessionId) {
@@ -242,8 +269,24 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       const native = nativeSessionRef.current;
       if (native.status !== 'joined' || !participation.current.isActive(participantId) ||
         !native.participantIds.includes(participantId)) return;
+      if (signed && !signedInviterSeen.current && !gameActive.current &&
+        (!liveGame.current?.currentView || liveGame.current.currentView.phase === 'lobby') &&
+        native.hostParticipantId === participantId) {
+        signedInviterSeen.current = true;
+        hostElectionActive.current = false;
+        electedHostId.current = null;
+        hostTerm.current = term;
+        lastHostSeenAt.current = performance.now();
+        applySnapshotRef.current(native);
+        return;
+      }
+      if (!signed && !hostElectionActive.current &&
+        (native.isHost || (signedInviterSeen.current && native.hostParticipantId &&
+          native.participantIds.includes(native.hostParticipantId) &&
+          participantId !== native.hostParticipantId))) return;
       if (!acceptsSharePlayHostClaim(sessionRef.current.hostParticipantId, hostTerm.current,
         participantId, term, signed)) return;
+      if (signed) signedInviterSeen.current = true;
       lastHostSeenAt.current = performance.now();
       if (sessionRef.current.hostParticipantId === participantId && hostTerm.current === term) return;
       hostTerm.current = term;
@@ -289,6 +332,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       hostElectionActive.current = false;
       electedHostId.current = null;
       hostTerm.current = 0;
+      signedInviterSeen.current = false;
       lastHostSeenAt.current = performance.now();
       if (acceptedRejoinSession.current !== incoming.sessionId) {
         acceptedRejoinSession.current = null; unpreparedLobbySince.current = null;
@@ -443,8 +487,21 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
           if (wire?.kind === 'host-claim' && sessionRef.current.status !== 'joined') {
             if (!participation.current.isActive(native.localParticipantId)) return;
             const term = wire.term ?? 0;
+            if (message.senderIsHost && !signedInviterSeen.current && !gameActive.current &&
+              native.hostParticipantId === message.senderId) {
+              signedInviterSeen.current = true;
+              hostElectionActive.current = false;
+              electedHostId.current = null;
+              hostTerm.current = term;
+              applySnapshotRef.current(native);
+              return;
+            }
+            if (!message.senderIsHost && signedInviterSeen.current && !hostElectionActive.current &&
+              native.hostParticipantId && native.participantIds.includes(native.hostParticipantId) &&
+              message.senderId !== native.hostParticipantId) return;
             if (participation.current.isActive(message.senderId) && acceptsSharePlayHostClaim(
               sessionRef.current.hostParticipantId, hostTerm.current, message.senderId, term, message.senderIsHost)) {
+              if (message.senderIsHost) signedInviterSeen.current = true;
               hostTerm.current = term; electedHostId.current = message.senderId; hostElectionActive.current = true;
               applySnapshotRef.current(native, true);
             }
@@ -614,17 +671,6 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   }, [localPlayerName, session.status, session.sessionId, session.localParticipantId,
     session.participantIds, gamePhase]);
 
-  useEffect(() => {
-    const lobby = game.view;
-    if (session.status !== 'joined' || !session.isHost || !lobby || !['lobby', 'paused'].includes(lobby.phase) ||
-      decks.selectedDeckId !== lobby.deck.deckId ||
-      lobby.participants.length < 2 || !session.localParticipantId) return;
-    if (lobby.participants.every((id) => lobby.ready.includes(id) &&
-      !!(id === session.localParticipantId ? localPlayerName : playerNames[id]))) {
-      liveGame.current?.act(lobby.phase === 'paused' ? 'resume' : 'start');
-    }
-  }, [decks.selectedDeckId, game.view, localPlayerName, playerNames, session.isHost, session.localParticipantId, session.status]);
-
   const run = async (name: string, action: () => Promise<void>) => {
     if (operation.current) return;
     operation.current = true; setBusy(true); setError(null);
@@ -669,12 +715,16 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       logSharePlay('rejoin.accepted');
     }),
     playerNames, localPlayerName, playerNameLoaded,
-    setLocalPlayerName: (name) => {
+    setLocalPlayerName: async (name) => {
       const cleaned = cleanPlayerName(name);
-      if (!cleaned) return;
-      setLocalPlayerNameState(cleaned);
-      void AsyncStorage.setItem(PLAYER_NAME_KEY, cleaned).catch(() => {
+      if (!cleaned) return false;
+      nameWrites.current = nameWrites.current.catch(() => undefined).then(async () => {
+        await AsyncStorage.setItem(PLAYER_NAME_KEY, cleaned);
+        setLocalPlayerNameState(cleaned);
+      });
+      return nameWrites.current.then(() => true).catch(() => {
         logSharePlay('player-name.save-failed', {}, true);
+        return false;
       });
     },
     game, heldResultsView, decks, gameVisible, reactions,

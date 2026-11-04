@@ -55,6 +55,8 @@ import {
 import { useRound } from '@/game/round-context';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
 import { platformReleaseCapabilities } from '@/release/platform-release';
+import { deleteSavedRound, loadRoundHistory, subscribeToRoundHistory, type SavedRound } from '@/storage/round-history';
+import { colors } from '@/theme';
 import {
   loadDeckLibrarySort,
   loadDeckPlayHistory,
@@ -179,6 +181,10 @@ export default function DeckLibraryScreen() {
   const [deckPlayHistory, setDeckPlayHistory] = useState<Record<string, number>>({});
   const [homeMode, setHomeMode] = useState<'my-decks' | 'explore'>('my-decks');
   const [videos, setVideos] = useState<RoundVideo[]>([]);
+  const [savedRounds, setSavedRounds] = useState<SavedRound[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const reloadHistory = useRef(() => {});
   const [hasLoadedVideos, setHasLoadedVideos] = useState(false);
   const [readyThumbnailIds, setReadyThumbnailIds] = useState<Record<string, true>>({});
   const [loadedThumbnailImages, setLoadedThumbnailImages] = useState<
@@ -187,7 +193,7 @@ export default function DeckLibraryScreen() {
   const [thumbnailGateBypassKey, setThumbnailGateBypassKey] = useState<string | null>(null);
   const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
   const [exportingVideoId, setExportingVideoId] = useState<string | null>(null);
-  const [videoPendingDelete, setVideoPendingDelete] = useState<RoundVideo | null>(null);
+  const [videoPendingDelete, setVideoPendingDelete] = useState<SavedRound | null>(null);
   const [isDeletingVideo, setIsDeletingVideo] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<{
@@ -205,7 +211,7 @@ export default function DeckLibraryScreen() {
   const columnGap = width < 380 ? 16 : Math.min(32, Math.round(width * 0.06));
   const deckWidth = Math.floor((pageWidth - horizontalPadding * 2 - columnGap * 2) / 3);
   const videoWidth = Math.floor((pageWidth - horizontalPadding * 2 - columnGap) / 2);
-  const brandWidth = Math.min(width * 0.74, 420);
+  const brandWidth = Math.min(width * 0.74, width - 104, 420);
   const headshotWidth = Math.round(brandWidth * 0.16);
   const wordmarkWidth = Math.round(brandWidth * 0.75);
   useEffect(() => {
@@ -310,23 +316,39 @@ export default function DeckLibraryScreen() {
       return () => {
         active = false;
       };
-    }, []),
+    }, [setDeckSort, setDeckPlayHistory]),
   );
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       let libraryChanged = false;
+      let latestVideos: RoundVideo[] = [];
+      let historyRevision = 0;
+      const refreshHistory = (nextVideos = latestVideos) => {
+        latestVideos = nextVideos;
+        const revision = ++historyRevision;
+        void loadRoundHistory(nextVideos).then((rounds) => {
+          if (!active || revision !== historyRevision) return;
+          setSavedRounds(rounds); setHistoryLoaded(true); setHistoryError(null);
+        }).catch(() => {
+          if (active) setHistoryError('Your saved rounds could not be loaded. Please try again.');
+        });
+      };
+      reloadHistory.current = () => refreshHistory();
       openingRoundResultsRef.current = false;
+      const unsubscribeHistory = subscribeToRoundHistory(() => refreshHistory());
       const unsubscribe = subscribeToRoundVideoLibrary((nextVideos) => {
         if (!active) return;
         libraryChanged = true;
         setVideos(nextVideos);
         setHasLoadedVideos(true);
+        refreshHistory(nextVideos);
       });
       if (!isPortrait) return () => {
         active = false;
         unsubscribe();
+        unsubscribeHistory();
       };
 
       void (async () => {
@@ -348,6 +370,7 @@ export default function DeckLibraryScreen() {
         const storedVideos = await loadRoundVideos();
         if (!active) return;
         if (!libraryChanged) setVideos(storedVideos);
+        refreshHistory(libraryChanged ? latestVideos : storedVideos);
         setHasLoadedVideos(true);
         storedVideos.forEach((video) => {
           if (isRoundVideoReadyToSave(video) || video.exportStatus === 'failed') return;
@@ -358,11 +381,17 @@ export default function DeckLibraryScreen() {
             );
           });
         });
-      })();
+      })().catch(() => {
+        if (active) {
+          setVideos([]); setHasLoadedVideos(true);
+          refreshHistory([]);
+        }
+      });
 
       return () => {
         active = false;
         unsubscribe();
+        unsubscribeHistory();
       };
     }, [isPortrait, revealTransition]),
   );
@@ -526,12 +555,12 @@ export default function DeckLibraryScreen() {
     }
   };
 
-  const handleDelete = (video: RoundVideo) => {
+  const handleDelete = (video: SavedRound) => {
     setDeleteError(null);
     setVideoPendingDelete(video);
   };
 
-  const openRoundResults = async (video: RoundVideo) => {
+  const openRoundResults = async (video: SavedRound) => {
     if (!video.resultSnapshot || openingRoundResultsRef.current) return;
     openingRoundResultsRef.current = true;
     try {
@@ -561,8 +590,10 @@ export default function DeckLibraryScreen() {
     setIsDeletingVideo(true);
     setDeleteError(null);
     try {
-      const next = await deleteRoundVideo(videoPendingDelete.id);
-      setVideos(next);
+      if (videoPendingDelete.videoId) {
+        setVideos(await deleteRoundVideo(videoPendingDelete.videoId));
+      }
+      setSavedRounds(await deleteSavedRound(videoPendingDelete.id));
       setVideoPendingDelete(null);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : 'Please try again.');
@@ -578,7 +609,7 @@ export default function DeckLibraryScreen() {
         message: errorMessage,
       });
     });
-  }, []);
+  }, [setExternalLinkError]);
   const handleContactSupport = useCallback(() => {
     void (async () => {
       try {
@@ -644,7 +675,7 @@ export default function DeckLibraryScreen() {
       setSortMenuAnchor(anchor);
       setIsSortMenuOpen(true);
     },
-    [isSortMenuOpen],
+    [isSortMenuOpen, setIsSortMenuOpen, setSortMenuAnchor],
   );
 
   const sortMenuLeft = Math.min(
@@ -740,6 +771,12 @@ export default function DeckLibraryScreen() {
 
   const videoLibraryContent = (
     <View style={styles.videoLibraryContent}>
+      {historyError && <View>
+        <Text style={styles.emptyVideos}>{historyError}</Text>
+        <Pressable accessibilityRole="button" onPress={() => reloadHistory.current()}
+          style={styles.videoResultLink}><Text style={styles.videoResultLabel}>TRY AGAIN</Text></Pressable>
+      </View>}
+      {!historyLoaded && !historyError && <ActivityIndicator accessibilityLabel="Loading saved rounds" color={colors.play} />}
       {isVideoFinalizing && (
         <View
           accessibilityLabel="Preparing latest round video"
@@ -750,26 +787,27 @@ export default function DeckLibraryScreen() {
           <Text style={styles.pendingVideoText}>Preparing latest round video…</Text>
         </View>
       )}
-      {videos.length === 0 ? (
-        !isVideoFinalizing && (
-          <Text style={styles.emptyVideos}>Your last 10 recorded rounds will appear here.</Text>
+      {savedRounds.length === 0 ? (
+        historyLoaded && !isVideoFinalizing && !historyError && (
+          <Text style={styles.emptyVideos}>Every round appears here, with or without a video.</Text>
         )
       ) : (
         <View style={[styles.videoGrid, { columnGap, rowGap: columnGap }]}>
-          {videos.map((video) => {
-            const deck = catalog.getDeckById(video.deckId);
-            const videoReady = isRoundVideoReadyToSave(video);
-            const exportFailed = video.exportStatus === 'failed';
-            const exportPreparing = !videoReady && !exportFailed;
-            const correctCount = video.resultSnapshot?.results.filter(
+          {savedRounds.map((savedRound) => {
+            const video = videos.find((item) => item.id === savedRound.videoId);
+            const deck = catalog.getDeckById(savedRound.deckId);
+            const videoReady = video ? isRoundVideoReadyToSave(video) : false;
+            const exportFailed = video?.exportStatus === 'failed';
+            const exportPreparing = !!video && !videoReady && !exportFailed;
+            const correctCount = savedRound.resultSnapshot?.results.filter(
               (result) => result.outcome === 'correct',
             ).length;
-            const passedCount = video.resultSnapshot?.results.filter(
+            const passedCount = savedRound.resultSnapshot?.results.filter(
               (result) => result.outcome === 'passed',
             ).length;
             return (
-              <View key={video.id} style={[styles.videoCard, { width: videoWidth }]}>
-                <View style={styles.videoFrame}>
+              <View key={savedRound.id} style={[styles.videoCard, { width: videoWidth }]}>
+                {video ? <View style={styles.videoFrame}>
                   {exportPreparing ? (
                     <View
                       accessibilityLabel="Preparing round video"
@@ -855,40 +893,45 @@ export default function DeckLibraryScreen() {
                       />
                     )}
                   </Pressable>
-                </View>
+                </View> : <Pressable accessibilityRole="button" accessibilityLabel={`View results for ${savedRound.resultSnapshot?.deckTitle ?? 'round'}`}
+                  onPress={() => void openRoundResults(savedRound)} style={[styles.video, styles.resultsOnly]}>
+                  <SymbolView name={{ ios: 'list.bullet.rectangle', android: 'receipt_long', web: 'receipt_long' }}
+                    size={32} tintColor={colors.play} accessibilityElementsHidden />
+                  <Text style={styles.videoResultLabel}>RESULTS ONLY</Text>
+                </Pressable>}
 
                 <View style={styles.videoDetails}>
                   <Pressable
                     accessibilityHint={
-                      video.resultSnapshot
-                        ? 'Opens the video, score, and card-by-card results'
+                      savedRound.resultSnapshot
+                        ? 'Opens the score and card-by-card results, with video when available'
                         : undefined
                     }
                     accessibilityLabel={
-                      video.resultSnapshot
-                        ? `View results for ${video.resultSnapshot.deckTitle}`
+                      savedRound.resultSnapshot
+                        ? `View results for ${savedRound.resultSnapshot.deckTitle}`
                         : 'Results unavailable for this older recording'
                     }
                     accessibilityRole="button"
-                    accessibilityState={{ disabled: !video.resultSnapshot }}
-                    disabled={!video.resultSnapshot}
-                    onPress={() => void openRoundResults(video)}
+                    accessibilityState={{ disabled: !savedRound.resultSnapshot }}
+                    disabled={!savedRound.resultSnapshot}
+                    onPress={() => void openRoundResults(savedRound)}
                     style={({ pressed }) => [
                       styles.videoResultLink,
-                      !video.resultSnapshot && styles.videoResultLinkDisabled,
-                      pressed && video.resultSnapshot && styles.pressed,
+                      !savedRound.resultSnapshot && styles.videoResultLinkDisabled,
+                      pressed && savedRound.resultSnapshot && styles.pressed,
                     ]}
                   >
                     <Text style={styles.videoDeckName}>
-                      {video.resultSnapshot?.deckTitle ?? deck?.title ?? 'Round video'}
+                      {savedRound.resultSnapshot?.deckTitle ?? deck?.title ?? 'Round video'}
                     </Text>
                     <Text style={styles.videoScore}>
-                      {video.resultSnapshot
+                      {savedRound.resultSnapshot
                         ? `${correctCount} correct · ${passedCount} passed`
                         : 'Video only · Results unavailable'}
                     </Text>
                     <Text style={styles.videoDate}>
-                      {new Date(video.createdAt).toLocaleString(undefined, {
+                      {new Date(savedRound.createdAt).toLocaleString(undefined, {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',
@@ -900,28 +943,28 @@ export default function DeckLibraryScreen() {
                   <View style={styles.videoResultActions}>
                     <Pressable
                       accessibilityLabel={
-                        video.resultSnapshot
-                          ? `View results for ${video.resultSnapshot.deckTitle}`
+                        savedRound.resultSnapshot
+                          ? `View results for ${savedRound.resultSnapshot.deckTitle}`
                           : 'Results unavailable for this older recording'
                       }
                       accessibilityRole="button"
-                      accessibilityState={{ disabled: !video.resultSnapshot }}
-                      disabled={!video.resultSnapshot}
-                      onPress={() => void openRoundResults(video)}
+                      accessibilityState={{ disabled: !savedRound.resultSnapshot }}
+                      disabled={!savedRound.resultSnapshot}
+                      onPress={() => void openRoundResults(savedRound)}
                       style={({ pressed }) => [
                         styles.videoResultAction,
-                        pressed && video.resultSnapshot && styles.pressed,
+                        pressed && savedRound.resultSnapshot && styles.pressed,
                       ]}
                     >
                       <Text style={styles.videoResultLabel}>
-                        {video.resultSnapshot ? 'VIEW RESULTS ›' : 'RESULTS UNAVAILABLE'}
+                        {savedRound.resultSnapshot ? 'VIEW RESULTS ›' : 'RESULTS UNAVAILABLE'}
                       </Text>
                     </Pressable>
                     <Pressable
                       accessibilityLabel="Delete round"
                       accessibilityRole="button"
                       hitSlop={4}
-                      onPress={() => handleDelete(video)}
+                      onPress={() => handleDelete(savedRound)}
                       style={({ pressed }) => [
                         styles.videoDeleteButton,
                         pressed && styles.pressed,
@@ -1015,6 +1058,11 @@ export default function DeckLibraryScreen() {
               style={{ width: wordmarkWidth, height: wordmarkWidth / 3 }}
             />
           </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Settings"
+            onPress={() => router.push('/settings')} style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}>
+            <SymbolView name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
+              size={26} tintColor={colors.ink} accessibilityElementsHidden />
+          </Pressable>
         </View>
 
         <View
@@ -1247,7 +1295,7 @@ export default function DeckLibraryScreen() {
         message={
           deleteError
             ? `The round could not be deleted. ${deleteError}`
-            : 'This permanently deletes the round video, score, and card-by-card details from WHATZ IT? on this device.'
+            : 'This permanently deletes the saved score, card-by-card details, and any video for this round from this device.'
         }
         onCancel={cancelDelete}
         onConfirm={confirmDelete}
@@ -1604,6 +1652,9 @@ function HomeModeTab({
 }
 
 const styles = StyleSheet.create({
+  resultsOnly: { alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.playPale },
+  settingsButton: { position: 'absolute', right: 16, bottom: 34, width: 48, height: 48,
+    alignItems: 'center', justifyContent: 'center', borderRadius: 24 },
   orientationGate: { flex: 1, backgroundColor: '#F6F6F6' },
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
   scrollView: { flex: 1, backgroundColor: '#F6F6F6' },

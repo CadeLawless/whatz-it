@@ -29,6 +29,8 @@ import {
   replenishRoundCardIds,
 } from '@/storage/daily-card-memory';
 import { rememberDeckPlayed } from '@/storage/deck-library-preferences';
+import { attachRoundVideo, saveRoundResult } from '@/storage/round-history';
+import { loadVideoPreferences } from '@/storage/video-preferences';
 import {
   requestRoundCameraPermissions,
   RoundCamera,
@@ -106,6 +108,9 @@ export function RoundProvider({ children }: PropsWithChildren) {
   // Track accepted actions immediately so rapid inputs before a React commit
   // cannot remember a card that the reducer did not reveal.
   const actionRound = useRef(initialRoundState);
+  const savedRoundId = useRef('');
+  const roundRecordingEnabled = useRef(true);
+  const roundMicrophoneEnabled = useRef(true);
   const committedRoundEndsAt = useRef(round.endsAt);
   useLayoutEffect(() => { committedRoundEndsAt.current = round.endsAt; }, [round.endsAt]);
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -138,13 +143,22 @@ export function RoundProvider({ children }: PropsWithChildren) {
     const transition = resolveRoundTransition(previous, action);
     actionRound.current = transition.round;
     commitAction(action);
+    if (transition.round.status === 'finished' && previous.status !== 'finished' &&
+        transition.round.startedAt !== null) {
+      const resultSnapshot = captureRoundResultSnapshot(transition.round,
+        getDeckById(transition.round.deckId ?? undefined) ?? null);
+      if (resultSnapshot) void saveRoundResult({
+        id: savedRoundId.current, deckId: resultSnapshot.deckId,
+        createdAt: transition.round.startedAt, resultSnapshot,
+      }).catch((error) => warnVideoDiagnostic('round results could not be saved', error));
+    }
     if (transition.round.mode === 'pass-n-play' && transition.revealedCardId) {
       rememberCard(transition.round.deckId, transition.revealedCardId);
       if (previous.status === 'ready' && transition.round.deckId) {
         void rememberDeckPlayed(transition.round.deckId);
       }
     }
-  }, [rememberCard]);
+  }, [getDeckById, rememberCard]);
 
   const recordOverlayEvent = useCallback((event: Omit<RoundVideoEvent, 'atMs'>) => {
     if (recordingStartedAt.current === null || !recordingActive.current) return;
@@ -169,6 +183,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
   }, []);
 
   const prepareRecording = useCallback(() => {
+    if (!roundRecordingEnabled.current) return Promise.resolve<RecordingPreparation>('unavailable');
     // Retry is a new preparation only after the previous cancellation settled.
     if (!cancellingPromise.current && !startingPromise.current) recordingCancelled.current = false;
     logVideoDiagnostic('recording preparation requested', {
@@ -191,7 +206,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     }
 
     preparationPromise.current = (async () => {
-      const permissions = await requestRoundCameraPermissions();
+      const permissions = await requestRoundCameraPermissions({ microphone: roundMicrophoneEnabled.current });
       logVideoDiagnostic('recording permissions returned to round context', permissions);
       if (recordingCancelled.current) {
         logVideoDiagnostic('recording preparation abandoned because round was cancelled');
@@ -252,7 +267,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
         recordingActive: recordingActive.current,
         roundDurationSeconds: round.durationSeconds,
       });
-      if (recordingCancelled.current || !cameraReady.current || !cameraRef.current || recordingActive.current) {
+      if (!roundRecordingEnabled.current || recordingCancelled.current || !cameraReady.current || !cameraRef.current || recordingActive.current) {
         warnVideoDiagnostic('round recording start rejected by context guard', new Error('Recording prerequisites failed'), {
           cameraReady: cameraReady.current,
           hasCameraRef: !!cameraRef.current,
@@ -378,6 +393,12 @@ export function RoundProvider({ children }: PropsWithChildren) {
     const resumedEndsAt = round.status === 'paused'
       ? Date.now() + Math.max(0, round.remainingMs ?? 0)
       : round.endsAt;
+    if (round.mode === 'pass-n-play' && (activeStatus === 'handoff' ||
+        (activeStatus === 'feedback' && round.latestOutcome === 'correct'))) {
+      recordOverlayEvent({ kind: 'countdown', text: 'Pass the phone then tap the screen',
+        timerEndsAtMs: getRecordingTimerEndsAtMs(resumedEndsAt) });
+      return true;
+    }
     if (card) {
       recordOverlayEvent({
         kind: 'card',
@@ -431,6 +452,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       return null;
     }
     const deckId = round.deckId;
+    const roundId = savedRoundId.current;
     const resultSnapshot = captureRoundResultSnapshot(round, roundDeck);
     const finalizationId = `finalize-${Date.now().toString(36)}`;
     const finalizationStartedAt = Date.now();
@@ -573,7 +595,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
           false,
           allSegmentsHaveLiveOverlays,
           resultSnapshot,
+          roundId,
         );
+        await attachRoundVideo(roundId, video.id).catch((error) =>
+          warnVideoDiagnostic('round video could not be linked to saved results', error));
         setCurrentVideo(video);
         setIsVideoFinalizing(false);
         logVideoDiagnostic('round video published to results screen', {
@@ -729,12 +754,16 @@ export function RoundProvider({ children }: PropsWithChildren) {
           catalogRef.current.decks,
         );
         if (cardIds.length === 0) return false;
-        if (mode === 'pass-n-play') {
+        const videoPreferences = await loadVideoPreferences().catch(() => ({ classic: false, 'pass-n-play': false, microphone: false }));
+        roundRecordingEnabled.current = videoPreferences[mode];
+        roundMicrophoneEnabled.current = videoPreferences.microphone;
+        if (mode === 'pass-n-play' || !roundRecordingEnabled.current) {
           await cancelRecording();
           setCameraEnabled(false);
           setMicrophoneEnabled(false);
         }
         roundDeckRef.current = capturedDeck;
+        savedRoundId.current = `${Date.now()}-round-${Math.random().toString(36).slice(2, 10)}`;
         setRoundDeck(capturedDeck);
         recordingCancelled.current = false;
         recordingEvents.current = [];
@@ -832,11 +861,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
       revealCard: () => {
         const current = actionRound.current;
         if (current.mode !== 'pass-n-play' || current.status !== 'handoff') return;
-        dispatch({
-          type: 'REVEAL', now: Date.now(),
-          replenishedCardOrder: current.cardOrder[current.currentCardIndex + 1]
-            ? undefined : replenishDeck(current, getDeckById),
-        });
+        const replenishedCardOrder = current.cardOrder[current.currentCardIndex + 1]
+          ? undefined : replenishDeck(current, getDeckById);
+        dispatch({ type: 'REVEAL', now: Date.now(),
+          replenishedCardOrder });
       },
       expireRound: (endsAt) => {
         dispatch({ type: 'EXPIRE', now: Date.now(), endsAt });
@@ -853,8 +881,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
           const current = actionRound.current;
           dispatch({
             type: 'RESUME', now: Date.now(),
-            replenishedCardOrder: current.status === 'paused' && current.pausedStatus === 'feedback' &&
-              current.latestOutcome !== 'correct' &&
+            replenishedCardOrder: current.status === 'paused' && current.pausedStatus === 'feedback' && current.latestOutcome !== 'correct' &&
               !current.cardOrder[current.currentCardIndex + 1]
               ? replenishDeck(current, getDeckById) : undefined,
           });

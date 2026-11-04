@@ -34,6 +34,7 @@ import { useRound } from '@/game/round-context';
 import { parseGameMode } from '@/game/game-mode';
 import type { GameMode } from '@/game/game-types';
 import { requestModePermissions } from '@/game/round-setup';
+import { loadVideoPreferences } from '@/storage/video-preferences';
 import {
   clampRoundDuration,
   DEFAULT_ROUND_DURATION,
@@ -234,9 +235,12 @@ export default function DeckDetailsScreen() {
       return;
     }
 
+    const videoPreferences = await loadVideoPreferences().catch(() => null);
     await requestModePermissions(mode, async () => {
       setMotionPermissionStatus(await requestRoundMotionAccess());
-    }, requestPendingPermissions);
+    }, async () => {
+      if (videoPreferences?.[mode]) await requestPendingPermissions({ microphone: videoPreferences.microphone });
+    });
 
     saveRoundDuration(safeDuration).catch(() => undefined);
     saveRoundMode(mode).catch(() => undefined);
@@ -294,16 +298,17 @@ export default function DeckDetailsScreen() {
           showsVerticalScrollIndicator={false}
           style={styles.screen}
         >
-          {Platform.OS === 'ios' && <DeckSetupHeader
+          <DeckSetupHeader
             backLabel={returnToRoundId ? 'Back to Results' : 'Back to Decks'}
             onBack={handleBack}
+            onSettings={() => router.push('/settings')}
             onSharePlay={sharePlay.enabled ? () => sharePlay.open({
               deckId: deck.id, deckTitle: deck.title, durationSeconds: duration, access: deck.access,
             }) : undefined}
-          />}
+          />
           <View style={styles.mainContent}>
             <DeckDetailsHeader
-              showBackButton={Platform.OS !== 'ios'}
+              showBackButton={false}
               backLabel={returnToRoundId ? 'Back to Results' : 'Back to Decks'}
               containerWidth={Math.min(width - spacing.lg * 2, 640)}
               deck={deck}

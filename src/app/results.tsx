@@ -13,6 +13,7 @@ import { useCatalog } from '@/catalog/catalog-provider';
 import { useRound } from '@/game/round-context';
 import { parseGameMode } from '@/game/game-mode';
 import { usePortraitScreen } from '@/hooks/use-portrait-screen';
+import { deleteSavedRound, loadRoundHistory, subscribeToRoundHistory, type SavedRound } from '@/storage/round-history';
 import { colors, radius, spacing, typography } from '@/theme';
 import {
   deleteRoundVideo,
@@ -49,7 +50,10 @@ export default function ResultsScreen() {
   const [archivedVideoState, setArchivedVideoState] = useState<{
     roundId: string;
     video: RoundVideo | null;
+    round: SavedRound | null;
   } | null>(null);
+  const [archiveError, setArchiveError] = useState(false);
+  const [archiveAttempt, setArchiveAttempt] = useState(0);
   const [saveNotice, setSaveNotice] = useState<{
     title: string;
     message: string;
@@ -65,12 +69,13 @@ export default function ResultsScreen() {
     isArchivedRound && archivedVideoState?.roundId === roundId
       ? archivedVideoState.video
       : null;
+  const archivedRound = isArchivedRound && archivedVideoState?.roundId === roundId ? archivedVideoState.round : null;
   const displayedVideo = isArchivedRound ? archivedVideo : currentVideo;
-  const archivedResults = archivedVideo?.resultSnapshot;
+  const archivedResults = archivedRound?.resultSnapshot;
   const displayedResults = isArchivedRound ? archivedResults?.results ?? [] : round.results;
   const displayedMode = parseGameMode(isArchivedRound ? archivedResults?.mode : round.mode);
   const displayedDeckTitle = isArchivedRound
-    ? archivedResults?.deckTitle ?? catalog.getDeckById(archivedVideo?.deckId)?.title ?? 'Round results'
+    ? archivedResults?.deckTitle ?? catalog.getDeckById(archivedRound?.deckId)?.title ?? 'Round results'
     : deck?.title;
   const correctCount = displayedResults.filter((result) => result.outcome === 'correct').length;
   const passedCount = displayedResults.filter((result) => result.outcome === 'passed').length;
@@ -87,28 +92,42 @@ export default function ResultsScreen() {
     if (!isArchivedRound) return;
 
     let active = true;
-    const updateArchivedVideo = (videos: RoundVideo[]) => {
+    let latestVideos: RoundVideo[] = [];
+    let revision = 0;
+    const updateArchivedVideo = async (videos = latestVideos) => {
+      latestVideos = videos;
+      const request = ++revision;
+      const rounds = await loadRoundHistory(videos);
       if (!active || deletingArchivedRoundRef.current) return;
-      const video = videos.find((item) => item.id === roundId) ?? null;
+      if (request !== revision) return;
+      const savedRound = rounds.find((item) => item.id === roundId) ?? null;
+      const video = videos.find((item) => item.id === savedRound?.videoId) ?? null;
       setArchivedVideoState({
         roundId,
         video,
+        round: savedRound,
       });
+      setArchiveError(false);
       return video;
     };
-    const unsubscribe = subscribeToRoundVideoLibrary(updateArchivedVideo);
-    void loadRoundVideos().then((videos) => {
-      const video = updateArchivedVideo(videos);
+    const refreshArchive = (videos?: RoundVideo[]) => {
+      void updateArchivedVideo(videos).catch(() => { if (active) setArchiveError(true); });
+    };
+    const unsubscribe = subscribeToRoundVideoLibrary(refreshArchive);
+    const unsubscribeHistory = subscribeToRoundHistory(() => refreshArchive());
+    void loadRoundVideos().then(async (videos) => {
+      const video = await updateArchivedVideo(videos);
       if (!video || isRoundVideoReadyToSave(video) || video.exportStatus === 'failed') return;
       void prepareRoundVideoExport(video).then((prepared) => {
-        if (active) setArchivedVideoState({ roundId, video: prepared });
+        if (active) setArchivedVideoState((current) => current?.roundId === roundId ? { ...current, video: prepared } : current);
       });
-    });
+    }).catch(() => { if (active) setArchiveError(true); });
     return () => {
       active = false;
       unsubscribe();
+      unsubscribeHistory();
     };
-  }, [isArchivedRound, roundId]);
+  }, [archiveAttempt, isArchivedRound, roundId]);
 
   useEffect(() => {
     logVideoDiagnostic('results screen video state changed', {
@@ -157,20 +176,22 @@ export default function ResultsScreen() {
   if (isArchivedRound && !archiveLoaded) {
     return (
       <SafeAreaView style={styles.empty}>
-        <ActivityIndicator color={colors.play} size="large" />
-        <Text style={styles.emptyTitle}>Loading round results…</Text>
+        {!archiveError && <ActivityIndicator color={colors.play} size="large" />}
+        <Text style={styles.emptyTitle}>{archiveError ? 'Saved results could not be loaded.' : 'Loading round results…'}</Text>
+        {archiveError && <Pressable accessibilityRole="button" onPress={() => setArchiveAttempt((value) => value + 1)}
+          style={styles.primaryButton}><Text style={styles.primaryButtonText}>TRY AGAIN</Text></Pressable>}
       </SafeAreaView>
     );
   }
 
   if (
-    (isArchivedRound && (!archivedVideo || !archivedResults)) ||
+    (isArchivedRound && !archivedResults) ||
     (!isArchivedRound && (!deck || round.status !== 'finished'))
   ) {
     return (
       <SafeAreaView style={styles.empty}>
         <Text style={styles.emptyTitle}>
-          {isArchivedRound ? 'Results are unavailable for this recording' : 'No finished round yet'}
+          {isArchivedRound ? 'Results are unavailable for this round' : 'No finished round yet'}
         </Text>
         <Pressable onPress={returnHome} style={styles.primaryButton}>
           <Text style={styles.primaryButtonText}>
@@ -271,7 +292,7 @@ export default function ResultsScreen() {
       ? await prepareRoundVideoExport(displayedVideo)
       : await retryCurrentVideoExport();
     if (isArchivedRound && preparedVideo) {
-      setArchivedVideoState({ roundId, video: preparedVideo });
+      setArchivedVideoState((current) => current ? { ...current, video: preparedVideo } : current);
     }
     if (preparedVideo?.exportStatus === 'failed') {
       setSaveNotice({
@@ -282,7 +303,7 @@ export default function ResultsScreen() {
   };
 
   const requestDeleteRound = () => {
-    if (!isArchivedRound || !displayedVideo) return;
+    if (!isArchivedRound || !archivedRound) return;
     setDeleteError(null);
     setDeletePromptVisible(true);
   };
@@ -294,7 +315,7 @@ export default function ResultsScreen() {
   };
 
   const confirmDeleteRound = async () => {
-    if (!isArchivedRound || !displayedVideo || isDeletingRound) return;
+    if (!isArchivedRound || !archivedRound || isDeletingRound) return;
     deletingArchivedRoundRef.current = true;
     setIsDeletingRound(true);
     setDeleteError(null);
@@ -310,7 +331,8 @@ export default function ResultsScreen() {
         // Deletion and navigation still complete if capture is unavailable.
       }
 
-      await deleteRoundVideo(displayedVideo.id);
+      if (displayedVideo) await deleteRoundVideo(displayedVideo.id);
+      await deleteSavedRound(archivedRound.id);
 
       if (transitionUri) {
         await beginTransition({
@@ -361,7 +383,7 @@ export default function ResultsScreen() {
             />
             <Text style={styles.backButtonText}>Back to My Rounds</Text>
           </Pressable>
-          {displayedVideo ? (
+          {archivedRound ? (
             <Pressable
               accessibilityLabel="Delete saved round"
               accessibilityRole="button"
@@ -391,7 +413,7 @@ export default function ResultsScreen() {
         ListHeaderComponent={
           <View>
             <Text style={styles.eyebrow}>
-              {displayedMode === 'pass-n-play' ? 'PASS N PLAY ROUND RESULTS' : 'CLASSIC ROUND RESULTS'}
+              {archivedRound?.sharePlay ? 'SHAREPLAY ROUND RESULTS' : displayedMode === 'pass-n-play' ? 'PASS N PLAY ROUND RESULTS' : 'CLASSIC ROUND RESULTS'}
             </Text>
             <Text style={styles.title}>Nice guessing!</Text>
             <Text style={styles.deckName}>{displayedDeckTitle}</Text>
@@ -524,7 +546,7 @@ export default function ResultsScreen() {
         message={
           deleteError
             ? `The round could not be deleted. ${deleteError}`
-            : 'This permanently deletes the round video, score, and card-by-card details from WHATZ IT? on this device.'
+            : 'This permanently deletes the saved score, card-by-card details, and any video for this round from this device.'
         }
         onCancel={cancelDeleteRound}
         onConfirm={() => void confirmDeleteRound()}

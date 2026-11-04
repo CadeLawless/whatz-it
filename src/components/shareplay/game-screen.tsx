@@ -10,12 +10,11 @@ import { PortraitTimesUpPanel } from '@/components/portrait-times-up-panel';
 import { formatRoundClock } from '@/game/round-duration';
 import { canShowSharePlayRoundOptions } from '@/shareplay/presentation';
 import { canReactInPhase } from '@/shareplay/reactions';
+import { canPlaySharedRound } from '@/shareplay/round-availability';
 import type { SharePlayReactionIndex } from '@/shareplay/reactions';
 import { useSharePlay } from '@/shareplay/session-provider';
-import { useSharePlayReadyFeedback } from '@/shareplay/use-ready-feedback';
 import { useSharePlayRoundCues } from '@/shareplay/use-round-cues';
 import { colors, radius, spacing, typography } from '@/theme';
-import { SharePlayReadyCounter } from './ready-counter';
 import { SharePlayReactionBar, SharePlayReactionBurst } from './round-reactions';
 import { SharePlayRolePickerSheet } from './role-picker-sheet';
 
@@ -58,13 +57,14 @@ export function SharePlayGameScreen() {
   const insets = useSafeAreaInsets();
   const { catalog } = useCatalog();
   const sharePlay = useSharePlay();
-  const readyUp = useSharePlayReadyFeedback();
   const { remainingMs, countdown } = sharePlay.game;
   const view = sharePlay.heldResultsView ?? sharePlay.game.view;
   const sharedView = sharePlay.game.view;
   const localId = sharePlay.session.localParticipantId;
   useSharePlayRoundCues(view, countdown, remainingMs, localId, sharePlay.gameVisible);
   const isTurnOwner = !!localId && (sharedView?.guesserId ?? view?.guesserId) === localId;
+  const canResume = canPlaySharedRound(sharePlay.session.participantIds, localId,
+    sharePlay.session.hostParticipantId, sharePlay.peers);
   const passNPlay = view?.mode === 'pass-n-play';
   const isGuesser = !!view && (passNPlay ? !isTurnOwner : isTurnOwner);
   const isClueGiver = !!view && !isGuesser;
@@ -160,14 +160,12 @@ export function SharePlayGameScreen() {
               <View style={styles.content}>
                 <Text style={styles.clock}>{clock}</Text>
                 <Text accessibilityRole="header" style={styles.title}>ROUND PAUSED</Text>
-                <Text style={styles.message}>The round will resume when everyone is ready.</Text>
+                <Text style={styles.message}>The starting player can resume the round.</Text>
               </View>
             </View>
             <View style={styles.footer}>
               {reactionBar}
-              <SharePlayReadyCounter view={view} />
-              {!view.ready.includes(localId ?? '') &&
-                <Action label="I’M READY" onPress={readyUp} />}
+              {isTurnOwner && <Action label="PLAY" disabled={!canResume} onPress={sharePlay.gameActions.resume} />}
             </View>
           </>}
 

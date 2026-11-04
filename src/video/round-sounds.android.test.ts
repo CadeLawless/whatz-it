@@ -12,10 +12,14 @@ const { code } = require('@babel/core').transformFileSync(resolve('src/video/rou
 
 function harness(nativeReady: boolean) {
   const calls: string[] = [];
+  let soundEnabled = true;
   const exported = {} as typeof import('./round-sounds');
   runInNewContext(code, {
     exports: exported,
     require(name: string) {
+      if (name.endsWith('/feedback-preferences')) return {
+        getFeedbackPreferences: () => ({ sound: soundEnabled, haptics: true }),
+      };
       if (name.endsWith('.wav')) return name;
       switch (name) {
         case 'expo-asset': return { Asset: { fromModule: (source: string) => ({
@@ -35,7 +39,7 @@ function harness(nativeReady: boolean) {
       }
     },
   });
-  return { ...exported, calls };
+  return { ...exported, calls, setSoundEnabled: (value: boolean) => { soundEnabled = value; } };
 }
 
 test('preloaded Android answers replay immediately without a seek, pause, or native UI getter', async () => {
@@ -59,4 +63,27 @@ test('failed Android preparation retains cancellable Expo playback as a fallback
   assert.equal(await h.playRoundSound(player, 'correct'), true);
   assert.equal(plays, 1);
   assert.deepEqual(h.calls, []);
+});
+
+test('sound off blocks native cues while allowing sound to be enabled again', async () => {
+  const h = harness(true);
+  await h.prepareAndroidRoundSoundBank();
+  const player = { volume: 1, pause() {}, async seekTo() {}, play() { assert.fail('unexpected Expo playback'); } };
+  h.setSoundEnabled(false);
+  assert.equal(await h.playRoundSound(player, 'correct'), false);
+  assert.deepEqual(h.calls, []);
+  h.setSoundEnabled(true);
+  assert.equal(await h.playRoundSound(player, 'correct'), true);
+  assert.deepEqual(h.calls, ['correct']);
+});
+
+test('muting while an Expo seek is pending prevents late playback', async () => {
+  const h = harness(false);
+  let finish!: () => void;
+  const seek = new Promise<void>((resolve) => { finish = resolve; });
+  const player = { volume: 1, pause() {}, seekTo: () => seek, play() { assert.fail('muted cue played'); } };
+  const pending = h.playRoundSound(player, 'correct');
+  h.setSoundEnabled(false);
+  finish();
+  assert.equal(await pending, false);
 });

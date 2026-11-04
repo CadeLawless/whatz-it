@@ -13,6 +13,7 @@ import { AndroidHapticScheduler } from '../game/android-haptic-scheduler';
 import { traceAndroidGameplay } from './android-gameplay-trace';
 
 import { logRoundDiagnostic, warnRoundDiagnostic } from '@/video/video-diagnostics';
+import { getFeedbackPreferences, subscribeToFeedbackPreferences } from '@/storage/feedback-preferences';
 
 export type RoundHapticCue =
   | 'card-flip'
@@ -35,6 +36,7 @@ const IOS_STRONG_PULSE_DURATION_MS = 450;
 const IOS_TIMES_UP_PULSE_INTERVAL_MS = 520;
 let hapticGeneration = 0;
 const androidScheduler = new AndroidHapticScheduler((cue, { timings, amplitudes }) => {
+  if (!getFeedbackPreferences().haptics) return;
   try {
     traceAndroidGameplay('haptic.dispatch', { cue, timings });
     if ((cue === 'card-flip' || cue === 'pass') && hasAndroidRoundHapticAmplitudeControl() && playAndroidRoundImpact(cue)) {
@@ -51,6 +53,10 @@ const androidScheduler = new AndroidHapticScheduler((cue, { timings, amplitudes 
   }
 });
 const pendingDelays = new Map<ReturnType<typeof setTimeout>, () => void>();
+
+subscribeToFeedbackPreferences(() => {
+  if (!getFeedbackPreferences().haptics) cancelRoundHaptics();
+});
 
 export function cancelRoundHaptics() {
   hapticGeneration += 1;
@@ -72,6 +78,7 @@ export async function triggerRoundHaptic(
   cue: RoundHapticCue,
   { cameraActive, countdownValue }: RoundHapticOptions,
 ) {
+  if (!getFeedbackPreferences().haptics) return;
   if (Platform.OS === 'android') {
     traceAndroidGameplay('haptic.request', { cue });
     androidScheduler.request(cue, androidHapticPattern(cue, countdownValue, hasAndroidRoundHapticAmplitudeControl()));
@@ -144,7 +151,7 @@ export async function triggerRoundHaptic(
 }
 
 async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 | 3, generation = hapticGeneration) {
-  if (generation !== hapticGeneration) return;
+  if (!getFeedbackPreferences().haptics || generation !== hapticGeneration) return;
   // Android uses a complete waveform above. Keep the existing iOS fallback
   // and web paths separate from that motor lifecycle.
   switch (cue) {
@@ -178,7 +185,7 @@ async function performStyledHaptic(cue: RoundHapticCue, countdownValue?: 1 | 2 |
 async function performImpactSeries(style: Haptics.ImpactFeedbackStyle, count: number, generation: number) {
   for (let index = 0; index < count; index += 1) {
     if (index > 0) await delay(QUICK_IMPACT_GAP_MS);
-    if (generation !== hapticGeneration) return;
+    if (!getFeedbackPreferences().haptics || generation !== hapticGeneration) return;
     await Haptics.impactAsync(style);
   }
 }

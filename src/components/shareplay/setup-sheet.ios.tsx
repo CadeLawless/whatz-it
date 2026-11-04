@@ -9,8 +9,8 @@ import { canShareDeck } from '@/shareplay/deck-access';
 import { SHAREPLAY_RUNTIME_REVISION, sharePlayTraceText } from '@/shareplay/diagnostics';
 import { cleanPlayerName } from '@/shareplay/player-names';
 import { sharePlaySurface } from '@/shareplay/presentation';
+import { canPlaySharedRound } from '@/shareplay/round-availability';
 import { useSharePlay } from '@/shareplay/session-provider';
-import { useSharePlayReadyFeedback } from '@/shareplay/use-ready-feedback';
 import { useOwnedDeckIds } from '@/storefront/commerce-provider';
 import { colors, radius, spacing } from '@/theme';
 import { Image } from 'expo-image';
@@ -26,19 +26,23 @@ import { SharePlayGameScreen } from './game-screen';
 import { SharePlayRolePickerSheet } from './role-picker-sheet';
 import { SharePlayRejoinPrompt } from './rejoin-prompt';
 
-function Button({ label, onPress, disabled, secondary, danger, arrow }: {
-  label: string; onPress: () => void; disabled?: boolean; secondary?: boolean; danger?: boolean; arrow?: boolean;
+function Button({ label, onPress, disabled, secondary, danger, arrow, deckPlay }: {
+  label: string; onPress: () => void; disabled?: boolean; secondary?: boolean; danger?: boolean;
+  arrow?: boolean; deckPlay?: boolean;
 }) {
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
-    style={({ pressed }) => [styles.button, (secondary || danger) && styles.secondary,
-      disabled && styles.disabled, pressed && styles.pressed]}>
-    <Text style={[styles.buttonText, secondary && styles.secondaryText, danger && styles.dangerText]}>{label}</Text>
-    {arrow && <Text style={styles.arrow}>→</Text>}
+    style={({ pressed }) => [styles.button, deckPlay && styles.deckPlayButton,
+      (secondary || danger) && styles.secondary, disabled && styles.disabled,
+      pressed && (deckPlay ? styles.deckPlayPressed : styles.pressed)]}>
+    <Text style={[styles.buttonText, deckPlay && styles.deckPlayText,
+      secondary && styles.secondaryText, danger && styles.dangerText]}>{label}</Text>
+    {deckPlay ? <SymbolView name="arrow.right" size={29} tintColor={colors.white}
+      accessibilityElementsHidden /> : arrow && <Text style={styles.arrow}>→</Text>}
   </Pressable>;
 }
 
 export function SharePlaySetupSheet() {
-  const [confirmation, setConfirmation] = useState<'leave' | 'end' | null>(null);
+  const [confirmation, setConfirmation] = useState<'leave' | null>(null);
   const [inviteHelpOpen, setInviteHelpOpen] = useState(false);
   const [debugTrace, setDebugTrace] = useState<string | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
@@ -47,13 +51,13 @@ export function SharePlaySetupSheet() {
   const [deckSearch, setDeckSearch] = useState('');
   const [nameDraft, setNameDraft] = useState('');
   const [editingName, setEditingName] = useState(false);
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const nameScroll = useRef<ScrollView>(null);
   const editNameScroll = useRef<ScrollView>(null);
   const editNameInput = useRef<TextInput>(null);
   const sharePlay = useSharePlay();
-  // This persistent owner observes resets for lobby and round screens once.
-  const readyUp = useSharePlayReadyFeedback();
   const { catalog } = useCatalog();
   const ownedDeckIds = useOwnedDeckIds();
   const { round, isRecording, isVideoFinalizing } = useRound();
@@ -154,16 +158,17 @@ export function SharePlaySetupSheet() {
   const cover = deck ? catalogLocalCoverSources(deck)[0] : undefined;
   const deckTitle = deck?.title ?? (deckId ? originalSelection?.deckTitle : null) ?? 'Choose a deck';
   const isController = joined && !!controllerId && controllerId === session.localParticipantId;
+  const canPlay = isController && !!lobby && selectedDeckId === lobby.deck.deckId &&
+    canPlaySharedRound(session.participantIds, session.localParticipantId, session.hostParticipantId, peers);
   const canChooseDeck = !hasSession || isController;
   const durationSeconds = hasSession ? sharePlay.decks.durationSeconds : originalSelection?.durationSeconds ?? 60;
   const playerLabel = (id: string) => {
     const name = id === session.localParticipantId ? sharePlay.localPlayerName : sharePlay.playerNames[id];
     return name ? `${name}${id === session.localParticipantId ? ' (you)' : ''}` : 'Choosing a name…';
   };
+  const controllerName = controllerId ? sharePlay.playerNames[controllerId] : null;
   const allPlayersNamed = joined && session.participantIds.every((id) => id === session.localParticipantId ?
     !!sharePlay.localPlayerName : !!sharePlay.playerNames[id]);
-  const controllerName = controllerId === session.localParticipantId ? sharePlay.localPlayerName :
-    controllerId ? sharePlay.playerNames[controllerId] : null;
   const closeNameEdit = useCallback(() => {
     Keyboard.dismiss();
     setNameDraft(sharePlay.localPlayerName);
@@ -218,12 +223,14 @@ export function SharePlaySetupSheet() {
     else sharePlay.updateSetupDeck(id);
     closeDeckSearch();
   };
-  const submitName = () => {
+  const submitName = async () => {
     const name = cleanPlayerName(nameDraft);
-    if (!name) return;
-    Keyboard.dismiss();
-    sharePlay.setLocalPlayerName(name);
-    setEditingName(false);
+    if (!name || savingName) return;
+    setSavingName(true); setNameError(null);
+    const saved = await sharePlay.setLocalPlayerName(name);
+    setSavingName(false);
+    if (saved) { Keyboard.dismiss(); setEditingName(false); }
+    else setNameError('Your name could not be saved. Please try again.');
   };
   return <Modal transparent presentationStyle="overFullScreen"
     animationType="none" visible={visible} onRequestClose={() => {
@@ -241,14 +248,15 @@ export function SharePlaySetupSheet() {
       </View>
       <Button label="LEAVE" secondary disabled={busy} onPress={() => { void sharePlay.leave(); }} />
     </View> :
-    <View style={[styles.overlay, joined && styles.lobbyOverlay, { paddingBottom: nameStep ? keyboardHeight : 0 }]}>
+    <View style={[styles.overlay, joined && styles.lobbyOverlay]}>
       {joined && <StatusBar style="dark" />}
       {!joined && <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop,
         backdropStyle]} />}
       {!joined && <Pressable onPress={close} accessibilityLabel="Close SharePlay sheet" style={StyleSheet.absoluteFill} />}
       <MainContainer accessibilityViewIsModal importantForAccessibility={deckSearchOpen || editingName || hostPickerOpen ? 'no-hide-descendants' : 'auto'}
-        style={[styles.sheet, !joined && { maxHeight: Math.max(200, height - (nameStep ? keyboardHeight : 0) - insets.top - 12) },
-        { paddingBottom: Math.max(insets.bottom, 12) }, joined ? [styles.lobbyScreen,
+        style={[styles.sheet, !joined && { maxHeight: Math.max(200, height - insets.top - 12) },
+        // Keep the sheet background behind the keyboard's rounded corners.
+        { paddingBottom: Math.max(insets.bottom, 12) + (nameStep ? keyboardHeight : 0) }, joined ? [styles.lobbyScreen,
           { paddingTop: Math.max(insets.top, spacing.md) }] : sheetStyle]}>
         {!joined && <GestureDetector gesture={lobbyDrag}>
           <View accessibilityElementsHidden style={styles.grabberArea}><View style={styles.grabber} /></View>
@@ -280,8 +288,8 @@ export function SharePlaySetupSheet() {
             'Guess with friends over FaceTime, wherever they are. Everyone joins on their own iPhone with WHATZ IT?'}</Text>
           {isController && <View style={styles.hostSection}>
             <Text style={styles.label}>{passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>
-            <Text style={styles.hostName}>{controllerName ?? 'Connecting…'}{isController ? ' (you)' : ''}</Text>
-            {isController && session.participantIds.length > 1 &&
+            <Text style={styles.hostName}>You</Text>
+            {session.participantIds.length > 1 &&
               <Pressable accessibilityRole="button" onPress={() => setHostPickerOpen(true)}
                 style={({ pressed }) => [styles.changeHostButton, pressed && styles.pressed]}>
                 <Text style={styles.changeHostText}>SWITCH {passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>
@@ -330,7 +338,7 @@ export function SharePlaySetupSheet() {
           </Text>}
           {joined && !lobby && <Text style={styles.muted}>{session.participantIds.length < 2
             ? 'Waiting for another player to join. A new round will appear when they rejoin.' : !selectedDeckId
-              ? isController ? 'Choose an available deck to get ready.' : `Waiting for the ${selectedRole} to choose a deck.` : isController &&
+              ? isController ? 'Choose an available deck to play.' : `Waiting for the ${selectedRole} to choose a deck.` : isController &&
               !sharePlay.decks.availableDeckIds.includes(selectedDeckId)
               ? 'Waiting for someone who owns this deck…' :
                 'Connecting to the other players and preparing the shared deck…'}</Text>}
@@ -356,8 +364,7 @@ export function SharePlaySetupSheet() {
                   {!connected && <View style={styles.connectionSlash} />}
                 </View>
                 <View style={[styles.playerRow, isGuesser && styles.guesserRow]}>
-                <View style={styles.playerIdentity}>
-                  {isGuesser && <Text style={styles.guesserLabel}>{passNPlay ? 'STARTING PLAYER' : 'GUESSER'}</Text>}
+                <View style={[styles.playerIdentity, isGuesser && styles.guesserIdentity]}>
                   <Text style={styles.playerName}>
                     {playerLabel(id)}
                     {id === session.localParticipantId && <Text accessibilityRole="button"
@@ -373,9 +380,9 @@ export function SharePlaySetupSheet() {
                     </Text>}
                   </Text>
                 </View>
-                <Text style={[styles.playerState, lobby?.ready.includes(id) && styles.readyState]}>
-                  {lobby?.resultsViewingIds?.includes(id) ? 'IN RESULTS' :
-                    lobby?.ready.includes(id) ? 'READY' : 'WAITING'}</Text>
+                {isGuesser && <Text numberOfLines={2} style={styles.playerHostLabel}>
+                  {passNPlay ? 'STARTING PLAYER' : 'GUESSER'}
+                </Text>}
                 </View>
               </View>;
             })}
@@ -404,18 +411,19 @@ export function SharePlaySetupSheet() {
             onPress={() => { void sharePlay.invite(); }} />
         </View>}
         {!deckSearchOpen && nameStep && <View style={styles.lobbyFooter}>
-          {sharePlay.playerNameLoaded && <Button label="CONTINUE" arrow disabled={!cleanPlayerName(nameDraft)} onPress={submitName} />}
+          {nameError && <Text accessibilityLiveRegion="polite" style={styles.error}>{nameError}</Text>}
+          {sharePlay.playerNameLoaded && <Button label={savingName ? 'SAVING…' : 'CONTINUE'} arrow disabled={savingName || !cleanPlayerName(nameDraft)} onPress={() => { void submitName(); }} />}
           {hasSession && <Button label="LEAVE" secondary disabled={busy} onPress={close} />}
         </View>}
         {!deckSearchOpen && !nameStep && hasSession && <View style={styles.lobbyFooter}>
-          {joined && lobby && (!lobby.ready.includes(session.localParticipantId ?? '') ?
-            <Button label="I’M READY" arrow disabled={busy} onPress={readyUp} /> :
-            <Button label="YOU’RE READY" disabled onPress={() => undefined} />)}
+          {isController && <Button label="LET'S PLAY" deckPlay disabled={busy || !canPlay}
+            onPress={sharePlay.gameActions.start} />}
+          {joined && lobby && !isController && controllerId &&
+            <Text accessibilityLiveRegion="polite" style={styles.waitingToPlay}>
+              Waiting for {controllerName ?? `the ${selectedRole}`} to start the round…
+            </Text>}
           <View style={styles.footerRow}>
             <View style={styles.footerAction}><Button label="LEAVE" secondary disabled={busy} onPress={close} /></View>
-          {isController && session.participantIds.length > 1 && <View style={styles.footerAction}>
-              <Button label="END GAME" danger disabled={busy} onPress={() => setConfirmation('end')} />
-            </View>}
           </View>
         </View>}
       </MainContainer>
@@ -481,9 +489,8 @@ export function SharePlaySetupSheet() {
       <Animated.View pointerEvents={editingName ? 'auto' : 'none'} accessibilityViewIsModal
         importantForAccessibility={editingName ? 'auto' : 'no-hide-descendants'}
         style={[styles.sheet, styles.nameEditSheet,
-          { bottom: keyboardHeight,
-            maxHeight: Math.max(240, height - keyboardHeight - insets.top - 12),
-            paddingBottom: keyboardHeight > 0 ? 12 : Math.max(insets.bottom, 12) }, nameSheetStyle]}>
+          { maxHeight: Math.max(240, height - insets.top - 12),
+            paddingBottom: keyboardHeight > 0 ? keyboardHeight + 12 : Math.max(insets.bottom, 12) }, nameSheetStyle]}>
         <GestureDetector gesture={nameDrag}>
           <View accessibilityElementsHidden style={styles.grabberArea}><View style={styles.grabber} /></View>
         </GestureDetector>
@@ -506,7 +513,8 @@ export function SharePlaySetupSheet() {
             style={styles.nameInput} value={nameDraft} />
         </ScrollView>
         <View style={styles.lobbyFooter}>
-          <Button label="SAVE NAME" arrow disabled={!cleanPlayerName(nameDraft)} onPress={submitName} />
+          {nameError && <Text accessibilityLiveRegion="polite" style={styles.error}>{nameError}</Text>}
+          <Button label={savingName ? 'SAVING…' : 'SAVE NAME'} arrow disabled={savingName || !cleanPlayerName(nameDraft)} onPress={() => { void submitName(); }} />
         </View>
       </Animated.View>
       <SharePlayRolePickerSheet visible={hostPickerOpen} mode={sharePlay.decks.mode}
@@ -515,16 +523,12 @@ export function SharePlaySetupSheet() {
         disabled={busy || !isController} onClose={() => setHostPickerOpen(false)}
         onSelect={(id) => { sharePlay.gameActions.selectGuesser(id); setHostPickerOpen(false); }} />
       <ConfirmationPrompt embedded visible={confirmation !== null}
-        title={confirmation === 'end' ? 'End Game?' : 'Leave Lobby?'}
-        message={confirmation === 'end' ? 'This ends the shared game for every player.' :
-          'You can stay in the Lobby or leave this SharePlay game.'}
-        cancelLabel={confirmation === 'end' ? 'CANCEL' : 'STAY'}
-        confirmLabel={confirmation === 'end' ? 'END GAME' : 'LEAVE'}
+        title="Leave Lobby?"
+        message="You can stay in the Lobby or leave this SharePlay game."
+        cancelLabel="STAY"
+        confirmLabel="LEAVE"
         destructive busy={busy} onCancel={() => setConfirmation(null)}
-        onConfirm={() => { const end = confirmation === 'end' && session.participantIds.length > 1;
-          setConfirmation(null);
-          if (end) sharePlay.gameActions.endGame();
-          else void sharePlay.leave(); }} />
+        onConfirm={() => { setConfirmation(null); void sharePlay.leave(); }} />
       <ConfirmationPrompt embedded visible={inviteHelpOpen}
         title="Add People"
         message="To add players to the game, add people to your FaceTime call directly"
@@ -546,7 +550,7 @@ const styles = StyleSheet.create({
   deckBackdrop: { backgroundColor: 'rgba(15, 23, 42, 0.18)' },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, overflow: 'hidden' },
   deckSheet: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  nameEditSheet: { position: 'absolute', left: 0, right: 0 },
+  nameEditSheet: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   grabberArea: { height: 28, alignItems: 'center', justifyContent: 'center' },
   grabber: { width: 38, height: 5, borderRadius: 3, backgroundColor: '#8E8E93' },
   mainScroll: { flexShrink: 1 },
@@ -606,22 +610,27 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: 'transparent', backgroundColor: colors.surface },
   guesserRow: { borderColor: colors.play },
   playerIdentity: { flex: 1, gap: 2 },
+  guesserIdentity: { flexBasis: 'auto' },
   editNameIcon: { width: 17, height: 17 },
-  guesserLabel: { color: colors.play, fontSize: 11, letterSpacing: 0.5, fontFamily: 'Inter_900Black' },
-  guesserHint: { color: colors.muted, fontSize: 13, fontFamily: 'Inter_600SemiBold' },
   playersHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   addPeopleButton: { minHeight: 44, paddingHorizontal: spacing.sm, alignItems: 'center', justifyContent: 'center' },
   addPeopleText: { color: colors.play, fontSize: 13, fontFamily: 'Inter_900Black' },
   playerName: { flexShrink: 1, color: colors.ink, fontSize: 16, fontFamily: 'Inter_700Bold' },
-  playerState: { color: colors.muted, fontSize: 12, fontFamily: 'Inter_900Black' },
-  playerHostLabel: { color: colors.play, fontSize: 12, fontFamily: 'Inter_900Black' },
-  readyState: { color: colors.connectionGreen },
+  playerHostLabel: { minWidth: 55, flexShrink: 1, color: colors.play, fontSize: 12,
+    fontFamily: 'Inter_900Black', textAlign: 'right' },
+  waitingToPlay: { color: colors.muted, fontSize: 15, lineHeight: 21,
+    fontFamily: 'Inter_600SemiBold', textAlign: 'center' },
   error: { color: '#B42318', fontSize: 15, lineHeight: 21, fontFamily: 'Inter_700Bold' },
   debugCard: { padding: 14, borderRadius: radius.lg, backgroundColor: colors.surface, gap: 10 },
   debugToggle: { color: colors.play, fontSize: 13, fontFamily: 'Inter_900Black' },
   debugText: { color: colors.ink, fontSize: 11, lineHeight: 16, fontFamily: 'Inter_500Medium' },
   button: { minHeight: 66, paddingHorizontal: 20, borderRadius: radius.xl, flexDirection: 'row', alignItems: 'center',
     justifyContent: 'center', gap: 14, backgroundColor: colors.pass },
+  deckPlayButton: { minHeight: 76, paddingHorizontal: spacing.xl, justifyContent: 'space-between',
+    gap: spacing.md, shadowColor: '#64748B', shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.18, shadowRadius: 13, elevation: 6 },
+  deckPlayPressed: { transform: [{ scale: 0.99 }], opacity: 0.9 },
+  deckPlayText: { fontSize: 27, lineHeight: 30 },
   secondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   buttonText: { color: colors.white, fontSize: 19, fontFamily: 'Inter_900Black', textAlign: 'center' },
   secondaryText: { color: colors.play },

@@ -51,16 +51,19 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
         ],
       };
     }
-    case 'ADVANCE': {
-      if (state.status !== 'feedback') return state;
+    case 'ADVANCE':
+    case 'REVEAL': {
+      if (action.type === 'REVEAL'
+        ? state.mode !== 'pass-n-play' || state.status !== 'handoff'
+        : state.status !== 'feedback') return state;
       if (state.mode === 'pass-n-play') {
         if (action.now === undefined) return state;
         if (state.endsAt !== null && action.now >= state.endsAt) {
           return roundReducer(state, { type: 'FINISH', now: action.now });
         }
-        if (state.latestOutcome === 'correct') {
-          return { ...state, status: 'handoff', latestOutcome: null };
-        }
+      }
+      if (action.type === 'ADVANCE' && state.mode === 'pass-n-play' && state.latestOutcome === 'correct') {
+        return { ...state, status: 'handoff', latestOutcome: null };
       }
       const nextIndex = state.currentCardIndex + 1;
       if (nextIndex >= state.cardOrder.length) {
@@ -78,24 +81,6 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
       return {
         ...state,
         status: 'playing',
-        currentCardIndex: nextIndex,
-        latestOutcome: null,
-      };
-    }
-    case 'REVEAL': {
-      if (state.mode !== 'pass-n-play' || state.status !== 'handoff') return state;
-      if (state.endsAt === null || action.now >= state.endsAt) {
-        return roundReducer(state, { type: 'FINISH', now: action.now });
-      }
-      const nextIndex = state.currentCardIndex + 1;
-      const cardOrder = nextIndex < state.cardOrder.length
-        ? state.cardOrder
-        : [...state.cardOrder, ...(action.replenishedCardOrder ?? [])];
-      if (!cardOrder[nextIndex]) return roundReducer(state, { type: 'FINISH', now: action.now });
-      return {
-        ...state,
-        status: 'playing',
-        cardOrder,
         currentCardIndex: nextIndex,
         latestOutcome: null,
       };
@@ -130,15 +115,13 @@ export function roundReducer(state: RoundState, action: RoundAction): RoundState
           latestOutcome: null,
         };
       }
-      if (state.pausedStatus === 'handoff') {
-        return { ...state, status: 'handoff', endsAt: action.now + remainingMs,
-          remainingMs: null, pausedStatus: null };
+      if (state.mode === 'pass-n-play' && state.pausedStatus === 'feedback' && state.latestOutcome === 'correct') {
+        return {
+          ...state, status: 'handoff', endsAt: action.now + remainingMs,
+          pausedStatus: null, remainingMs: null, latestOutcome: null,
+        };
       }
       if (state.pausedStatus === 'feedback') {
-        if (state.mode === 'pass-n-play' && state.latestOutcome === 'correct') {
-          return { ...state, status: 'handoff', endsAt: action.now + remainingMs,
-            remainingMs: null, pausedStatus: null, latestOutcome: null };
-        }
         const nextIndex = state.currentCardIndex + 1;
         if (nextIndex >= state.cardOrder.length) {
           if (!action.replenishedCardOrder?.length) {

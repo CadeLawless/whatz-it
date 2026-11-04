@@ -7,6 +7,7 @@ import { RoundSoundPlayback, type CuePlayer } from './round-sound-playback';
 
 import type { RoundSoundId } from '@/video/round-sound-plan';
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
+import { getFeedbackPreferences } from '@/storage/feedback-preferences';
 
 export type { RoundSoundId } from '@/video/round-sound-plan';
 
@@ -72,16 +73,18 @@ export function getRoundSoundSource(sound: RoundSoundId) {
 }
 
 export async function playRoundSound(player: CuePlayer, sound: RoundSoundId, isCurrent?: () => boolean) {
+  if (!getFeedbackPreferences().sound) return false;
+  const canPlay = () => getFeedbackPreferences().sound && (!isCurrent || isCurrent());
   traceAndroidGameplay('audio.request', { sound });
   try {
     const volume = ROUND_SOUND_VOLUMES[sound] ?? DEFAULT_ROUND_SOUND_VOLUME;
     if (isAndroidRoundSoundBankReady()) {
-      if (isCurrent && !isCurrent()) return false;
+      if (!canPlay()) return false;
       const played = playAndroidRoundSound(sound, volume);
       traceAndroidGameplay('audio.play-returned', { sound, path: 'sound-pool', played });
       return played;
     }
-    if (!await playback.play(player, volume, isCurrent)) return false;
+    if (!await playback.play(player, volume, canPlay)) return false;
     traceAndroidGameplay('audio.play-returned', { sound });
     logVideoDiagnostic('round cue playback started', { sound, volume });
     return true;

@@ -14,14 +14,14 @@ export function useRoundCameraPermissions() {
     status: microphoneStatus,
   } = useMicrophonePermission();
 
-  const requestPendingPermissions = useCallback(async () => {
+  const requestPendingPermissions = useCallback(async ({ microphone = true }: { microphone?: boolean } = {}) => {
     let cameraGranted = hasCameraPermission;
 
     if (canRequestCameraPermission) {
       cameraGranted = await requestCameraPermission();
     }
 
-    if (!cameraGranted || !canRequestMicrophonePermission) return;
+    if (!cameraGranted || !microphone || !canRequestMicrophonePermission) return;
     await requestMicrophonePermission();
   }, [
     canRequestCameraPermission,
@@ -35,5 +35,7 @@ export function useRoundCameraPermissions() {
     cameraStatus,
     microphoneStatus,
     requestPendingPermissions,
+    requestCameraAccess: requestCameraPermission,
+    requestMicrophoneAccess: requestMicrophonePermission,
   };
 }

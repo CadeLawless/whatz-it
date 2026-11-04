@@ -93,13 +93,19 @@ export function PassNPlayGameScreen() {
   useEffect(() => {
     if (!focused || !appActive || round.status !== 'feedback') return;
     const cardIndex = round.currentCardIndex;
+    const startedAt = round.startedAt;
+    const endsAt = round.endsAt;
+    let cancelled = false;
     const timeout = setTimeout(() => {
-      if (canInteract() && latest.current.status === 'feedback' && latest.current.currentCardIndex === cardIndex) {
+      if (!cancelled && canInteract() && latest.current.status === 'feedback' &&
+          latest.current.currentCardIndex === cardIndex && latest.current.startedAt === startedAt &&
+          latest.current.endsAt === endsAt) {
+        cancelled = true;
         advanceCard();
       }
     }, FEEDBACK_MS);
-    return () => clearTimeout(timeout);
-  }, [advanceCard, appActive, canInteract, focused, round.currentCardIndex, round.status]);
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, [advanceCard, appActive, canInteract, focused, round.currentCardIndex, round.endsAt, round.startedAt, round.status]);
 
   useEffect(() => {
     if (!focused || !appActive) return;
@@ -123,9 +129,11 @@ export function PassNPlayGameScreen() {
       const card = deck?.cards.find((candidate) => candidate.id === round.cardOrder[round.currentCardIndex]);
       if (card) recordOverlayEvent({ kind: 'card', text: card.text, byline: card.byline });
     } else if (round.status === 'feedback' && round.latestOutcome) {
-      recordOverlayEvent({ kind: round.latestOutcome, text: round.latestOutcome === 'correct' ? 'CORRECT!' : 'PASS' });
-    } else if (round.status === 'handoff' || round.status === 'paused') {
-      recordOverlayEvent({ kind: 'countdown', text: round.status === 'handoff' ? 'Pass the phone' : 'Round paused' });
+      recordOverlayEvent({ kind: round.latestOutcome, text: round.latestOutcome === 'correct' ? 'CORRECT!' : 'SKIP' });
+    } else if (round.status === 'paused') {
+      recordOverlayEvent({ kind: 'countdown', text: 'Round paused' });
+    } else if (round.status === 'handoff') {
+      recordOverlayEvent({ kind: 'countdown', text: 'Pass the phone then tap the screen' });
     } else if (round.status === 'finished') {
       recordOverlayEvent({ kind: 'times-up', text: "TIME'S UP!" });
     }
@@ -157,14 +165,15 @@ export function PassNPlayGameScreen() {
   return (
     <SafeAreaView edges={[]} style={[styles.screen,
       status === 'feedback' && styles.feedback,
+      status === 'handoff' && styles.handoff,
       status === 'finished' && styles.finished]}>
       <StatusBar hidden />
       <PassNPlayRoundPanel status={status} outcome={round.latestOutcome} deckTitle={deck.title}
         clock={formatRoundClock(displayedSeconds)} answer={answer}
         isRecording={isRecording && focused && appActive}
-        onPass={() => { if (canInteract()) answerCard('passed'); }}
-        onCorrect={() => { if (canInteract()) answerCard('correct'); }}
-        onReveal={() => { if (canInteract()) revealCard(); }}
+        onPass={() => { if (canInteract() && !finishPromptVisible) answerCard('passed'); }}
+        onCorrect={() => { if (canInteract() && !finishPromptVisible) answerCard('correct'); }}
+        onReveal={() => { if (canInteract() && !finishPromptVisible) revealCard(); }}
         onClose={() => { if (canInteract()) setFinishPromptVisible(true); }}
         onResume={() => {
           if (!canInteract()) return;
@@ -203,6 +212,7 @@ export function PassNPlayGameScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, padding: spacing.md, backgroundColor: colors.playSoft },
   feedback: { padding: 0 },
+  handoff: { padding: 0, backgroundColor: colors.play },
   finished: { backgroundColor: colors.surface },
   promptOverlay: { ...StyleSheet.absoluteFill, zIndex: 100, backgroundColor: 'rgba(24,35,29,0.42)',
     alignItems: 'center', justifyContent: 'center', padding: spacing.xl },

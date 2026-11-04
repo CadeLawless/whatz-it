@@ -25,7 +25,8 @@ function act(round: RemoteRound, sender: string, now: number,
 function start(round: RemoteRound, participants = members) {
   for (const id of participants) if (!round.viewFor(id, 0)?.ready.includes(id))
     assert.equal(act(round, id, 0, { kind: 'ready', contentHash }), 'accepted');
-  assert.equal(act(round, 'host', 0, { kind: 'start' }), 'accepted');
+  const starter = round.viewFor('host', 0)!.guesserId;
+  assert.equal(act(round, starter, 0, { kind: 'start' }), 'accepted');
   round.tick(3000);
 }
 function correct(round: RemoteRound, now: number) {
@@ -149,7 +150,7 @@ for (const pauseDuringFeedback of [false, true]) {
     assert.equal(act(round, 'host', pausedAt, { kind: 'pause' }), 'accepted');
     assert.equal(round.viewFor('host', pausedAt)!.guesserId, 'bob');
     for (const id of members) assert.equal(act(round, id, 5000, { kind: 'ready', contentHash }), 'accepted');
-    assert.equal(act(round, 'host', 5000, { kind: 'resume' }), 'accepted');
+    assert.equal(act(round, 'bob', 5000, { kind: 'resume' }), 'accepted');
     const resumed = round.viewFor('bob', 8000)!;
     assert.equal(resumed.phase, 'playing');
     assert.equal(resumed.guesserId, 'bob');
@@ -297,7 +298,7 @@ test('the next guesser controls settings and starts the next round directly from
   assert.equal(guest.currentView?.durationSeconds, 45);
   host.selectMode('pass-n-play'); await flush();
   assert.equal(guest.currentView?.mode, 'classic');
-  guest.act('ready'); host.act('ready'); await flush(); host.act('start'); await flush();
+  guest.act('ready'); host.act('ready'); await flush(); guest.act('start'); await flush();
   const oldRoundId = host.currentView!.roundId;
   now = 49_000; host.pulse(); await flush();
   assert.equal(host.currentView?.phase, 'results');
@@ -352,7 +353,7 @@ test('the next guesser controls settings and starts the next round directly from
   assert.deepEqual(host.currentView?.ready, ['host', 'guest']);
   assert.deepEqual(guest.currentView?.ready, ['host', 'guest']);
 
-  host.act('start'); await flush();
+  guest.act('start'); await flush();
   now = 200_000; host.pulse(); await flush();
   assert.equal(host.currentView?.phase, 'results');
   host.selectGuesser('guest'); await flush();

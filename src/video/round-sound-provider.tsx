@@ -14,12 +14,14 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { AppState, Platform } from 'react-native';
 import { usePathname } from 'expo-router';
 import { stopAndroidRoundSounds } from 'whatz-it-video-export';
 import { cancelRoundHaptics } from '@/utils/round-haptics';
 import { isSharePlayAudioBlocked } from '@/shareplay/audio-policy';
+import { getFeedbackPreferences, subscribeToFeedbackPreferences } from '@/storage/feedback-preferences';
 import {
   getRoundSoundSource,
   isAndroidRoundSoundBankReady,
@@ -64,6 +66,7 @@ type RoundSoundContextValue = {
 const RoundSoundContext = createContext<RoundSoundContextValue | null>(null);
 
 export function RoundSoundProvider({ children }: PropsWithChildren) {
+  const feedback = useSyncExternalStore(subscribeToFeedbackPreferences, getFeedbackPreferences, getFeedbackPreferences);
   const pathname = usePathname();
   const generation = useRef(0);
   const getReady = useAudioPlayer(getRoundSoundSource('get-ready'), PLAYER_OPTIONS);
@@ -156,8 +159,8 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   const previousStatusKeys = useRef(new Map<string, string>());
   const audioModePromise = useRef<Promise<boolean> | null>(null);
   const [loadTimedOut, setLoadTimedOut] = useState(false);
-  const isReady = criticalStatuses.every(([, status]) => status.isLoaded && !status.error);
-  const gameplayReady = namedStatuses
+  const isReady = !feedback.sound || criticalStatuses.every(([, status]) => status.isLoaded && !status.error);
+  const gameplayReady = !feedback.sound || namedStatuses
     .slice(3)
     .every(([, status]) => status.isLoaded && !status.error);
   const effectiveLoadTimedOut = loadTimedOut && !isReady;
@@ -196,13 +199,19 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     return { failedPlayers, loadedPlayers, pendingPlayers };
   }, []);
 
-  const stopAll = useCallback(() => {
+  const stopAllAudio = useCallback(() => {
     generation.current += 1;
-    cancelRoundHaptics();
     stopAndroidRoundSounds();
     if (isAndroidRoundSoundBankReady()) return;
     for (const [, , player] of playerEntries) stopRoundSoundPlayer(player);
   }, [playerEntries]);
+  const stopAll = useCallback(() => {
+    cancelRoundHaptics();
+    stopAllAudio();
+  }, [stopAllAudio]);
+  useEffect(() => subscribeToFeedbackPreferences(() => {
+    if (!getFeedbackPreferences().sound) stopAllAudio();
+  }), [stopAllAudio]);
   const stopIntro = useCallback(() => {
     generation.current += 1;
     cancelRoundHaptics();
@@ -218,6 +227,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
   useEffect(() => () => stopAll(), [stopAll]);
 
   const configureAudioSession = useCallback(async (sharePlay = false, isCurrent: () => boolean = () => true) => {
+    if (!getFeedbackPreferences().sound) return true;
     if ((!sharePlay && isSharePlayAudioBlocked()) || !isCurrent()) return false;
     if (!audioModePromise.current) {
       audioModePromise.current = setAudioModeAsync({
@@ -234,6 +244,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
         });
     }
     const modeReady = await audioModePromise.current;
+    if (!getFeedbackPreferences().sound) return true;
     if (!modeReady || (!sharePlay && isSharePlayAudioBlocked()) || !isCurrent()) return false;
     try {
       // Camera preparation may change the shared mode to play-and-record.
@@ -335,7 +346,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
 
   const playCue = useCallback(
     async (sound: RoundSoundId, isCurrent: () => boolean = () => true, stopAtEnd = true) => {
-      if (AppState.currentState !== 'active' || !isCurrent()) return false;
+      if (!getFeedbackPreferences().sound || AppState.currentState !== 'active' || !isCurrent()) return false;
       if (sound === 'round-end' && stopAtEnd) stopAll();
       const requestGeneration = generation.current;
       const canPlay = () => AppState.currentState === 'active' &&
@@ -365,6 +376,7 @@ export function RoundSoundProvider({ children }: PropsWithChildren) {
     playCue(sound, () => isSharePlayAudioBlocked() && isCurrent(), false), [playCue]);
 
   const prepareForRound = useCallback(async () => {
+    if (!getFeedbackPreferences().sound) return true;
     const before = getLoadSnapshot();
     const requestGeneration = generation.current;
     logRoundDiagnostic('round audio preparation requested', before);

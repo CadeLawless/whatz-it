@@ -150,6 +150,15 @@ export class LiveGame {
       if (old.hostParticipantId) this.callbacks.onLobby();
     }
     this.session = next;
+    if (next.status === 'joined' && next.participantIds.length === 1 && next.localParticipantId) {
+      // A prepared round needs two players. Keep its setup choices, but give
+      // control to the remaining player instead of retaining a departed guesser.
+      this.guesserId = next.localParticipantId;
+      if (this.view?.phase === 'lobby') {
+        this.round = null;
+        this.setView(null);
+      }
+    }
     this.reportDecks();
     for (const id of this.inventories.keys()) if (!next.participantIds.includes(id)) {
       this.inventories.delete(id);
@@ -836,12 +845,13 @@ export class LiveGame {
     if (control.action === 'return-to-lobby') {
       if (lobby) return;
       this.savedReady = []; this.autoStartNext = false;
-      if (this.selectedDeckId === null && this.round) {
+      if (session.participantIds.length >= 2 && this.selectedDeckId === null && this.round) {
         this.round.resetToLobby(); this.publish(); return;
       }
       this.round = null; this.pendingDeckRequest = null;
-      this.guesserId = view.guesserId;
+      this.guesserId = session.participantIds.includes(view.guesserId) ? view.guesserId : session.localParticipantId;
       this.setView(null); void this.prepare();
+      if (session.participantIds.length < 2) this.callbacks.onLobby();
       this.sendDeckSelection(session.participantIds.filter((id) => id !== session.localParticipantId));
       return;
     }

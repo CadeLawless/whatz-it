@@ -87,7 +87,11 @@ for (const hostGuesses of [false, true]) {
       body: JSON.stringify({ version: 3, kind: 'intent', intent: {
         protocol: 1, sessionId: 'session', environment: 'test', roundId: view.roundId,
         intentId: 'guest-ready', revision: view.revision, kind: 'ready', contentHash: hash } }) });
-    game.act('start');
+    if (hostGuesses) game.act('start');
+    else game.receive({ sessionId: 'session', senderId: 'guest', senderIsHost: false,
+      body: JSON.stringify({ version: 3, kind: 'intent', intent: {
+        protocol: 1, sessionId: 'session', environment: 'test', roundId: game.currentView!.roundId,
+        intentId: 'guest-start', revision: game.currentView!.revision, kind: 'start' } }) });
     const deadline = game.currentView?.deadline;
     game.setForeground(false);
     assert.equal(game.currentView?.phase, hostGuesses ? 'paused' : 'countdown');
@@ -257,7 +261,7 @@ test('client projection decoder refuses secret answer on guesser phone and contr
   const base = { protocol: 1, sessionId: 'session', environment: 'test', roundId: 'round' };
   assert.equal(round.receive('host', JSON.stringify({ ...base, intentId: 'ready-host', revision: 0, kind: 'ready', contentHash: hash }), 0), 'accepted');
   assert.equal(round.receive('guest', JSON.stringify({ ...base, intentId: 'ready-guest', revision: 1, kind: 'ready', contentHash: hash }), 0), 'accepted');
-  assert.equal(round.receive('host', JSON.stringify({ ...base, intentId: 'start', revision: 2, kind: 'start' }), 0), 'accepted');
+  assert.equal(round.receive('guest', JSON.stringify({ ...base, intentId: 'start', revision: 2, kind: 'start' }), 0), 'accepted');
   const playing = round.viewFor('guest', 3000)!;
   assert.ok(parseRemoteView(playing, 'session', 'guest'));
   assert.equal(parseRemoteView({ ...playing, card: { answer: 'LEAK', byline: '' } }, 'session', 'guest'), null);
@@ -449,7 +453,7 @@ test('guesser can submit an answer while clock calibration is temporarily unavai
     kind: 'ready', contentHash: hash }), 0), 'accepted');
   assert.equal(activeRound.receive('guest', JSON.stringify({ ...base, intentId: 'ready-guest', revision: 1,
     kind: 'ready', contentHash: hash }), 0), 'accepted');
-  assert.equal(activeRound.receive('host', JSON.stringify({ ...base, intentId: 'start', revision: 2,
+  assert.equal(activeRound.receive('guest', JSON.stringify({ ...base, intentId: 'start', revision: 2,
     kind: 'start' }), 0), 'accepted');
   const sent: string[] = [];
   const game = new LiveGame({ environment: 'test', uuid: () => 'answer-id', digest: async () => hash,
@@ -555,6 +559,59 @@ test('the inviter’s game mode choice carries into the first shared lobby', asy
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(host.currentView?.phase, 'lobby');
   assert.equal(host.currentView?.mode, 'pass-n-play');
+});
+
+test('the last lobby player can change setup after the selected guesser leaves', async () => {
+  let selectedDeck: string | null = null;
+  let duration = 0;
+  let mode = 'classic';
+  let controller: string | null = null;
+  let sequence = 0;
+  const game = new LiveGame({ environment: 'test', uuid: () => `solo-${++sequence}`,
+    digest: async () => hash, send: async () => undefined,
+    cards: () => [{ answer: 'ANSWER', byline: '' }],
+    availableDeckIds: () => ['deck', 'other'],
+    onDecks: (deckId, _available, seconds, selectedMode, controllerId) => {
+      selectedDeck = deckId; duration = seconds; mode = selectedMode; controller = controllerId;
+    },
+    onView: () => undefined, onError: () => undefined,
+    onActive: () => undefined, onLobby: () => undefined,
+  });
+  game.setSession({ ...session, localParticipantId: 'host', isHost: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  game.selectGuesser('guest');
+  assert.equal(game.currentView?.guesserId, 'guest');
+
+  game.setSession({ ...session, localParticipantId: 'host', isHost: true,
+    participantIds: ['host'] });
+  assert.equal(game.currentView, null);
+  assert.equal(controller, 'host');
+  game.selectDuration(90);
+  game.selectMode('pass-n-play');
+  game.selectDeck('other');
+  assert.equal(duration, 90);
+  assert.equal(mode, 'pass-n-play');
+  assert.equal(selectedDeck, 'other');
+});
+
+test('the remaining guest can change setup after the starting host leaves', async () => {
+  let controller: string | null = null;
+  let duration = 0;
+  const guest = new LiveGame({ environment: 'test', uuid: () => 'guest-solo',
+    digest: async () => hash, send: async () => undefined,
+    cards: () => [{ answer: 'ANSWER', byline: '' }], availableDeckIds: () => ['deck'],
+    onDecks: (_deck, _available, seconds, _mode, controllerId) => {
+      duration = seconds; controller = controllerId;
+    },
+    onView: () => undefined, onError: () => undefined,
+    onActive: () => undefined, onLobby: () => undefined,
+  });
+  guest.setSession(session);
+  guest.setSession({ ...session, participantIds: ['guest'], isHost: true,
+    hostParticipantId: 'guest', electedHost: true, hostTerm: 1 });
+  assert.equal(controller, 'guest');
+  guest.selectDuration(90);
+  assert.equal(duration, 90);
 });
 
 test('all players see the matching reaction set during play and results', async (context) => {

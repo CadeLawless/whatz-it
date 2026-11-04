@@ -16,12 +16,18 @@ const { code } = require('@babel/core').transformFileSync(resolve('src/utils/rou
 function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 'failed' = 'available', impact = false, amplitudeControl = false) {
   const calls: { api: string; value?: unknown }[] = [];
   let now = 0;
+  let hapticsEnabled = true;
+  let preferenceChanged = () => {};
   const exported = {} as typeof import('../utils/round-haptics');
   runInNewContext(code, {
     exports: exported, Date: { now: () => now },
     setTimeout() { assert.fail('native patterns must not schedule JS pulses'); },
     clearTimeout() {},
     require(name: string) {
+      if (name.endsWith('/feedback-preferences')) return {
+        getFeedbackPreferences: () => ({ sound: true, haptics: hapticsEnabled }),
+        subscribeToFeedbackPreferences: (listener: () => void) => { preferenceChanged = listener; return () => {}; },
+      };
       switch (name) {
         case 'expo-haptics': return { impactAsync() { assert.fail('unexpected Expo fallback'); } };
         case '../game/android-haptic-pattern': return { androidHapticPattern };
@@ -78,9 +84,26 @@ function harness(platform: 'android' | 'ios', native: 'available' | 'missing' | 
       }
     },
   });
-  return { ...exported, calls, advance(ms: number) {
+  return { ...exported, calls, setEnabled(value: boolean) { hapticsEnabled = value; preferenceChanged(); }, advance(ms: number) {
     now += ms;
   } };
+}
+
+for (const platform of ['ios', 'android'] as const) {
+  test(`${platform} haptics stop immediately when disabled and can be re-enabled`, async () => {
+    const h = harness(platform);
+    await h.triggerRoundHaptic('correct', { cameraActive: false });
+    h.setEnabled(false);
+    assert.ok(h.calls.some((call) => call.api === (platform === 'ios' ? 'ios-cancel' : 'native-cancel')));
+    h.calls.length = 0;
+    for (const cue of ['card-flip', 'correct', 'pass', 'get-ready', 'initial-countdown', 'final-countdown', 'times-up'] as const) {
+      await h.triggerRoundHaptic(cue, { cameraActive: true, countdownValue: 2 });
+    }
+    assert.equal(h.calls.length, 0);
+    h.setEnabled(true);
+    await h.triggerRoundHaptic('correct', { cameraActive: false });
+    assert.equal(h.calls.length, 1);
+  });
 }
 
 test('Android pass and card flip use distinct device-tuned impacts when supported', async () => {

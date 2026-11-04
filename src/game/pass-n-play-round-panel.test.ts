@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ReactElement, type ReactNode } from 'react';
 
 import type { CardOutcome, RoundStatus } from './game-types';
 import * as theme from '../theme';
@@ -49,6 +49,7 @@ function loadComponent(path: string) {
       if (name.endsWith('/recording-indicator')) return {
         RecordingIndicator: () => createElement('span', null, 'REC'),
       };
+      if (name.endsWith('/handoff-tap-cue')) return { HandoffTapCue: () => createElement('span', null, 'tap icon') };
       if (name.endsWith('/close-button')) return loadComponent('src/components/close-button.tsx');
       if (name.endsWith('/portrait-times-up-panel')) {
         return loadComponent('src/components/portrait-times-up-panel.tsx');
@@ -87,7 +88,7 @@ describe('Pass n\' Play answer visibility', () => {
     finishSwipe({ translationX: -90, velocityX: -100 }, true);
     finishSwipe({ translationX: -30, velocityX: -800 }, true);
     assert.equal(passes, 2);
-    for (const status of ['handoff', 'paused', 'feedback', 'ready', 'finished'] as const) {
+    for (const status of ['paused', 'feedback', 'handoff', 'ready', 'finished'] as const) {
       render(status);
       assert.equal(swipeEnabled, false);
     }
@@ -95,18 +96,46 @@ describe('Pass n\' Play answer visibility', () => {
   it('renders the answer and byline only in active play', () => {
     assert.match(render('playing'), /Secret flamingo/);
     assert.match(render('playing'), /Secret byline/);
-    for (const status of ['handoff', 'paused', 'feedback', 'ready', 'finished'] as const) {
+    for (const status of ['paused', 'feedback', 'handoff', 'ready', 'finished'] as const) {
       const markup = render(status);
       assert.doesNotMatch(markup, /Secret flamingo|Secret byline/);
     }
   });
 
-  it('gives the recipient a reveal action during handoff', () => {
+  it('keeps the original clue instruction and simple answer buttons', () => {
+    const markup = render('playing');
+    assert.match(markup, /Try to get your friends to guess this answer\./);
+    assert.match(markup, />CORRECT</);
+    assert.match(markup, />SKIP</);
+    assert.doesNotMatch(markup, /Pass the phone!|Let the next player|Next player taps|>GOT IT!<|>NEXT</);
+  });
+
+  it('shows the live clock and next-player instruction during handoff, with no answer', () => {
     const markup = render('handoff');
-    assert.match(markup, /Pass the phone/);
-    assert.match(markup, /Show my card/);
-    assert.doesNotMatch(markup, /Timer paused|CORRECT/);
-    assert.doesNotMatch(markup, />PASS<|>Resume</);
+    assert.match(markup, /Pass the phone then tap the screen/);
+    assert.match(markup, /tap icon/);
+    assert.match(markup, /0:49/);
+    assert.doesNotMatch(markup, /Secret flamingo|Secret byline|Animals|GOT IT!|SKIP/);
+  });
+
+  it('keeps the end-round target outside the tap-anywhere reveal target', () => {
+    let reveals = 0;
+    let closes = 0;
+    const noop = () => {};
+    const tree = PassNPlayRoundPanel({
+      status: 'handoff', deckTitle: 'Animals', clock: '0:49',
+      onPass: noop, onCorrect: noop, onResume: noop, onFinish: noop,
+      onReveal: () => { reveals += 1; }, onClose: () => { closes += 1; },
+    });
+    const [revealTarget, header] = tree.props.children as ReactElement<{
+      onPress: () => void; children: ReactElement<{ onPress: () => void }>;
+    }>[];
+    header.props.children.props.onPress();
+    assert.equal(closes, 1);
+    assert.equal(reveals, 0);
+    revealTarget.props.onPress();
+    assert.equal(reveals, 1);
+    assert.equal(closes, 1);
   });
 
   it('offers explicit resume and end actions while paused', () => {
@@ -116,18 +145,16 @@ describe('Pass n\' Play answer visibility', () => {
     assert.doesNotMatch(markup, /Show my card/);
   });
 
-  it('keeps the controls without explanatory instructions', () => {
-    assert.match(render('playing'), />CORRECT</);
-    assert.match(render('playing'), />PASS</);
-    for (const status of ['playing', 'handoff', 'paused', 'feedback', 'ready'] as const) {
-      assert.doesNotMatch(render(status), /Guessed it\?|Next player:|Hold the phone|Same player|Your first card/);
+  it('has no separate card-reveal action in any phase', () => {
+    for (const status of ['playing', 'paused', 'feedback', 'ready', 'finished'] as const) {
+      assert.doesNotMatch(render(status), /Show my card/);
     }
   });
 
   it('shows feedback without the deck title, clock, or answer', () => {
     for (const outcome of ['correct', 'passed'] as const) {
       const markup = render('feedback', outcome);
-      assert.match(markup, outcome === 'correct' ? /CORRECT!/ : /PASS/);
+      assert.match(markup, outcome === 'correct' ? /CORRECT!/ : /SKIP/);
       assert.doesNotMatch(markup, /Animals|0:49|Secret|Show my card|Timer paused|Pause|Got it!/);
     }
   });

@@ -30,10 +30,13 @@ describe('round transition card-memory decisions', () => {
     send({ type: 'START', now: 1_000 });
     send({ type: 'START', now: 1_001 });
     send({ type: 'ANSWER', outcome: 'correct', now: 2_000 });
-    send({ type: 'ADVANCE', now: 2_100 });
+    send({ type: 'ANSWER', outcome: 'correct', now: 2_001 });
     assert.deepEqual(seen, ['one']);
-    send({ type: 'REVEAL', now: 30_000 });
-    send({ type: 'REVEAL', now: 30_001 });
+    send({ type: 'ADVANCE', now: 2_100 });
+    send({ type: 'ADVANCE', now: 2_101 });
+    assert.deepEqual(seen, ['one']);
+    send({ type: 'REVEAL', now: 3_000 });
+    send({ type: 'REVEAL', now: 3_001 });
     assert.deepEqual(seen, ['one', 'two']);
   });
 
@@ -45,7 +48,7 @@ describe('round transition card-memory decisions', () => {
     assert.deepEqual(seen, ['one']);
   });
 
-  it('remembers a next card when resuming pass feedback, but not when resuming handoff', () => {
+  it('remembers the next card on skip resume, but waits for a tap after correct feedback', () => {
     const { send, seen } = createSession();
     send({ type: 'START', now: 1_000 });
     send({ type: 'ANSWER', outcome: 'passed', now: 2_000 });
@@ -53,11 +56,11 @@ describe('round transition card-memory decisions', () => {
     send({ type: 'RESUME', now: 20_000 });
     assert.deepEqual(seen, ['one', 'two']);
     send({ type: 'ANSWER', outcome: 'correct', now: 21_000 });
-    send({ type: 'ADVANCE', now: 21_350 });
     send({ type: 'PAUSE', now: 22_000 });
+    assert.deepEqual(seen, ['one', 'two']);
     send({ type: 'RESUME', now: 100_000 });
     assert.deepEqual(seen, ['one', 'two']);
-    send({ type: 'REVEAL', now: 101_000 });
+    send({ type: 'REVEAL', now: 100_001 });
     assert.deepEqual(seen, ['one', 'two', 'three']);
   });
 
@@ -71,19 +74,18 @@ describe('round transition card-memory decisions', () => {
 });
 
 describe('game mode compatibility', () => {
-  it('completes a mixed round with interrupted handoff and play, then configures a clean replay', () => {
+  it('completes a mixed round with interrupted feedback and play, then configures a clean replay', () => {
     const { send, seen } = createSession();
     send({ type: 'START', now: 1_000 });
     send({ type: 'ANSWER', outcome: 'passed', now: 2_000 });
     send({ type: 'ADVANCE', now: 2_350 });
     send({ type: 'ANSWER', outcome: 'correct', now: 5_000 });
-    const handoff = send({ type: 'ADVANCE', now: 5_350 });
-    assert.equal(handoff.endsAt, 61_000);
+    assert.deepEqual(seen, ['one', 'two']);
 
     assert.equal(send({ type: 'PAUSE', now: 10_000 }).remainingMs, 51_000);
     send({ type: 'RESUME', now: 120_000 });
-    assert.deepEqual(seen, ['one', 'two']);
-    assert.equal(send({ type: 'REVEAL', now: 150_000 }).endsAt, 171_000);
+    send({ type: 'REVEAL', now: 120_001 });
+    assert.deepEqual(seen, ['one', 'two', 'three']);
     assert.equal(send({ type: 'PAUSE', now: 160_000 }).remainingMs, 11_000);
     const resumed = send({ type: 'RESUME', now: 200_000 });
     assert.equal(resumed.endsAt, 211_000);

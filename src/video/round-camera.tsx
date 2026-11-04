@@ -59,30 +59,14 @@ type RoundCameraProps = {
   onReady: () => void;
 };
 
-export async function requestRoundCameraPermissions() {
-  const cameraGranted =
-    VisionCamera.cameraPermissionStatus === 'authorized' ||
-    (await VisionCamera.requestCameraPermission());
-  if (!cameraGranted) return { cameraGranted: false, microphoneGranted: false };
+export { requestRoundCameraPermissions } from '@/video/round-capture-permissions';
 
-  const microphoneGranted =
-    VisionCamera.microphonePermissionStatus === 'authorized' ||
-    (await VisionCamera.requestMicrophonePermission());
-  logVideoDiagnostic('permissions resolved', {
-    cameraGranted,
-    cameraStatus: VisionCamera.cameraPermissionStatus,
-    microphoneGranted,
-    microphoneStatus: VisionCamera.microphonePermissionStatus,
-  });
-  return { cameraGranted: true, microphoneGranted };
-}
-
-async function prepareRoundRecordingAudio() {
+async function prepareRoundRecordingAudio(microphone: boolean) {
   logVideoDiagnostic('recording audio session configuration started', {
     platform: Platform.OS,
   });
   await setAudioModeAsync({
-    allowsRecording: true,
+    allowsRecording: microphone,
     interruptionMode: 'doNotMix',
     playsInSilentMode: true,
     shouldRouteThroughEarpiece: false,
@@ -90,7 +74,7 @@ async function prepareRoundRecordingAudio() {
   // Expo Audio configures playback/recording but does not expose iOS's
   // setAllowHapticsAndSystemSoundsDuringRecording. Our native module enables it
   // while preserving the play-and-record speaker session used by the round.
-  await prepareRecordingAudio();
+  if (microphone) await prepareRecordingAudio();
   logVideoDiagnostic('recording audio session configured with haptics enabled', {
     platform: Platform.OS,
   });
@@ -151,7 +135,7 @@ export const RoundCamera = forwardRef<RoundCameraRef, RoundCameraProps>(
           });
           await microphoneRecorder.stop();
         }
-        await prepareRoundRecordingAudio();
+        await prepareRoundRecordingAudio(microphoneEnabled);
         if (!microphoneEnabled) {
           logVideoDiagnostic('recording audio session prepared without microphone capture');
           return false;

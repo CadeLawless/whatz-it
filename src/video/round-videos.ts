@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 import type { RoundResultSnapshot } from '@/game/round-result-snapshot';
+import { loadRoundHistory } from '@/storage/round-history';
+import type { SavedRound } from '@/storage/round-history';
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 
 const STORAGE_KEY = 'whatz-it:round-videos:v1';
@@ -11,6 +13,7 @@ const COMPLETED_EXPORT_PATTERN = /^(\d+-[a-z0-9]+)-export\.mp4$/i;
 
 export type RoundVideo = {
   id: string;
+  roundId?: string;
   uri: string;
   audioUri?: string;
   exportUri?: string;
@@ -56,6 +59,14 @@ async function readStoredMetadata(): Promise<StoredRoundVideo[]> {
   }
 }
 
+export const readRoundVideoMetadata = readStoredMetadata;
+let retainedRounds: SavedRound[] | null = null;
+
+function belongsToRetainedRound(video: RoundVideo) {
+  return retainedRounds === null || retainedRounds.some((round) =>
+    round.id === (video.roundId ?? video.id) || round.videoId === video.id);
+}
+
 type RoundVideoLibraryListener = (videos: RoundVideo[]) => void;
 
 const roundVideoLibraryListeners = new Set<RoundVideoLibraryListener>();
@@ -76,8 +87,18 @@ function notifyRoundVideoLibrary(videos: RoundVideo[]) {
 }
 
 async function writeStoredMetadata(videos: RoundVideo[], notifyListeners = true) {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(videos.map(toStoredRoundVideo)));
-  if (notifyListeners) notifyRoundVideoLibrary(videos);
+  const retained = videos.filter(belongsToRetainedRound);
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(retained.map(toStoredRoundVideo)));
+  if (notifyListeners) notifyRoundVideoLibrary(retained);
+}
+
+export async function pruneRoundVideos(rounds: SavedRound[]) {
+  retainedRounds = rounds;
+  if (Platform.OS === 'web') return;
+  const { File, videos } = await readHydratedMetadata();
+  const next = videos.filter(belongsToRetainedRound);
+  videos.filter((video) => !belongsToRetainedRound(video)).forEach((video) => deleteVideoFiles(video, File));
+  if (next.length !== videos.length) await writeStoredMetadata(next);
 }
 
 const activeExports = new Map<string, Promise<RoundVideo>>();
@@ -102,6 +123,8 @@ export function initializeRoundVideoStorage() {
 
 export async function loadRoundVideos() {
   if (Platform.OS === 'web') return [];
+  // Migrate scores and enforce the shared round limit before loading media.
+  await loadRoundHistory(await readStoredMetadata());
   const { File, storedVideos, videoDirectory, videos } = await readHydratedMetadata();
   const available = videos.flatMap((video) => {
     const sourceExists = new File(video.uri).exists;
@@ -140,7 +163,9 @@ export async function loadRoundVideos() {
   });
   const uniqueAvailable = deduplicateRoundVideosById(available);
   const recovered = recoverCompletedExports(videoDirectory, uniqueAvailable, File);
+  await loadRoundHistory(recovered);
   const next = recovered
+    .filter(belongsToRetainedRound)
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, MAX_STORED_VIDEOS)
     .map(compactCompletedExport);
@@ -161,6 +186,7 @@ export async function storeRoundVideo(
   playbackIncludesOverlays = false,
   requiresBrandedExport = false,
   resultSnapshot?: RoundResultSnapshot,
+  roundId?: string,
 ) {
   const persistenceStartedAt = Date.now();
   if (Platform.OS === 'web') throw new Error('Round recording is only available on a device.');
@@ -245,6 +271,7 @@ export async function storeRoundVideo(
 
   const video: RoundVideo = {
     id,
+    roundId,
     uri: destination.uri,
     audioUri,
     exportUri,
@@ -271,7 +298,12 @@ export async function storeRoundVideo(
     elapsedMs: Date.now() - libraryLoadStartedAt,
     previousVideoCount: previous.length,
   });
-  const next = [storedVideo, ...previous].slice(0, MAX_STORED_VIDEOS);
+  await loadRoundHistory([storedVideo, ...previous]);
+  if (!belongsToRetainedRound(storedVideo)) {
+    deleteVideoFiles(storedVideo, File);
+    throw new Error('This round is no longer in the ten most recent rounds.');
+  }
+  const next = [storedVideo, ...previous].filter(belongsToRetainedRound).slice(0, MAX_STORED_VIDEOS);
   const removed = previous.filter((item) => !next.some((kept) => kept.id === item.id));
   removed.forEach((item) => deleteVideoFiles(item, File));
   const metadataWriteStartedAt = Date.now();
@@ -765,7 +797,11 @@ async function inspectVideoAudioTrackCount(uri: string): Promise<number | null> 
 }
 
 async function updateStoredVideo(video: RoundVideo) {
-  const { videos } = await readHydratedMetadata();
+  const { File, videos } = await readHydratedMetadata();
+  if (!belongsToRetainedRound(video) || !videos.some((item) => item.id === video.id)) {
+    deleteVideoFiles(video, File);
+    return video;
+  }
   const next = videos.map((item) => (item.id === video.id ? { ...item, ...video } : item));
   await writeStoredMetadata(next);
   return video;
@@ -894,6 +930,7 @@ function recoverCompletedExports(
     knownVideoIds.add(normalizedRecoveredId);
     const match = file.name.match(COMPLETED_EXPORT_PATTERN)!;
     const recoveredId = match[1];
+    if (pendingManagedVideoIds.has(recoveredId) || activeExports.has(recoveredId)) return [];
     const createdAt = Number(recoveredId.split('-', 1)[0]);
     return [
       {

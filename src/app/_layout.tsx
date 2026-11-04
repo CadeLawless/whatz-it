@@ -28,6 +28,7 @@ import {
   settingsPermissionsChanged,
 } from '@/storage/settings-return';
 import { initializeRoundVideoStorage } from '@/video/round-videos';
+import { loadFeedbackPreferences } from '@/storage/feedback-preferences';
 import { loadHomeBranding } from '@/utils/home-branding';
 import { getSettingsPermissionSnapshot } from '@/utils/settings-permission-snapshot';
 import { platformReleaseCapabilities } from '@/release/platform-release';
@@ -103,6 +104,7 @@ function RootLayoutContent() {
     void Promise.all([
       loadHomeBranding().catch(() => undefined),
       getSettingsReturnDeckId().catch(() => null),
+      loadFeedbackPreferences().catch(() => undefined),
     ]).then(([, deckId]) => {
       setSettingsReturnDeckId(
         deckId && catalog.getDeckById(deckId) ? deckId : null,
@@ -188,6 +190,14 @@ function RootLayoutContent() {
             headerShown: false,
             orientation: 'portrait',
             title: 'Back to Decks',
+          }}
+        />
+        <Stack.Screen
+          name="settings"
+          options={{
+            title: 'Settings', orientation: 'portrait', presentation: 'transparentModal',
+            animation: 'none', gestureEnabled: false, headerShown: false,
+            contentStyle: { backgroundColor: 'transparent' },
           }}
         />
         <Stack.Screen

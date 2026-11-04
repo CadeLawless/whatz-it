@@ -31,7 +31,9 @@ export function PortraitAnswerText({ text }: { text: string }) {
   </>;
 }
 
-export function PortraitRoundFeedback({ outcome }: { outcome: 'correct' | 'pass' }) {
+export function PortraitRoundFeedback({ outcome, passLabel = 'PASS' }: {
+  outcome: 'correct' | 'pass'; passLabel?: string;
+}) {
   const correct = outcome === 'correct';
   const tint = correct ? colors.correctText : colors.passText;
   return <View style={[styles.takeover, { backgroundColor: correct ? colors.correct : colors.pass }]}>
@@ -40,7 +42,7 @@ export function PortraitRoundFeedback({ outcome }: { outcome: 'correct' | 'pass'
       size={112} tintColor={tint} style={styles.checkIcon} /> :
       <Text accessibilityElementsHidden style={[styles.feedbackIcon, { color: tint }]}>×</Text>}
     <Text accessibilityRole="header" style={[styles.feedbackTitle, { color: tint }]}>
-      {correct ? 'CORRECT!' : 'PASS'}
+      {correct ? 'CORRECT!' : passLabel}
     </Text>
   </View>;
 }
