@@ -10,7 +10,7 @@ import { PortraitTimesUpPanel } from '@/components/portrait-times-up-panel';
 import { formatRoundClock } from '@/game/round-duration';
 import { canShowSharePlayRoundOptions } from '@/shareplay/presentation';
 import { canReactInPhase } from '@/shareplay/reactions';
-import { canPlaySharedRound } from '@/shareplay/round-availability';
+import { canPlayAgainFromResults, canPlaySharedRound } from '@/shareplay/round-availability';
 import type { SharePlayReactionIndex } from '@/shareplay/reactions';
 import { useSharePlay } from '@/shareplay/session-provider';
 import { useSharePlayRoundCues } from '@/shareplay/use-round-cues';
@@ -65,6 +65,8 @@ export function SharePlayGameScreen() {
   const isTurnOwner = !!localId && (sharedView?.guesserId ?? view?.guesserId) === localId;
   const canResume = canPlaySharedRound(sharePlay.session.participantIds, localId,
     sharePlay.session.hostParticipantId, sharePlay.peers);
+  const canPlayAgain = canPlayAgainFromResults(sharePlay.session.participantIds, view,
+    sharedView, sharePlay.decks.selectedDeckId);
   const passNPlay = view?.mode === 'pass-n-play';
   const isGuesser = !!view && (passNPlay ? !isTurnOwner : isTurnOwner);
   const isClueGiver = !!view && !isGuesser;
@@ -203,8 +205,7 @@ export function SharePlayGameScreen() {
                   guesserName ?? 'CONNECTING…'}
               </Text>}
               {isTurnOwner && view.phase === 'results' ?
-                <Action label="PLAY AGAIN" disabled={sharePlay.session.participantIds.length < 2 ||
-                  sharePlay.decks.selectedDeckId !== view.deck.deckId}
+                <Action label="PLAY AGAIN" disabled={!canPlayAgain}
                   onPress={sharePlay.gameActions.nextRound} /> :
                 <Action label="BACK TO LOBBY" onPress={sharePlay.closeGame} />}
               {isTurnOwner && view.phase === 'results' && <View style={styles.resultsActionsRow}>
