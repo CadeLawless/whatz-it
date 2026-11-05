@@ -42,7 +42,7 @@ function Button({ label, onPress, disabled, secondary, danger, arrow, deckPlay }
 }
 
 export function SharePlaySetupSheet() {
-  const [confirmation, setConfirmation] = useState<'leave' | null>(null);
+  const [confirmation, setConfirmation] = useState<'leave' | 'end-game' | null>(null);
   const [inviteHelpOpen, setInviteHelpOpen] = useState(false);
   const [debugTrace, setDebugTrace] = useState<string | null>(null);
   const [deckSearchOpen, setDeckSearchOpen] = useState(false);
@@ -160,6 +160,9 @@ export function SharePlaySetupSheet() {
   const isController = joined && !!controllerId && controllerId === session.localParticipantId;
   const canPlay = isController && !!lobby && selectedDeckId === lobby.deck.deckId &&
     canPlaySharedRound(session.participantIds, session.localParticipantId, session.hostParticipantId, peers);
+  const canEndGame = isController && (session.participantIds.length === 1 ||
+    (!!lobby && lobby.participants.length === session.participantIds.length &&
+      session.participantIds.every((id) => lobby.participants.includes(id))));
   const canChooseDeck = !hasSession || isController;
   const durationSeconds = hasSession ? sharePlay.decks.durationSeconds : originalSelection?.durationSeconds ?? 60;
   const playerLabel = (id: string) => {
@@ -424,6 +427,10 @@ export function SharePlaySetupSheet() {
             </Text>}
           <View style={styles.footerRow}>
             <View style={styles.footerAction}><Button label="LEAVE" secondary disabled={busy} onPress={close} /></View>
+            {isController && <View style={styles.footerAction}>
+              <Button label="END GAME" danger disabled={busy || !canEndGame}
+                onPress={() => setConfirmation('end-game')} />
+            </View>}
           </View>
         </View>}
       </MainContainer>
@@ -523,12 +530,22 @@ export function SharePlaySetupSheet() {
         disabled={busy || !isController} onClose={() => setHostPickerOpen(false)}
         onSelect={(id) => { sharePlay.gameActions.selectGuesser(id); setHostPickerOpen(false); }} />
       <ConfirmationPrompt embedded visible={confirmation !== null}
-        title="Leave Lobby?"
-        message="You can stay in the Lobby or leave this SharePlay game."
+        title={confirmation === 'end-game' ? 'End Game for Everyone?' : 'Leave Lobby?'}
+        message={confirmation === 'end-game' ?
+          'This ends the SharePlay game for everyone in the lobby.' :
+          'You can stay in the Lobby or leave this SharePlay game.'}
         cancelLabel="STAY"
-        confirmLabel="LEAVE"
+        confirmLabel={confirmation === 'end-game' ? 'END GAME' : 'LEAVE'}
         destructive busy={busy} onCancel={() => setConfirmation(null)}
-        onConfirm={() => { setConfirmation(null); void sharePlay.leave(); }} />
+        onConfirm={() => {
+          const action = confirmation;
+          setConfirmation(null);
+          if (action === 'end-game') {
+            if (!canEndGame) return;
+            if (session.participantIds.length === 1) void sharePlay.leave(true);
+            else sharePlay.gameActions.endGame();
+          } else void sharePlay.leave();
+        }} />
       <ConfirmationPrompt embedded visible={inviteHelpOpen}
         title="Add People"
         message="To add players to the game, add people to your FaceTime call directly"

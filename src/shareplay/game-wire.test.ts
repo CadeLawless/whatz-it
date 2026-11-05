@@ -162,6 +162,26 @@ test('a lobby host can hand off before suspension and an elected host can broadc
   await assert.rejects(game.endSession(), /notHost/);
 });
 
+test('the active guest can end the shared game from the lobby', async () => {
+  let ended = 0;
+  const game = new LiveGame({ environment: 'test', uuid: () => 'lobby-end', digest: async () => hash,
+    send: async () => undefined, cards: () => [{ answer: 'ANSWER', byline: '' }],
+    availableDeckIds: () => ['deck'], onDecks: () => undefined, onView: () => undefined,
+    onError: () => undefined, onActive: () => undefined, onLobby: () => undefined,
+    onEndGame: () => { ended++; } });
+  game.setSession({ ...session, localParticipantId: 'host', isHost: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(game.currentView?.phase, 'lobby');
+  game.selectGuesser('guest');
+  const view = game.currentView!;
+  game.endGame();
+  assert.equal(ended, 0);
+  game.receive({ sessionId: 'session', senderId: 'guest', senderIsHost: false,
+    body: JSON.stringify({ version: 3, kind: 'control', action: 'end-game',
+      roundId: view.roundId, revision: view.revision }) });
+  assert.equal(ended, 1);
+});
+
 for (const { anotherOwnerRemains, active } of [
   { anotherOwnerRemains: false, active: false },
   { anotherOwnerRemains: false, active: true },
