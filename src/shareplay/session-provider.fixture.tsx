@@ -16,6 +16,7 @@ const mockRuntime = {
   snapshot: idleSnapshot,
   inviteResult: 'success' as 'success' | 'cancelled',
   leaveFails: false,
+  deferredLeave: null as null | { promise: Promise<void>; resolve: () => void },
   listeners: new Map<string, Set<Listener>>(),
   storage: new Map<string, string>(),
   nativeCalls: [] as string[],
@@ -63,8 +64,12 @@ jest.mock('../../modules/whatz-it-shareplay/src/WhatzItSharePlayModule', () => (
   sendAsync: jest.fn(async () => undefined),
   leaveAsync: jest.fn(async () => {
     mockRuntime.nativeCalls.push('leave');
+    const leavingSessionId = mockRuntime.snapshot.sessionId;
+    await mockRuntime.deferredLeave?.promise;
     if (mockRuntime.leaveFails) throw new Error('native leave failed');
-    mockRuntime.snapshot = { ...idleSnapshot, revision: mockRuntime.snapshot.revision + 1 };
+    if (mockRuntime.snapshot.sessionId === leavingSessionId) {
+      mockRuntime.snapshot = { ...idleSnapshot, revision: mockRuntime.snapshot.revision + 1 };
+    }
   }),
   endAsync: jest.fn(async () => { mockRuntime.nativeCalls.push('end'); }),
 } }));
@@ -99,6 +104,7 @@ type Options = {
   snapshot?: SharePlaySnapshot;
   savedRejoinNonce?: string;
   leaveFails?: boolean;
+  deferLeave?: boolean;
   catalogDecks?: CatalogDeck[];
   ownedDeckIds?: string[];
 };
@@ -106,6 +112,11 @@ type Options = {
 export function mountSharePlayProvider(options: Options = {}) {
   mockRuntime.snapshot = options.snapshot ?? idleSnapshot;
   mockRuntime.inviteResult = 'success'; mockRuntime.leaveFails = options.leaveFails ?? false;
+  mockRuntime.deferredLeave = options.deferLeave ? (() => {
+    let resolve: () => void = () => undefined;
+    const promise = new Promise<void>((done) => { resolve = done; });
+    return { promise, resolve };
+  })() : null;
   mockRuntime.listeners.clear();
   mockRuntime.storage = new Map([['shareplay.player-name.v1', 'Cade']]);
   if (options.savedRejoinNonce) mockRuntime.storage.set('whatz-it.shareplay.rejoin-session', options.savedRejoinNonce);
@@ -126,6 +137,7 @@ export function mountSharePlayProvider(options: Options = {}) {
     },
     setNativeSnapshot(next: SharePlaySnapshot) { mockRuntime.snapshot = next; },
     setInviteResult(result: 'success' | 'cancelled') { mockRuntime.inviteResult = result; },
+    resolveLeave() { mockRuntime.deferredLeave?.resolve(); },
     nativeCalls: mockRuntime.nativeCalls, removedKeys: mockRuntime.removedKeys,
     liveGameSessions: mockRuntime.liveGameSessions,
     advanceTime(milliseconds: number) { jest.advanceTimersByTime(milliseconds); },
