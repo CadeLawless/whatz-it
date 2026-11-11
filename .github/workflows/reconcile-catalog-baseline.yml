@@ -1,0 +1,63 @@
+name: Reconcile catalog baseline
+
+on:
+  repository_dispatch:
+    types: [catalog-production-published]
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalog-baseline-reconciliation
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    name: Reconcile through verified pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BOT_BRANCH: automation/catalog-baseline
+      CATALOG_MANIFEST_URL: ${{ vars.CATALOG_MANIFEST_URL }}
+      RECONCILIATION_TRIGGER: ${{ github.event_name }}
+      PUBLICATION_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+      PUBLICATION_STATUS: ${{ github.event.client_payload.status }}
+      PUBLISHED_REVISION: ${{ github.event.client_payload.published_revision }}
+      CORRELATION_ID: ${{ github.event.client_payload.correlation_id || (github.event_name != 'repository_dispatch' && format('recovery-{0}', github.run_id)) }}
+
+    steps:
+      - name: Create narrowly scoped installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.CATALOG_BASELINE_APP_ID }}
+          private-key: ${{ secrets.CATALOG_BASELINE_APP_PRIVATE_KEY }}
+
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Configure bot commit identity
+        run: |
+          git config user.name "catalog-baseline[bot]"
+          git config user.email "catalog-baseline[bot]@users.noreply.github.com"
+
+      - name: Reconcile active public manifest
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: npx tsx scripts/reconcile-catalog-baseline.ts

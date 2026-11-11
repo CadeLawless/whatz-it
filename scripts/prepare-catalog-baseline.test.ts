@@ -17,6 +17,102 @@ import {
 const placeholderHash = 'a'.repeat(64);
 
 describe('release catalog baseline preparation', () => {
+  it('retries a transient manifest response and succeeds within three attempts', async () => {
+    const fixture = {
+      ...manifestFixture(),
+      decks: [],
+      bundles: [],
+      deckOrders: { free: [], paid: [] },
+    };
+    let attempts = 0;
+    const request = (async () => {
+      attempts += 1;
+      return attempts === 1
+        ? new Response('temporarily unavailable', { status: 503 })
+        : Response.json(fixture);
+    }) as typeof fetch;
+
+    const prepared = await fetchPreparedBaseline('https://api.example.test/manifest', request);
+
+    assert.equal(prepared.catalog.revision, 41);
+    assert.equal(attempts, 2);
+  });
+
+  it('recovers from a transient network exception', async () => {
+    const fixture = {
+      ...manifestFixture(),
+      decks: [],
+      bundles: [],
+      deckOrders: { free: [], paid: [] },
+    };
+    let attempts = 0;
+    const request = (async () => {
+      attempts += 1;
+      if (attempts === 1) throw new TypeError('temporary network failure');
+      return Response.json(fixture);
+    }) as typeof fetch;
+
+    const prepared = await fetchPreparedBaseline('https://api.example.test/manifest', request);
+
+    assert.equal(prepared.catalog.revision, 41);
+    assert.equal(attempts, 2);
+  });
+
+  it('stops after three transient request failures', async () => {
+    let attempts = 0;
+    const request = (async () => {
+      attempts += 1;
+      throw new TypeError('network connection failed');
+    }) as typeof fetch;
+
+    await assert.rejects(
+      fetchPreparedBaseline('https://api.example.test/manifest', request),
+      /network connection failed/,
+    );
+    assert.equal(attempts, 3);
+  });
+
+  it('retains the final HTTP diagnostic after exhausting server retries', async () => {
+    let attempts = 0;
+    const request = (async () => {
+      attempts += 1;
+      return new Response('temporarily unavailable', { status: 503 });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      fetchPreparedBaseline('https://api.example.test/manifest', request),
+      /Manifest request failed with HTTP 503/,
+    );
+    assert.equal(attempts, 3);
+  });
+
+  it('does not retry a non-retryable response', async () => {
+    let attempts = 0;
+    const request = (async () => {
+      attempts += 1;
+      return new Response('not found', { status: 404 });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      fetchPreparedBaseline('https://api.example.test/manifest', request),
+      /Manifest request failed with HTTP 404/,
+    );
+    assert.equal(attempts, 1);
+  });
+
+  it('does not retry a manifest validation failure', async () => {
+    let attempts = 0;
+    const request = (async () => {
+      attempts += 1;
+      return Response.json({ schemaVersion: 999 });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      fetchPreparedBaseline('https://api.example.test/manifest', request),
+    );
+    assert.equal(attempts, 1);
+  });
+
   it('omits cover downloads and bundled cover paths for an uncovered deck', async () => {
     const contentBytes = new TextEncoder().encode(JSON.stringify(freeArtifact()));
     const fixture = manifestFixture();
@@ -149,7 +245,9 @@ describe('release catalog baseline preparation', () => {
     fixture.decks[0].cover.bytes = coverBytes.byteLength;
     fixture.decks[1].cover.hash = sha256(coverBytes);
     fixture.decks[1].cover.bytes = coverBytes.byteLength;
+    let attempts = 0;
     const request = (async (input: URL | RequestInfo) => {
+      attempts += 1;
       const url = String(input);
       if (url === 'https://api.example.test/manifest') return Response.json(fixture);
       if (url === fixture.decks[0].content.url) return new Response(contentBytes);
@@ -162,6 +260,7 @@ describe('release catalog baseline preparation', () => {
       fetchPreparedBaseline('https://api.example.test/manifest', request),
       /failed SHA-256 verification/,
     );
+    assert.equal(attempts, 4);
   });
 
   it('renders deterministically and writes covers before marking the source current', async () => {
