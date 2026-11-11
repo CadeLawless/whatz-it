@@ -18,7 +18,7 @@ jobs:
   reconcile:
     name: Reconcile through verified pull request
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       BOT_BRANCH: automation/catalog-baseline
       CATALOG_MANIFEST_URL: ${{ vars.CATALOG_MANIFEST_URL }}

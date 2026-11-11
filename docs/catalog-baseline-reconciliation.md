@@ -38,3 +38,18 @@ If an event is missed, wait for the daily run or start a manual run. Re-running 
 the active public manifest is the source of truth and an already-current baseline is a no-op.
 Reconciliation and merging do not invoke EAS, TestFlight, store submission, or any release
 workflow; releases remain explicit operations.
+
+## External publication sender boundary
+
+Issue #19 is owned by the private `CadeLawless/whatz-it-deck-platform` repository; this app
+repository implements only the receiving and reconciliation side. The sender belongs in
+`PublicationCoordinator::publish()` in `platform/lib/Publication.php`, after
+`ArtifactPromoter::activateManifest()` succeeds and `publication_preparations` transitions from
+`database_active` to `active`. Before dispatch, that service must verify the public
+`/api/v1/catalog/manifest`, then send `preparationId` as `correlation_id` and
+`catalog.revision` as `published_revision`.
+
+This documents the handoff; it does not claim the external sender exists. Sender implementation
+and integration exercise remain required externally, including authentication, bounded delivery
+retries, operator logging, and proof that one production-like publication updates the rolling PR
+without starting an app release.

@@ -35,6 +35,7 @@ function fixture(overrides: Partial<ReconciliationDependencies> = {}) {
         calls.push(`pr:${metadata.correlationId}`);
         return { number: 18 };
       },
+      waitForRequiredChecks: async (number) => { calls.push(`checks:${number}`); return true; },
       enableAutoMerge: async (number) => { calls.push(`merge:${number}`); return true; },
     },
     ...overrides,
@@ -112,19 +113,78 @@ describe('catalog baseline reconciliation', () => {
     assert.deepEqual(calls, [
       'fetch:https://catalog.example/manifest.json', 'prepare', 'write', 'verify',
       'push:chore(catalog): reconcile baseline to revision 11 [publication-abc]',
-      'pr:publication-abc', 'merge:18',
+      'pr:publication-abc', 'checks:18', 'merge:18',
     ]);
   });
 
-  it('converges rapid events on public state rather than the event revision', async () => {
-    const { calls, dependencies } = fixture();
-    await reconcileCatalogBaseline(dependencies, {
-      trigger: 'repository_dispatch', environment: 'production', status: 'succeeded',
-      publishedRevision: 999, correlationId: 'older-event',
+  it('converges two publications through one fixed branch and one rolling pull request', async () => {
+    const activeRevisions = [11, 12];
+    const writtenRevisions: number[] = [];
+    const branchPreparations: string[] = [];
+    const pullRequests = new Map<string, { number: number; revision: number }>();
+    let preparedRevision = 0;
+    const { dependencies } = fixture({
+      fetchActiveBaseline: async () => {
+        const revision = activeRevisions.shift();
+        assert.ok(revision);
+        return { revision, prepared: { revision } };
+      },
+      repository: {
+        readCommittedRevision: async () => 10,
+        baselineIsCurrent: async () => false,
+        prepareFixedBranch: async () => { branchPreparations.push('automation/catalog-baseline'); },
+        writeBaseline: async (prepared) => {
+          preparedRevision = (prepared as { revision: number }).revision;
+          writtenRevisions.push(preparedRevision);
+        },
+        changedPaths: async () => ['src/data/bundles.ts'],
+        verify: async () => {},
+        commitAndPush: async () => {},
+      },
+      github: {
+        upsertRollingPullRequest: async (metadata) => {
+          const branch = 'automation/catalog-baseline';
+          const existing = pullRequests.get(branch);
+          const pullRequest = existing ?? { number: 18, revision: preparedRevision };
+          pullRequest.revision = metadata.activeRevision;
+          pullRequests.set(branch, pullRequest);
+          return { number: pullRequest.number };
+        },
+        waitForRequiredChecks: async () => true,
+        enableAutoMerge: async () => true,
+      },
     });
-    assert.equal(calls[0], 'fetch:https://catalog.example/manifest.json');
-    assert.ok(calls.some((call) => call.includes('revision 11')));
-    assert.ok(!calls.some((call) => call.includes('999')));
+
+    const first = await reconcileCatalogBaseline(dependencies, {
+      trigger: 'repository_dispatch', environment: 'production', status: 'succeeded',
+      publishedRevision: 11, correlationId: 'publication-11',
+    });
+    const second = await reconcileCatalogBaseline(dependencies, {
+      trigger: 'repository_dispatch', environment: 'production', status: 'succeeded',
+      publishedRevision: 12, correlationId: 'publication-12',
+    });
+
+    assert.deepEqual(writtenRevisions, [11, 12]);
+    assert.deepEqual(branchPreparations, ['automation/catalog-baseline', 'automation/catalog-baseline']);
+    assert.equal(pullRequests.size, 1);
+    assert.deepEqual(pullRequests.get('automation/catalog-baseline'), { number: 18, revision: 12 });
+    assert.equal(first.pullRequestNumber, 18);
+    assert.equal(second.pullRequestNumber, 18);
+    assert.equal(second.activeRevision, 12);
+  });
+
+  it('leaves the pull request open when required checks fail', async () => {
+    const { calls, dependencies } = fixture();
+    dependencies.github.waitForRequiredChecks = async (number) => {
+      calls.push(`checks:${number}`);
+      return false;
+    };
+    const result = await reconcileCatalogBaseline(dependencies, {
+      trigger: 'schedule', correlationId: 'scheduled-check-failure',
+    });
+    assert.equal(result.outcome, 'pull-request');
+    assert.equal(result.autoMerge, 'checks-failed');
+    assert.ok(!calls.some((call) => call.startsWith('merge:')));
   });
 
   it('leaves a regression pull request open for review', async () => {
@@ -166,13 +226,14 @@ describe('catalog baseline reconciliation', () => {
   });
 
   it('keeps a valid pull request open when repository auto-merge is unavailable', async () => {
-    const { dependencies } = fixture();
+    const { calls, dependencies } = fixture();
     dependencies.github.enableAutoMerge = async () => false;
     const result = await reconcileCatalogBaseline(dependencies, {
       trigger: 'schedule', correlationId: 'scheduled-3',
     });
     assert.equal(result.outcome, 'pull-request');
     assert.equal(result.autoMerge, 'unavailable');
+    assert.ok(calls.includes('checks:18'));
   });
 });
 
@@ -186,6 +247,21 @@ describe('receiver workflow contract', () => {
     assert.match(workflow, /cancel-in-progress: true/);
     assert.match(workflow, /actions\/create-github-app-token@v2/);
     assert.match(workflow, /BOT_BRANCH: automation\/catalog-baseline/);
+    assert.match(workflow, /timeout-minutes: 45/);
     assert.doesNotMatch(workflow, /pull_request_target|personal_access_token|eas|testflight|store submission/i);
+  });
+
+  it('documents the external publication sender owner and exact handoff boundary', async () => {
+    const documentation = (
+      await readFile(resolve(root, 'docs/catalog-baseline-reconciliation.md'), 'utf8')
+    ).replace(/\s+/g, ' ');
+    assert.match(documentation, /private `CadeLawless\/whatz-it-deck-platform` repository/);
+    assert.match(documentation, /`PublicationCoordinator::publish\(\)`/);
+    assert.match(documentation, /`ArtifactPromoter::activateManifest\(\)` succeeds/);
+    assert.match(documentation, /`publication_preparations` transitions from `database_active` to `active`/);
+    assert.match(documentation, /public `\/api\/v1\/catalog\/manifest`/);
+    assert.match(documentation, /`preparationId` as `correlation_id`/);
+    assert.match(documentation, /`catalog\.revision` as `published_revision`/);
+    assert.match(documentation, /sender implementation and integration exercise remain required externally/i);
   });
 });
