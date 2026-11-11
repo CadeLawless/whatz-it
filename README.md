@@ -164,6 +164,34 @@ baseline is stale; development, preview, and staging profiles skip this gate.
 
 ## Checks
 
+The canonical local and CI quality gate runs cacheless ESLint, TypeScript,
+the complete test suite, and a live read-only Bundled Catalog Baseline check,
+in that order. Set the production manifest URL before running it:
+
+```bash
+# PowerShell
+$env:CATALOG_MANIFEST_URL = 'https://api.example.com/api/v1/catalog/manifest'
+npm run quality
+
+# bash/zsh
+CATALOG_MANIFEST_URL=https://api.example.com/api/v1/catalog/manifest npm run quality
+```
+
+The command fails clearly when `CATALOG_MANIFEST_URL` is missing. Live catalog
+requests make at most three attempts for transient network failures, timeouts,
+rate limiting, and server errors; invalid data and integrity failures fail
+immediately. To enable the same gate in GitHub Actions, create the repository
+variable `CATALOG_MANIFEST_URL` under **Settings → Secrets and variables →
+Actions → Variables**. Use the public production HTTPS manifest URL; no secret
+credential is required or expected.
+
+After the workflow has completed successfully on `main`, an administrator must
+manually add **Canonical quality gate** as a required status check in the
+`main` branch protection rule (or ruleset). Repository workflows cannot safely
+make that governance change themselves.
+
+For individual checks:
+
 ```bash
 npm run typecheck
 npm run lint

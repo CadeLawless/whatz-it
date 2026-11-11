@@ -22,6 +22,10 @@ const CATALOG_END = '/* DECK_MANAGER_CATALOG_END */';
 const COVERS_START = '/* DECK_MANAGER_COVERS_START */';
 const COVERS_END = '/* DECK_MANAGER_COVERS_END */';
 const DEFAULT_CONCURRENCY = 6;
+const MAX_REQUEST_ATTEMPTS = 3;
+const REQUEST_TIMEOUT_MS = 15_000;
+const INITIAL_RETRY_DELAY_MS = 100;
+const MAX_RETRY_DELAY_MS = 500;
 
 type BaselineDeck = {
   id: string;
@@ -69,12 +73,9 @@ export async function fetchPreparedBaseline(
   request: typeof fetch = fetch,
 ): Promise<PreparedBaseline> {
   const url = requireHttpsUrl(manifestUrl, 'manifest');
-  const manifestResponse = await request(url, {
+  const manifestResponse = await requestWithRetry(url, request, 'Manifest', {
     headers: { Accept: 'application/json' },
   });
-  if (!manifestResponse.ok) {
-    throw new Error(`Manifest request failed with HTTP ${manifestResponse.status}.`);
-  }
   const manifest = parseCatalogManifest(await manifestResponse.json());
   const activeDecks = manifest.decks.filter((deck) => deck.status === 'active');
   const entries = await mapConcurrent(
@@ -357,8 +358,11 @@ async function fetchVerifiedBytes(
   expectedHash: string,
   request: typeof fetch,
 ) {
-  const response = await request(requireHttpsUrl(url, 'artifact'));
-  if (!response.ok) throw new Error(`Artifact request failed with HTTP ${response.status}.`);
+  const response = await requestWithRetry(
+    requireHttpsUrl(url, 'artifact'),
+    request,
+    'Artifact',
+  );
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength !== expectedBytes) {
     throw new Error(`Artifact ${expectedHash} has the wrong byte length.`);
@@ -368,6 +372,49 @@ async function fetchVerifiedBytes(
     throw new Error(`Artifact ${expectedHash} failed SHA-256 verification.`);
   }
   return bytes;
+}
+
+async function requestWithRetry(
+  url: string,
+  request: typeof fetch,
+  label: 'Manifest' | 'Artifact',
+  init?: RequestInit,
+) {
+  for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await request(url, { ...init, signal: controller.signal });
+      if (response.ok) return response;
+      const retryable = response.status === 408
+        || response.status === 429
+        || response.status >= 500;
+      if (!retryable || attempt === MAX_REQUEST_ATTEMPTS) {
+        throw new NonRetryableRequestError(
+          `${label} request failed with HTTP ${response.status}.`,
+        );
+      }
+      await retryDelay(attempt);
+    } catch (error) {
+      if (error instanceof NonRetryableRequestError || attempt === MAX_REQUEST_ATTEMPTS) {
+        throw error;
+      }
+      await retryDelay(attempt);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new Error(`${label} request exhausted its retry attempts.`);
+}
+
+class NonRetryableRequestError extends Error {}
+
+function retryDelay(attempt: number) {
+  const delay = Math.min(
+    INITIAL_RETRY_DELAY_MS * 2 ** (attempt - 1),
+    MAX_RETRY_DELAY_MS,
+  );
+  return new Promise<void>((resolveDelay) => setTimeout(resolveDelay, delay));
 }
 
 async function fetchFreeDeckArtifact(

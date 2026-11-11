@@ -70,8 +70,10 @@
     "catalog:baseline:update": "tsx scripts/prepare-catalog-baseline.ts --write",
     "eas-build-post-install": "tsx scripts/verify-eas-release-baseline.ts",
     "lint": "expo lint",
+    "lint:cacheless": "eslint . --no-cache",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/game/*.test.ts src/catalog/*.test.ts src/release/*.test.ts src/storefront/*.test.ts src/video/*.test.ts src/shareplay/*.test.ts scripts/*.test.ts"
+    "test": "tsx --test src/game/*.test.ts src/catalog/*.test.ts src/release/*.test.ts src/storefront/*.test.ts src/video/*.test.ts src/shareplay/*.test.ts scripts/*.test.ts",
+    "quality": "npm run lint:cacheless && npm run typecheck && npm test && npm run catalog:baseline:check"
   },
   "expo": {
     "doctor": {
