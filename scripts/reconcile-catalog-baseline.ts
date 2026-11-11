@@ -38,6 +38,7 @@ export type ReconciliationDependencies = {
   };
   github: {
     upsertRollingPullRequest(metadata: PullRequestMetadata): Promise<{ number: number }>;
+    waitForRequiredChecks(number: number): Promise<boolean>;
     enableAutoMerge(number: number): Promise<boolean>;
   };
 };
@@ -111,11 +112,15 @@ export async function reconcileCatalogBaseline(
     ...(trigger.publishedRevision === undefined ? {} : { publishedRevision: trigger.publishedRevision }),
   });
 
-  let autoMerge: 'enabled' | 'unavailable' | 'not-requested' = 'not-requested';
+  let autoMerge: 'enabled' | 'unavailable' | 'checks-failed' | 'not-requested' = 'not-requested';
   if (direction === 'forward') {
-    autoMerge = await dependencies.github.enableAutoMerge(pullRequest.number)
-      ? 'enabled'
-      : 'unavailable';
+    if (await dependencies.github.waitForRequiredChecks(pullRequest.number)) {
+      autoMerge = await dependencies.github.enableAutoMerge(pullRequest.number)
+        ? 'enabled'
+        : 'unavailable';
+    } else {
+      autoMerge = 'checks-failed';
+    }
   }
   return {
     outcome: 'pull-request' as const,
@@ -194,6 +199,17 @@ export function createProductionDependencies(repositoryRoot: string): Reconcilia
         const number = Number(created.stdout.trim().match(/\/(\d+)\s*$/)?.[1]);
         if (!Number.isInteger(number)) throw new Error('GitHub did not return a pull request number.');
         return { number };
+      },
+      waitForRequiredChecks: async (number) => {
+        try {
+          await command('gh', [
+            'pr', 'checks', String(number), '--required', '--watch', '--interval', '10', '--fail-fast',
+          ], repositoryRoot);
+          return true;
+        } catch (error) {
+          console.warn(`Required checks did not pass; pull request #${number} remains open.`, error);
+          return false;
+        }
       },
       enableAutoMerge: async (number) => {
         try {
