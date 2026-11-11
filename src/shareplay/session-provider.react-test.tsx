@@ -21,11 +21,9 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-it('makes successful invitation feedback transient and leaves cancellation immediately retryable', async () => {
+it('leaves invitation cancellation immediately retryable', async () => {
   const provider = mountSharePlayProvider();
   await provider.flush();
-  expect(provider.value().initialized).toBe(true);
-
   act(() => provider.value().open(setup));
   provider.setInviteResult('cancelled');
   await act(async () => provider.value().invite());
@@ -33,104 +31,46 @@ it('makes successful invitation feedback transient and leaves cancellation immed
 
   provider.setInviteResult('success');
   await act(async () => provider.value().invite());
-  expect(provider.value().invitationPending).toBe(true);
-
-  act(() => provider.advanceTime(2_000));
-  expect(provider.value().invitationPending).toBe(false);
-  await provider.unmount();
-});
-
-it('clears setup and invitation state on activation and terminal snapshots without accepting delayed feedback', async () => {
-  const provider = mountSharePlayProvider();
-  await provider.flush();
-  act(() => provider.value().open(setup));
-  await act(async () => provider.value().invite());
-  expect(provider.value().invitationPending).toBe(true);
-
-  act(() => provider.emitSession(waiting));
-  await provider.flush();
-  expect(provider.value().invitationPending).toBe(false);
-
-  const ended = { ...waiting, revision: 2, status: 'ended' as const, sessionId: null,
-    localParticipantId: null, participantIds: [], isHost: false, hostParticipantId: null, activity: null };
-  act(() => {
-    provider.emitSession(ended);
-    provider.emitSession({ ...waiting, revision: 3, sessionId: 'session-2' });
-    provider.emitSession({ ...waiting, revision: 4 });
-    provider.emitSession({ ...ended, revision: 5 });
-    provider.advanceTime(2_000);
-  });
-  await provider.flush();
-  expect(provider.value().session).toMatchObject({ status: 'ended', sessionId: null });
-  expect(provider.value()).toMatchObject({ invitationPending: false, setup: null, isOpen: false });
-  expect(provider.removedKeys).toContain('whatz-it.shareplay.rejoin-session');
-
-  provider.setNativeSnapshot({ ...idleSnapshot, revision: 6 });
-  act(() => provider.value().open(setup));
-  await act(async () => provider.value().invite());
   expect(provider.nativeCalls.filter((call) => call === 'invite')).toHaveLength(2);
   expect(provider.value().invitationPending).toBe(true);
   await provider.unmount();
 });
 
-it('declining a cold-launch rejoin leaves native SharePlay and removes persisted rejoin state', async () => {
-  const provider = mountSharePlayProvider({
-    snapshot: { ...joined, activity: { ...joined.activity!, nonce: 'saved-nonce' } },
-    savedRejoinNonce: 'saved-nonce',
-  });
-  await provider.flush();
-  expect(provider.value().rejoinOffered).toBe(true);
-
-  await act(async () => provider.value().declineRejoin());
-  expect(provider.nativeCalls).toContain('leave');
-  expect(provider.removedKeys).toContain('whatz-it.shareplay.rejoin-session');
-  expect(provider.value()).toMatchObject({ rejoinOffered: false, isOpen: false });
-  expect(provider.value().session.sessionId).toBeNull();
-  await provider.unmount();
-});
-
-it('hides a terminal snapshot even when the first callback still carries a session ID', async () => {
+it('shows successful invitation feedback for two seconds', async () => {
   const provider = mountSharePlayProvider();
   await provider.flush();
-  act(() => provider.emitSession({
-    revision: 1, status: 'ended', sessionId: 'ended-session', localParticipantId: 'cade',
-    participantIds: ['cade'], isHost: true, hostParticipantId: 'cade', activity: null,
-  }));
-  await provider.flush();
-  expect(provider.value().session).toMatchObject({ status: 'idle', sessionId: null });
-  expect(provider.value()).toMatchObject({ setup: null, isOpen: false });
+  act(() => provider.value().open(setup));
+  await act(async () => provider.value().invite());
+  expect(provider.value().invitationPending).toBe(true);
+  act(() => provider.advanceTime(1_999));
+  expect(provider.value().invitationPending).toBe(true);
+  act(() => provider.advanceTime(1));
+  expect(provider.value().invitationPending).toBe(false);
   await provider.unmount();
 });
 
-it('cleans provider state for explicit leave failure and native invalidation with the sheet closed', async () => {
-  const left = mountSharePlayProvider({ snapshot: joined, leaveFails: true });
-  await left.flush();
-  await act(async () => left.value().leave());
-  expect(left.value().session.sessionId).toBeNull();
-  expect(left.value()).toMatchObject({ setup: null, isOpen: false });
-  expect(left.liveGameSessions.at(-1)).toMatchObject({ status: 'idle', sessionId: null });
-  await left.unmount();
-
-  const invalidated = mountSharePlayProvider({ snapshot: joined });
-  await invalidated.flush();
-  invalidated.setNativeSnapshot({ ...joined, revision: 5, status: 'ended', sessionId: null,
-    localParticipantId: null, participantIds: [], isHost: false, hostParticipantId: null, activity: null });
-  act(() => invalidated.emitError('sessionInvalidated'));
-  await invalidated.flush();
-  expect(invalidated.value().session).toMatchObject({ status: 'ended', sessionId: null });
-  expect(invalidated.value()).toMatchObject({ setup: null, isOpen: false });
-  expect(invalidated.removedKeys).toContain('whatz-it.shareplay.rejoin-session');
-  await invalidated.unmount();
+it('activation before invitation feedback expires cancels the delayed UI update', async () => {
+  const provider = mountSharePlayProvider();
+  await provider.flush();
+  act(() => provider.value().open(setup));
+  await act(async () => provider.value().invite());
+  act(() => provider.emitSession(waiting));
+  await provider.flush();
+  expect(provider.value().invitationPending).toBe(false);
+  act(() => provider.advanceTime(2_000));
+  expect(provider.value().invitationPending).toBe(false);
+  expect(provider.value().session.sessionId).toBe('session-1');
+  await provider.unmount();
 });
 
-it('removes native subscriptions and invitation feedback timers on unmount', async () => {
+it('provider unmount cancels invitation feedback and native subscriptions', async () => {
   const provider = mountSharePlayProvider();
   await provider.flush();
   act(() => provider.value().open(setup));
   await act(async () => provider.value().invite());
   const mountedTimerCount = provider.pendingTimerCount();
-  expect(mountedTimerCount).toBeGreaterThan(0);
   const activeSubscriptions = provider.activeSubscriptions();
+  expect(mountedTimerCount).toBeGreaterThan(0);
   expect(activeSubscriptions).toBeGreaterThan(0);
 
   await provider.unmount();
@@ -138,4 +78,127 @@ it('removes native subscriptions and invitation feedback timers on unmount', asy
   expect(provider.activeSubscriptions()).toBe(0);
   expect(provider.pendingTimerCount()).toBeLessThan(mountedTimerCount);
   act(() => provider.advanceTime(2_000));
+});
+
+type TerminalExpectation = {
+  value: ReturnType<typeof mountSharePlayProvider>['value'];
+  removedKeys: string[];
+  liveGameSessions: SharePlaySnapshot[];
+};
+
+function expectTerminalCleanup(provider: TerminalExpectation) {
+  expect(provider.value().session.sessionId).toBeNull();
+  expect(provider.value()).toMatchObject({
+    invitationPending: false, rejoinOffered: false, setup: null, isOpen: false,
+  });
+  expect(provider.removedKeys).toContain('whatz-it.shareplay.rejoin-session');
+  expect(provider.liveGameSessions.at(-1)).toMatchObject({ status: 'idle', sessionId: null });
+}
+
+it.each([
+  { nativeResult: 'success', leaveFails: false },
+  { nativeResult: 'failure', leaveFails: true },
+] as const)('explicit leave applies terminal cleanup after native $nativeResult', async ({ leaveFails }) => {
+  const provider = mountSharePlayProvider({ snapshot: joined, leaveFails });
+  await provider.flush();
+  await act(async () => provider.value().leave());
+  expect(provider.nativeCalls).toContain('leave');
+  expectTerminalCleanup(provider);
+  await provider.unmount();
+});
+
+it.each([
+  { nativeResult: 'success', leaveFails: false },
+  { nativeResult: 'failure', leaveFails: true },
+] as const)('declined rejoin applies terminal cleanup after native $nativeResult', async ({ leaveFails }) => {
+  const provider = mountSharePlayProvider({
+    snapshot: { ...joined, activity: { ...joined.activity!, nonce: 'saved-nonce' } },
+    savedRejoinNonce: 'saved-nonce', leaveFails,
+  });
+  await provider.flush();
+  expect(provider.value().rejoinOffered).toBe(true);
+  await act(async () => provider.value().declineRejoin());
+  expect(provider.nativeCalls).toContain('leave');
+  expectTerminalCleanup(provider);
+  await provider.unmount();
+});
+
+it.each([
+  { trigger: 'native invalidation', kind: 'invalidation', terminalSessionId: null },
+  { trigger: 'terminal snapshot with a session identifier', kind: 'snapshot', terminalSessionId: 'session-1' },
+  { trigger: 'terminal snapshot without a session identifier', kind: 'snapshot', terminalSessionId: null },
+] as const)('$trigger applies the shared terminal cleanup contract', async ({ kind, terminalSessionId }) => {
+  const provider = mountSharePlayProvider({ snapshot: joined });
+  await provider.flush();
+  act(() => provider.value().open(setup));
+  const terminal: SharePlaySnapshot = {
+    ...idleSnapshot, revision: joined.revision + 1, status: 'ended', sessionId: terminalSessionId,
+    localParticipantId: terminalSessionId ? 'cade' : null,
+    participantIds: terminalSessionId ? ['cade'] : [],
+    isHost: !!terminalSessionId, hostParticipantId: terminalSessionId ? 'cade' : null,
+  };
+
+  if (kind === 'invalidation') {
+    provider.setNativeSnapshot(terminal);
+    act(() => provider.emitError('sessionInvalidated'));
+  } else {
+    act(() => provider.emitSession(terminal));
+  }
+  await provider.flush();
+  expectTerminalCleanup(provider);
+  await provider.unmount();
+});
+
+it('a delayed invitation timer cannot resurrect UI after terminal cleanup', async () => {
+  const provider = mountSharePlayProvider();
+  await provider.flush();
+  act(() => provider.value().open(setup));
+  await act(async () => provider.value().invite());
+  expect(provider.value().invitationPending).toBe(true);
+
+  act(() => provider.emitSession({ ...waiting, revision: 2 }));
+  await provider.flush();
+  act(() => provider.emitSession({ ...waiting, revision: 3, status: 'ended' }));
+  await provider.flush();
+  act(() => provider.advanceTime(2_000));
+  expectTerminalCleanup(provider);
+  await provider.unmount();
+});
+
+it('a delayed explicit leave from an older session cannot erase its active replacement', async () => {
+  const provider = mountSharePlayProvider({ snapshot: joined, deferLeave: true });
+  await provider.flush();
+  let leave: Promise<void>;
+  act(() => { leave = provider.value().leave(); });
+  await provider.flush();
+
+  const replacement = {
+    ...joined, revision: 5, sessionId: 'session-2', activity: { ...joined.activity!, nonce: 'replacement' },
+  };
+  act(() => provider.emitSession(replacement));
+  provider.resolveLeave();
+  await act(async () => leave!);
+
+  expect(provider.value().session).toMatchObject({ status: 'joined', sessionId: 'session-2' });
+  expect(provider.value().isOpen).toBe(true);
+  expect(provider.liveGameSessions.at(-1)).toMatchObject({ sessionId: 'session-2' });
+  await provider.unmount();
+});
+
+it('an old session terminal event cannot overwrite the active replacement', async () => {
+  const provider = mountSharePlayProvider({ snapshot: joined });
+  await provider.flush();
+  const replacement = {
+    ...joined, revision: 5, sessionId: 'session-2', activity: { ...joined.activity!, nonce: 'replacement' },
+  };
+  act(() => provider.emitSession(replacement));
+  await provider.flush();
+
+  act(() => provider.emitSession({ ...joined, revision: 6, status: 'ended', sessionId: 'session-1' }));
+  await provider.flush();
+
+  expect(provider.value().session).toMatchObject({ status: 'joined', sessionId: 'session-2' });
+  expect(provider.value().isOpen).toBe(true);
+  expect(provider.liveGameSessions.at(-1)).toMatchObject({ sessionId: 'session-2' });
+  await provider.unmount();
 });
