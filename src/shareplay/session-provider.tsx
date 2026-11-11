@@ -58,7 +58,7 @@ type SharePlayContextValue = {
   gameVisible: boolean;
   rejoinOffered: boolean;
   acceptRejoin: () => Promise<void>;
-  declineRejoin: () => void;
+  declineRejoin: () => Promise<void>;
   gameActions: {
     ready: () => void; start: () => void; pause: () => void; resume: () => void;
     answer: (outcome: RemoteOutcome) => void;
@@ -96,6 +96,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const signedInviterSeen = useRef(false);
   const lastHostSeenAt = useRef(0);
   const nativeSessionRef = useRef(emptySession);
+  const dismissedSessions = useRef(new Set<string>());
   const participation = useRef(new SharePlayParticipation());
   const presenceSequence = useRef(0);
   const startupPending = useRef(true);
@@ -125,6 +126,24 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const operation = useRef(false);
   const [initialized, setInitialized] = useState(false);
   const [invitationPending, setInvitationPending] = useState(false);
+  const invitationGeneration = useRef(0);
+  const invitationFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearInvitationPending = useCallback(() => {
+    invitationGeneration.current++;
+    if (invitationFeedbackTimer.current !== null) clearTimeout(invitationFeedbackTimer.current);
+    invitationFeedbackTimer.current = null;
+    setInvitationPending(false);
+  }, []);
+  const showInvitationSent = useCallback((generation: number) => {
+    if (generation !== invitationGeneration.current) return;
+    if (invitationFeedbackTimer.current !== null) clearTimeout(invitationFeedbackTimer.current);
+    setInvitationPending(true);
+    invitationFeedbackTimer.current = setTimeout(() => {
+      if (generation !== invitationGeneration.current) return;
+      invitationFeedbackTimer.current = null;
+      setInvitationPending(false);
+    }, 2_000);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const canInvite = !!catalog.getDeckById(setup?.deckId);
   const catalogRef = useRef(catalog);
@@ -159,6 +178,34 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
   const gameActive = useRef(false);
   const manualLobby = useRef(false);
   const liveGame = useRef<LiveGame | null>(null);
+  const resetTerminalState = useCallback((terminalSessionId = sessionRef.current.sessionId) => {
+    if (terminalSessionId) dismissedSessions.current.add(terminalSessionId);
+    const visible = sessionRef.current;
+    // An older teardown promise may finish after a different native session has
+    // activated. Remember the old ID, but never clear the replacement session.
+    if (terminalSessionId && visible.sessionId && visible.sessionId !== terminalSessionId) {
+      return Promise.resolve();
+    }
+    if (terminalSessionId && visible.sessionId === terminalSessionId) {
+      const hidden = { ...emptySession, revision: visible.revision };
+      sessionRef.current = hidden;
+      setSession(hidden);
+    }
+    liveGame.current?.setSession(sessionRef.current);
+    clearInvitationPending();
+    rejoinSession.current = null;
+    acceptedRejoinSession.current = null;
+    unpreparedLobbySince.current = null;
+    setRejoinOffered(false);
+    setSetup(null);
+    gameActive.current = false;
+    manualLobby.current = false;
+    setGameVisible(false);
+    setOpen(false);
+    setError(null);
+    setSharePlayAudioBlocked(false);
+    return AsyncStorage.removeItem(REJOIN_SESSION_KEY).catch(() => undefined);
+  }, [clearInvitationPending]);
   const endGameRef = useRef<() => void>(() => undefined);
   useEffect(() => { liveGame.current = new LiveGame({
     environment,
@@ -255,14 +302,12 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     onSessionEnd: () => {
       const native = NativeSharePlay;
       if (!native) return;
+      const terminalSessionId = sessionRef.current.sessionId;
       void native.leaveAsync().then(() => native.getSnapshotAsync()).then((snapshot) => {
         applySnapshotRef.current(snapshot);
-        gameActive.current = false; manualLobby.current = false;
-        setGameVisible(false); setOpen(false); setError(null); setSharePlayAudioBlocked(false);
-        setRejoinOffered(false); rejoinSession.current = null;
-        void AsyncStorage.removeItem(REJOIN_SESSION_KEY).catch(() => undefined);
       }).catch((error) => logSharePlay('session.end-receive-failed',
-        { code: String(error?.code ?? 'native-leave-failed') }, true));
+        { code: String(error?.code ?? 'native-leave-failed') }, true))
+        .finally(() => resetTerminalState(terminalSessionId));
     },
     onEndGame: () => endGameRef.current(),
     onHostClaim: (participantId, signed, term) => {
@@ -306,7 +351,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       applySnapshotRef.current(native, true);
       logSharePlay('host.transferred', { participant: shortSharePlayId(participantId) });
     },
-  }); }, []);
+  }); }, [resetTerminalState]);
   useEffect(() => {
     catalogRef.current = catalog;
     ownedDeckIdsRef.current = ownedDeckIds;
@@ -324,6 +369,10 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     }
     if (incoming.revision < sessionRef.current.revision) {
       logSharePlay('session.stale-snapshot', { revision: incoming.revision }, true); return;
+    }
+    if (incoming.sessionId && dismissedSessions.current.has(incoming.sessionId) &&
+      ['waiting', 'joined'].includes(incoming.status)) {
+      logSharePlay('session.dismissed-snapshot', { revision: incoming.revision }, true); return;
     }
     nativeSessionRef.current = incoming;
     if (startupPending.current) return;
@@ -399,7 +448,7 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     probe.current?.setPeers(next.participantIds.filter((id) => id !== next.localParticipantId));
     setPeers(probe.current?.snapshot() ?? {});
     setSession(next);
-    if (next.sessionId || next.status === 'ended') setInvitationPending(false);
+    if (next.sessionId || next.status === 'ended') clearInvitationPending();
     if (next.status === 'joined' && !withdrawn && !startupPending.current && incoming.activity?.nonce) {
       void AsyncStorage.setItem(REJOIN_SESSION_KEY, incoming.activity.nonce).catch(() => undefined);
     }
@@ -408,13 +457,10 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       setOpen(true);
     }
     if (next.status === 'ended') {
-      setRejoinOffered(false); rejoinSession.current = null;
-      void AsyncStorage.removeItem(REJOIN_SESSION_KEY).catch(() => undefined);
       logSharePlay('session.ended', { session: shortSharePlayId(next.sessionId) }, true);
-      gameActive.current = false; manualLobby.current = false; setGameVisible(false);
-      setError(null); setOpen(false); setSharePlayAudioBlocked(false);
+      void resetTerminalState(previous.sessionId ?? next.sessionId);
     }
-  }, []);
+  }, [clearInvitationPending, resetTerminalState]);
   useEffect(() => { applySnapshotRef.current = applySnapshot; }, [applySnapshot]);
 
   const sendPresence = useCallback((active: boolean) => {
@@ -462,8 +508,9 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
         if (alive) {
           if (failure.code === 'sessionInvalidated') {
             logSharePlay('session.invalidated', { code: failure.code });
-            gameActive.current = false; manualLobby.current = false;
-            setGameVisible(false); setOpen(false); setError(null); setSharePlayAudioBlocked(false);
+            void resetTerminalState(sessionRef.current.sessionId);
+            void NativeSharePlay?.getSnapshotAsync().then((snapshot) => applySnapshotRef.current(snapshot))
+              .catch(() => undefined);
             return;
           }
           logSharePlay('native.error', { code: failure.code }, true);
@@ -509,11 +556,11 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
           }
           if (wire?.kind === 'session-end' && sessionRef.current.status !== 'joined' &&
             message.senderId === sessionRef.current.hostParticipantId && wire.term === hostTerm.current) {
+            const terminalSessionId = sessionRef.current.sessionId;
             void NativeSharePlay?.leaveAsync().then(() => NativeSharePlay?.getSnapshotAsync())
-              .then((snapshot) => { if (snapshot) applySnapshotRef.current(snapshot);
-                setRejoinOffered(false); rejoinSession.current = null;
-                void AsyncStorage.removeItem(REJOIN_SESSION_KEY).catch(() => undefined);
-              }).catch((error) => logSharePlay('session.end-receive-failed', { code: String(error) }, true));
+              .then((snapshot) => { if (snapshot) applySnapshotRef.current(snapshot); })
+              .catch((error) => logSharePlay('session.end-receive-failed', { code: String(error) }, true))
+              .finally(() => resetTerminalState(terminalSessionId));
             return;
           }
         }
@@ -645,12 +692,15 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       // Native observer is idempotent and retains current state across JS refreshes.
       // Native module keeps the current session through a JS refresh.
     };
-  }, [applySnapshot, sendPresence]);
+  }, [applySnapshot, resetTerminalState, sendPresence]);
 
   useEffect(() => {
     setSharePlayAudioBlocked(isOpen || busy || session.status === 'waiting' || session.status === 'joined');
   }, [busy, isOpen, session.status]);
   useEffect(() => () => setSharePlayAudioBlocked(false), []);
+  useEffect(() => () => {
+    if (invitationFeedbackTimer.current !== null) clearTimeout(invitationFeedbackTimer.current);
+  }, []);
 
   const gamePhase = game.view?.phase;
   useEffect(() => {
@@ -687,10 +737,17 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     enabled, available: !!NativeSharePlay, isOpen, busy, initialized, canInvite, invitationPending,
     error, setup, setupMode, session, peers,
     rejoinOffered,
-    declineRejoin: () => {
+    declineRejoin: () => run('decline-rejoin', async () => {
       logSharePlay('rejoin.declined');
-      setRejoinOffered(false); setOpen(false); setGameVisible(false); setError(null);
-    },
+      const terminalSessionId = rejoinSession.current ?? sessionRef.current.sessionId;
+      try {
+        await NativeSharePlay?.leaveAsync();
+        const latest = await NativeSharePlay?.getSnapshotAsync();
+        if (latest) applySnapshot(latest);
+      } finally {
+        await resetTerminalState(terminalSessionId);
+      }
+    }),
     acceptRejoin: () => run('rejoin', async () => {
       const latest = await NativeSharePlay?.getSnapshotAsync();
       if (!latest || !['joined', 'waiting'].includes(latest.status) || latest.sessionId !== rejoinSession.current) {
@@ -791,10 +848,11 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     invite: () => run('invite', async () => {
       if (!NativeSharePlay || !initialized || !setup || !canInvite || !localPlayerName ||
         invitationPending || sessionRef.current.sessionId) return;
+      const generation = invitationGeneration.current;
       const { access: _access, ...selection } = setup;
       const result = await NativeSharePlay.inviteAsync({ ...selection, protocolVersion: 4, environment, nonce: randomUUID() });
       if (result === 'cancelled') { logSharePlay('invite.cancelled'); return; }
-      setInvitationPending(true);
+      showInvitationSent(generation);
       // A fresh snapshot reconciles an event that arrived while UIKit owned presentation.
       applySnapshot(await NativeSharePlay.getSnapshotAsync());
     }),
@@ -807,34 +865,34 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     }),
     leave: (endForEveryone = false) => run(endForEveryone ? 'end' : 'leave', async () => {
       if (!NativeSharePlay) return;
-      // Read Apple's latest roster so leaving after the other players depart
-      // ends the activity even if this screen still has an older snapshot.
-      const current = await NativeSharePlay.getSnapshotAsync();
-      applySnapshot(current);
-      const lastPlayer = isLastSharePlayParticipant(sessionRef.current);
-      if (endForEveryone || lastPlayer) {
-        if (!lastPlayer && !sessionRef.current.isHost) throw new Error('SharePlay: notHost');
-        if (lastPlayer) logSharePlay('session.last-player-end', { members: 1 });
-        // The installed bridge may still reject a recovered host. Tell every
-        // current app participant to leave as well as ending Apple's activity.
-        const native = NativeSharePlay;
-        await endSharePlaySession({
-          notifyParticipants: async () => {
-            if (lastPlayer) return;
-            if (!liveGame.current) throw new Error('SharePlay: noLiveGame');
-            await liveGame.current.endSession();
-          },
-          endNativeSession: () => native.endAsync(),
-          leaveNativeSession: () => native.leaveAsync(),
-          onFailure: (stage, error) => logSharePlay(`session.end-${stage}-failed`, { code: String(error) }, true),
-        });
-      } else await NativeSharePlay.leaveAsync();
-      applySnapshot(await NativeSharePlay.getSnapshotAsync());
-      rejoinSession.current = null; setRejoinOffered(false);
-      await AsyncStorage.removeItem(REJOIN_SESSION_KEY);
-      setInvitationPending(false);
-      gameActive.current = false; manualLobby.current = false; setGameVisible(false);
-      setOpen(false); setError(null); setSharePlayAudioBlocked(false);
+      const terminalSessionId = sessionRef.current.sessionId;
+      try {
+        // Read Apple's latest roster so leaving after the other players depart
+        // ends the activity even if this screen still has an older snapshot.
+        const current = await NativeSharePlay.getSnapshotAsync();
+        applySnapshot(current);
+        const lastPlayer = isLastSharePlayParticipant(sessionRef.current);
+        if (endForEveryone || lastPlayer) {
+          if (!lastPlayer && !sessionRef.current.isHost) throw new Error('SharePlay: notHost');
+          if (lastPlayer) logSharePlay('session.last-player-end', { members: 1 });
+          // The installed bridge may still reject a recovered host. Tell every
+          // current app participant to leave as well as ending Apple's activity.
+          const native = NativeSharePlay;
+          await endSharePlaySession({
+            notifyParticipants: async () => {
+              if (lastPlayer) return;
+              if (!liveGame.current) throw new Error('SharePlay: noLiveGame');
+              await liveGame.current.endSession();
+            },
+            endNativeSession: () => native.endAsync(),
+            leaveNativeSession: () => native.leaveAsync(),
+            onFailure: (stage, error) => logSharePlay(`session.end-${stage}-failed`, { code: String(error) }, true),
+          });
+        } else await NativeSharePlay.leaveAsync();
+        applySnapshot(await NativeSharePlay.getSnapshotAsync());
+      } finally {
+        await resetTerminalState(terminalSessionId);
+      }
     }),
     checkConnection: () => run('check-connection', async () => {
       const current = sessionRef.current;

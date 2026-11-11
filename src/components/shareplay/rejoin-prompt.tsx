@@ -13,7 +13,7 @@ export function SharePlayRejoinPrompt() {
       confirmLabel="YES"
       busyLabel="JOINING..."
       busy={sharePlay.busy}
-      onCancel={sharePlay.declineRejoin}
+      onCancel={() => { void sharePlay.declineRejoin(); }}
       onConfirm={() => { void sharePlay.acceptRejoin(); }}
     />
   );
