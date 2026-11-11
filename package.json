@@ -53,11 +53,17 @@
     "whatz-it-video-export": "file:modules/whatz-it-video-export"
   },
   "devDependencies": {
+    "@react-native/jest-preset": "^0.86.3",
+    "@testing-library/react-native": "13.3.3",
+    "@types/jest": "29.5.14",
     "@types/node": "^26.1.1",
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.2",
+    "jest": "~29.7.0",
+    "jest-expo": "~57.0.6",
     "nitrogen": "^0.36.1",
+    "react-test-renderer": "19.2.3",
     "tsx": "^4.23.0",
     "typescript": "~6.0.3"
   },
@@ -72,8 +78,16 @@
     "lint": "expo lint",
     "lint:cacheless": "eslint . --no-cache",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/game/*.test.ts src/catalog/*.test.ts src/release/*.test.ts src/storefront/*.test.ts src/video/*.test.ts src/shareplay/*.test.ts scripts/*.test.ts",
+    "test": "npm run test:node && npm run test:react",
+    "test:node": "tsx --test src/game/*.test.ts src/catalog/*.test.ts src/release/*.test.ts src/storefront/*.test.ts src/video/*.test.ts src/shareplay/*.test.ts scripts/*.test.ts",
+    "test:react": "jest --runInBand",
     "quality": "npm run lint:cacheless && npm run typecheck && npm test && npm run catalog:baseline:check"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "testMatch": [
+      "<rootDir>/src/**/*.react-test.tsx"
+    ]
   },
   "expo": {
     "doctor": {
