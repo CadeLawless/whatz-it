@@ -35,7 +35,7 @@ it('makes successful invitation feedback transient and leaves cancellation immed
   await act(async () => provider.value().invite());
   expect(provider.value().invitationPending).toBe(true);
 
-  act(() => jest.advanceTimersByTime(2_000));
+  act(() => provider.advanceTime(2_000));
   expect(provider.value().invitationPending).toBe(false);
   await provider.unmount();
 });
@@ -58,7 +58,7 @@ it('clears setup and invitation state on activation and terminal snapshots witho
     provider.emitSession({ ...waiting, revision: 3, sessionId: 'session-2' });
     provider.emitSession({ ...waiting, revision: 4 });
     provider.emitSession({ ...ended, revision: 5 });
-    jest.advanceTimersByTime(2_000);
+    provider.advanceTime(2_000);
   });
   await provider.flush();
   expect(provider.value().session).toMatchObject({ status: 'ended', sessionId: null });
@@ -128,7 +128,7 @@ it('removes native subscriptions and invitation feedback timers on unmount', asy
   await provider.flush();
   act(() => provider.value().open(setup));
   await act(async () => provider.value().invite());
-  const mountedTimerCount = jest.getTimerCount();
+  const mountedTimerCount = provider.pendingTimerCount();
   expect(mountedTimerCount).toBeGreaterThan(0);
   const activeSubscriptions = provider.activeSubscriptions();
   expect(activeSubscriptions).toBeGreaterThan(0);
@@ -136,6 +136,6 @@ it('removes native subscriptions and invitation feedback timers on unmount', asy
   await provider.unmount();
   expect(provider.subscriptionRemovals()).toBe(activeSubscriptions);
   expect(provider.activeSubscriptions()).toBe(0);
-  expect(jest.getTimerCount()).toBeLessThan(mountedTimerCount);
-  act(() => jest.advanceTimersByTime(2_000));
+  expect(provider.pendingTimerCount()).toBeLessThan(mountedTimerCount);
+  act(() => provider.advanceTime(2_000));
 });

@@ -7,6 +7,11 @@ export const idleSnapshot: SharePlaySnapshot = {
 };
 
 type Listener = (value: never) => void;
+type CatalogDeck = { id: string; title: string; access: 'free' | 'paid'; cards: never[] };
+const defaultCatalogDecks: CatalogDeck[] = [
+  { id: 'animals', title: 'Animals', access: 'free', cards: [] },
+];
+
 const mockRuntime = {
   snapshot: idleSnapshot,
   inviteResult: 'success' as 'success' | 'cancelled',
@@ -17,6 +22,8 @@ const mockRuntime = {
   removedKeys: [] as string[],
   liveGameSessions: [] as SharePlaySnapshot[],
   subscriptionRemovals: 0,
+  catalogDecks: defaultCatalogDecks,
+  ownedDeckIds: new Set<string>(),
 };
 
 jest.mock('expo-constants', () => ({ __esModule: true, default: {
@@ -62,10 +69,10 @@ jest.mock('../../modules/whatz-it-shareplay/src/WhatzItSharePlayModule', () => (
   endAsync: jest.fn(async () => { mockRuntime.nativeCalls.push('end'); }),
 } }));
 jest.mock('@/catalog/catalog-provider', () => ({ useCatalog: () => ({ catalog: {
-  decks: [], getDeckById: (id: string) => id === 'animals'
-    ? { id, title: 'Animals', access: 'free', cards: [] } : null,
+  decks: mockRuntime.catalogDecks,
+  getDeckById: (id: string) => mockRuntime.catalogDecks.find((deck) => deck.id === id) ?? null,
 } }) }));
-jest.mock('@/storefront/commerce-provider', () => ({ useOwnedDeckIds: () => new Set<string>() }));
+jest.mock('@/storefront/commerce-provider', () => ({ useOwnedDeckIds: () => mockRuntime.ownedDeckIds }));
 jest.mock('@/storage/daily-card-memory', () => ({
   loadRoundCardIds: jest.fn(async () => []), rememberSharedCard: jest.fn(async () => undefined),
 }));
@@ -84,9 +91,17 @@ jest.mock('./live-game', () => ({ LiveGame: class {
   endSession = async () => undefined;
 } }));
 
+// The provider must load after the module mocks above are declared.
+// eslint-disable-next-line import/first
 import { SharePlayProvider, useSharePlay } from './session-provider';
 
-type Options = { snapshot?: SharePlaySnapshot; savedRejoinNonce?: string; leaveFails?: boolean };
+type Options = {
+  snapshot?: SharePlaySnapshot;
+  savedRejoinNonce?: string;
+  leaveFails?: boolean;
+  catalogDecks?: CatalogDeck[];
+  ownedDeckIds?: string[];
+};
 
 export function mountSharePlayProvider(options: Options = {}) {
   mockRuntime.snapshot = options.snapshot ?? idleSnapshot;
@@ -96,6 +111,8 @@ export function mountSharePlayProvider(options: Options = {}) {
   if (options.savedRejoinNonce) mockRuntime.storage.set('whatz-it.shareplay.rejoin-session', options.savedRejoinNonce);
   mockRuntime.nativeCalls = []; mockRuntime.removedKeys = []; mockRuntime.liveGameSessions = [];
   mockRuntime.subscriptionRemovals = 0;
+  mockRuntime.catalogDecks = options.catalogDecks ?? defaultCatalogDecks;
+  mockRuntime.ownedDeckIds = new Set(options.ownedDeckIds);
 
   const harness = renderProviderHarness({ Provider: SharePlayProvider, useValue: useSharePlay, props: {} });
   return {
@@ -111,6 +128,8 @@ export function mountSharePlayProvider(options: Options = {}) {
     setInviteResult(result: 'success' | 'cancelled') { mockRuntime.inviteResult = result; },
     nativeCalls: mockRuntime.nativeCalls, removedKeys: mockRuntime.removedKeys,
     liveGameSessions: mockRuntime.liveGameSessions,
+    advanceTime(milliseconds: number) { jest.advanceTimersByTime(milliseconds); },
+    pendingTimerCount: () => jest.getTimerCount(),
     activeSubscriptions: () => [...mockRuntime.listeners.values()].reduce((total, listeners) => total + listeners.size, 0),
     subscriptionRemovals: () => mockRuntime.subscriptionRemovals,
   };
