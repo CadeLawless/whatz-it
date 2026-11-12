@@ -68,6 +68,7 @@
     "web": "expo start --web",
     "catalog:baseline:check": "tsx scripts/prepare-catalog-baseline.ts --check",
     "catalog:baseline:update": "tsx scripts/prepare-catalog-baseline.ts --write",
+    "catalog:baseline:reconcile": "tsx scripts/run-catalog-baseline-reconciliation.ts",
     "eas-build-post-install": "tsx scripts/verify-eas-release-baseline.ts",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",

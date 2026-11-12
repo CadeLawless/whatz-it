@@ -162,6 +162,61 @@ EAS `production` environment with the production manifest URL. Production
 builds stop before compilation if that variable is missing or the committed
 baseline is stale; development, preview, and staging profiles skip this gate.
 
+### Automated baseline reconciliation
+
+The `Reconcile Bundled Catalog Baseline` GitHub Actions workflow updates the
+same generated files through one rolling pull request on
+`automation/catalog-baseline`. It runs after an authenticated
+`catalog-production-published` repository dispatch, once daily to recover a
+missed event, or manually from **Actions → Reconcile Bundled Catalog Baseline →
+Run workflow**. New runs cancel obsolete work and regenerate from the active
+public manifest; the event revision is retained only as trace metadata.
+
+Repository setup is required before enabling the workflow:
+
+1. Define the Actions repository variable `CATALOG_MANIFEST_URL` as the active
+   production HTTPS manifest URL.
+2. Create and install a dedicated GitHub App on only this repository. Grant it
+   **Contents: Read and write** and **Pull requests: Read and write**—no Actions,
+   administration, release, or deployment permissions are needed.
+3. Define `CATALOG_RECONCILER_APP_CLIENT_ID` as an Actions repository variable
+   and store the App private key in the
+   `CATALOG_RECONCILER_APP_PRIVATE_KEY` Actions repository secret.
+4. Require the repository's ordinary pull-request quality check on `main`.
+   Auto-merge must not bypass that branch-protection rule.
+5. Optionally enable repository auto-merge. If it is disabled, a valid forward
+   update remains open for review instead of failing reconciliation.
+
+The publication sender must dispatch only after a successful production
+publication and include this `client_payload`:
+
+```json
+{
+  "environment": "production",
+  "published_revision": 42,
+  "correlation_id": "publication-01J..."
+}
+```
+
+Draft, preview, staging, failed, and other non-production activity must not send
+the `catalog-production-published` event. The receiver also rejects a dispatch
+whose `environment` is not `production`. The sender should use its own narrowly
+scoped GitHub App installation token rather than a personal access token.
+
+Each run independently fetches and verifies the active public manifest and its
+artifacts. Only `src/data/bundles.ts` and content-addressed files under
+`assets/images/decks/baseline/` may be committed. Forward revisions become
+auto-merge eligible after local lint, typecheck, test, and live-baseline checks;
+revision regressions stay open with auto-merge disabled. A failed check or an
+unexpected path stops publication. Neither reconciliation nor merging invokes
+EAS, TestFlight, or a store submission.
+
+For recovery, correct missing variables or App installation permissions and
+rerun the workflow manually. If a publication event was missed, the manual or
+next daily run converges the fixed pull request on the currently active public
+manifest. Use the correlation identifier in the workflow run name, commit, and
+pull-request body to trace a publication end to end.
+
 ## Checks
 
 ```bash
