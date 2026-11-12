@@ -33,7 +33,7 @@ async function run() {
 
   const manifestUrl = requiredEnvironment('CATALOG_MANIFEST_URL');
   const correlationId = requiredEnvironment('PUBLICATION_CORRELATION_ID');
-  const environment = process.env.PUBLICATION_ENVIRONMENT?.trim() || 'production';
+  const environment = 'production' as const;
   const repository = requiredEnvironment('GITHUB_REPOSITORY');
   requiredEnvironment('GH_TOKEN');
   validatePublicationMetadata();
@@ -316,7 +316,7 @@ function pullRequestBody({
 }: {
   correlationId: string;
   direction: 'forward' | 'regression';
-  environment: string;
+  environment: 'production';
   manifestUrl: string;
   publishedRevision?: number;
   revision: number;

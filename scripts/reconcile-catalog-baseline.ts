@@ -7,7 +7,7 @@ export type PreparedCatalogBaseline = {
 export type CatalogReconciliationRequest = {
   manifestUrl: string;
   correlationId: string;
-  environment: string;
+  environment: 'production';
   publishedRevision?: number;
 };
 
@@ -24,7 +24,7 @@ export type CatalogReconciliationDependencies<
     branch: typeof CATALOG_BASELINE_BRANCH;
     correlationId: string;
     direction: 'forward' | 'regression';
-    environment: string;
+    environment: 'production';
     publishedRevision?: number;
     revision: number;
   }) => Promise<{ pullRequestNumber: number; pullRequestUrl: string }>;
@@ -68,14 +68,13 @@ export async function reconcileCatalogBaseline<Prepared extends PreparedCatalogB
 
   const committedRevision = await dependencies.committedRevision();
   const direction = prepared.revision > committedRevision ? 'forward' : 'regression';
-  if (direction === 'regression') {
-    await dependencies.disableExistingAutoMerge();
-  }
   await dependencies.write(prepared);
   const changedPaths = await dependencies.changedPaths();
   const unexpectedPaths = changedPaths.filter((path) => !isGeneratedBaselinePath(path));
-  if (unexpectedPaths.length > 0) {
+  if (direction === 'regression' || unexpectedPaths.length > 0) {
     await dependencies.disableExistingAutoMerge();
+  }
+  if (unexpectedPaths.length > 0) {
     throw new Error(
       `Refusing to publish unexpected paths: ${unexpectedPaths.join(', ')}`,
     );
