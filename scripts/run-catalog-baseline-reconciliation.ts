@@ -14,7 +14,6 @@ import {
   CATALOG_BASELINE_BRANCH,
   reconcileCatalogBaseline,
   type CatalogReconciliationDependencies,
-  type PreparedCatalogBaseline,
 } from './reconcile-catalog-baseline';
 
 const executeFile = promisify(execFile);
@@ -22,7 +21,8 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const baseBranch = 'main';
 const pullRequestTitle = 'chore: update the Bundled Catalog Baseline';
 
-type RuntimePreparedBaseline = PreparedCatalogBaseline & {
+type RuntimePreparedBaseline = {
+  revision: number;
   value: PreparedBaseline;
 };
 
@@ -33,6 +33,7 @@ async function run() {
 
   const manifestUrl = requiredEnvironment('CATALOG_MANIFEST_URL');
   const correlationId = requiredEnvironment('PUBLICATION_CORRELATION_ID');
+  const environment = process.env.PUBLICATION_ENVIRONMENT?.trim() || 'production';
   const repository = requiredEnvironment('GITHUB_REPOSITORY');
   requiredEnvironment('GH_TOKEN');
   validatePublicationMetadata();
@@ -54,7 +55,7 @@ async function run() {
   });
   const publishedRevision = optionalPositiveInteger(process.env.PUBLISHED_REVISION);
   const result = await reconcileCatalogBaseline(
-    { correlationId, manifestUrl, publishedRevision },
+    { correlationId, environment, manifestUrl, publishedRevision },
     dependencies,
   );
   console.log(JSON.stringify(result));
@@ -70,18 +71,16 @@ function runtimeDependencies({
   manifestUrl: string;
   remoteBranchSha: string | null;
   repository: string;
-}): CatalogReconciliationDependencies {
+}): CatalogReconciliationDependencies<RuntimePreparedBaseline> {
   return {
     prepare: async (url) => {
       const value = await fetchPreparedBaseline(url);
       return { revision: value.catalog.revision, value };
     },
-    isCurrent: async (prepared) => (
-      baselineIsCurrent(repositoryRoot, runtimePrepared(prepared).value)
-    ),
+    isCurrent: async (prepared) => baselineIsCurrent(repositoryRoot, prepared.value),
     committedRevision: async () => readCommittedRevision(),
     write: async (prepared) => {
-      await writePreparedBaseline(repositoryRoot, runtimePrepared(prepared).value);
+      await writePreparedBaseline(repositoryRoot, prepared.value);
     },
     changedPaths: gitChangedPaths,
     verify: async () => {
@@ -97,9 +96,6 @@ function runtimeDependencies({
     },
     publish: async (details) => {
       const previousPullRequest = await openPullRequest(repository);
-      if (details.direction === 'regression' && previousPullRequest) {
-        await disablePullRequestAutoMerge(repository, previousPullRequest.number);
-      }
       await command('git', [
         'add',
         '--all',
@@ -113,6 +109,8 @@ function runtimeDependencies({
         `chore: update bundled catalog baseline to revision ${details.revision}`,
         '-m',
         `Publication-Correlation-ID: ${details.correlationId}`,
+        '-m',
+        `Publication-Environment: ${details.environment}\nPublished-Revision: ${details.publishedRevision ?? 'not supplied'}`,
       ]);
       const lease = remoteBranchSha
         ? `--force-with-lease=refs/heads/${details.branch}:${remoteBranchSha}`
@@ -127,6 +125,7 @@ function runtimeDependencies({
       const body = pullRequestBody({
         correlationId: details.correlationId,
         direction: details.direction,
+        environment: details.environment,
         manifestUrl,
         publishedRevision: details.publishedRevision,
         revision: details.revision,
@@ -212,11 +211,6 @@ function runtimeDependencies({
       ]);
     },
   };
-}
-
-function runtimePrepared(prepared: PreparedCatalogBaseline): RuntimePreparedBaseline {
-  if (!('value' in prepared)) throw new Error('Prepared baseline payload is missing.');
-  return prepared as RuntimePreparedBaseline;
 }
 
 async function readCommittedRevision() {
@@ -315,12 +309,14 @@ async function disablePullRequestAutoMerge(repository: string, pullRequestNumber
 function pullRequestBody({
   correlationId,
   direction,
+  environment,
   manifestUrl,
   publishedRevision,
   revision,
 }: {
   correlationId: string;
   direction: 'forward' | 'regression';
+  environment: string;
   manifestUrl: string;
   publishedRevision?: number;
   revision: number;
@@ -334,6 +330,7 @@ function pullRequestBody({
     `- Active public manifest revision: **${revision}**`,
     `- Event revision hint: **${publishedRevision ?? 'not supplied'}**`,
     `- Direction from main: **${direction}**`,
+    `- Publication environment: **${environment}**`,
     `- Publication correlation identifier: \`${correlationId}\``,
     `- Source of truth: \`${manifestUrl}\` (fetched independently during this run)`,
     '',

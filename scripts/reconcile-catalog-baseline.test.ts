@@ -66,6 +66,7 @@ describe('catalog baseline reconciliation', () => {
       'committed-revision',
       'write',
       'changed-paths',
+      'disable-existing-auto-merge',
     ]);
   });
 
@@ -167,6 +168,7 @@ describe('catalog baseline reconciliation', () => {
 
     assert.equal(result.revision, 42);
     assert.equal(fixture.published[0].publishedRevision, 999);
+    assert.equal(fixture.published[0].environment, 'production');
     assert.equal(fixture.published[0].revision, 42);
   });
 });
@@ -190,6 +192,7 @@ function reconciliationFixture({
   const request: CatalogReconciliationRequest = {
     manifestUrl: 'https://api.example.test/catalog/manifest',
     correlationId: 'publication-123',
+    environment: 'production',
   };
   const dependencies: CatalogReconciliationDependencies = {
     prepare: async () => {

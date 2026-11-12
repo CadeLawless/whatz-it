@@ -7,20 +7,24 @@ export type PreparedCatalogBaseline = {
 export type CatalogReconciliationRequest = {
   manifestUrl: string;
   correlationId: string;
+  environment: string;
   publishedRevision?: number;
 };
 
-export type CatalogReconciliationDependencies = {
-  prepare: (manifestUrl: string) => Promise<PreparedCatalogBaseline>;
-  isCurrent: (prepared: PreparedCatalogBaseline) => Promise<boolean>;
+export type CatalogReconciliationDependencies<
+  Prepared extends PreparedCatalogBaseline = PreparedCatalogBaseline,
+> = {
+  prepare: (manifestUrl: string) => Promise<Prepared>;
+  isCurrent: (prepared: Prepared) => Promise<boolean>;
   committedRevision: () => Promise<number>;
-  write: (prepared: PreparedCatalogBaseline) => Promise<void>;
+  write: (prepared: Prepared) => Promise<void>;
   changedPaths: () => Promise<string[]>;
   verify: () => Promise<void>;
   publish: (details: {
     branch: typeof CATALOG_BASELINE_BRANCH;
     correlationId: string;
     direction: 'forward' | 'regression';
+    environment: string;
     publishedRevision?: number;
     revision: number;
   }) => Promise<{ pullRequestNumber: number; pullRequestUrl: string }>;
@@ -43,15 +47,18 @@ export type CatalogReconciliationResult =
       autoMerge: 'enabled' | 'unavailable' | 'not-eligible';
     };
 
-export async function reconcileCatalogBaseline(
+export async function reconcileCatalogBaseline<Prepared extends PreparedCatalogBaseline>(
   request: CatalogReconciliationRequest,
-  dependencies: CatalogReconciliationDependencies,
+  dependencies: CatalogReconciliationDependencies<Prepared>,
 ): Promise<CatalogReconciliationResult> {
   if (!request.manifestUrl.trim()) {
     throw new Error('CATALOG_MANIFEST_URL is required.');
   }
   if (!request.correlationId.trim()) {
     throw new Error('A publication correlation identifier is required.');
+  }
+  if (!request.environment.trim()) {
+    throw new Error('A catalog environment is required.');
   }
   const prepared = await dependencies.prepare(request.manifestUrl);
   if (await dependencies.isCurrent(prepared)) {
@@ -68,6 +75,7 @@ export async function reconcileCatalogBaseline(
   const changedPaths = await dependencies.changedPaths();
   const unexpectedPaths = changedPaths.filter((path) => !isGeneratedBaselinePath(path));
   if (unexpectedPaths.length > 0) {
+    await dependencies.disableExistingAutoMerge();
     throw new Error(
       `Refusing to publish unexpected paths: ${unexpectedPaths.join(', ')}`,
     );
@@ -78,6 +86,7 @@ export async function reconcileCatalogBaseline(
     branch: CATALOG_BASELINE_BRANCH,
     correlationId: request.correlationId,
     direction,
+    environment: request.environment,
     publishedRevision: request.publishedRevision,
     revision: prepared.revision,
   });
