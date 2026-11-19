@@ -13,9 +13,6 @@ type FixtureEventName = keyof WhatzItSharePlayModuleEvents;
 type FixtureListeners = {
   [Name in FixtureEventName]: Set<WhatzItSharePlayModuleEvents[Name]>;
 };
-type FixtureListenerEntry = {
-  [Name in FixtureEventName]: [Name, WhatzItSharePlayModuleEvents[Name]];
-}[FixtureEventName];
 type CatalogDeck = { id: string; title: string; access: 'free' | 'paid'; cards: never[] };
 const defaultCatalogDecks: CatalogDeck[] = [
   { id: 'animals', title: 'Animals', access: 'free', cards: [] },
@@ -64,22 +61,19 @@ jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true
     mockRuntime.removedKeys.push(key); mockRuntime.storage.delete(key);
   }),
 } }));
-function mockAddListener(...entry: FixtureListenerEntry) {
-  const [name, listener] = entry;
-  switch (name) {
-    case 'onSession': mockRuntime.listeners.onSession.add(listener); break;
-    case 'onMessage': mockRuntime.listeners.onMessage.add(listener); break;
-    case 'onError': mockRuntime.listeners.onError.add(listener); break;
-    case 'onDiagnostic': mockRuntime.listeners.onDiagnostic.add(listener); break;
-  }
+function fixtureListeners<Name extends FixtureEventName>(name: Name): FixtureListeners[Name] {
+  return mockRuntime.listeners[name];
+}
+
+function mockAddListener<Name extends FixtureEventName>(
+  name: Name,
+  listener: WhatzItSharePlayModuleEvents[Name],
+) {
+  const listeners = fixtureListeners(name);
+  listeners.add(listener);
   return {
     remove: jest.fn(() => {
-      switch (name) {
-        case 'onSession': mockRuntime.listeners.onSession.delete(listener); break;
-        case 'onMessage': mockRuntime.listeners.onMessage.delete(listener); break;
-        case 'onError': mockRuntime.listeners.onError.delete(listener); break;
-        case 'onDiagnostic': mockRuntime.listeners.onDiagnostic.delete(listener); break;
-      }
+      listeners.delete(listener);
       mockRuntime.subscriptionRemovals++;
     }),
   };

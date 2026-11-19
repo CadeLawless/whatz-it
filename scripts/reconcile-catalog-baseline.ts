@@ -150,37 +150,35 @@ function parseCommittedRevision(source: string) {
   return Number(match[1]);
 }
 
-export function createProductionDependencies(repositoryRoot: string): ReconciliationDependencies {
-  const manifestUrl = process.env.CATALOG_MANIFEST_URL ?? '';
+function createRepositoryAdapter(
+  repositoryRoot: string,
+): ReconciliationDependencies['repository'] {
   return {
-    manifestUrl,
-    fetchActiveBaseline: async (url) => {
-      const prepared = await fetchPreparedBaseline(url);
-      return { revision: prepared.catalog.revision, prepared };
+    readCommittedRevision: async () => parseCommittedRevision(
+      await readFile(resolve(repositoryRoot, 'src/data/bundles.ts'), 'utf8'),
+    ),
+    baselineIsCurrent: (prepared) => baselineIsCurrent(repositoryRoot, prepared as PreparedBaseline),
+    prepareFixedBranch: async () => {
+      await command('git', ['fetch', 'origin', 'main'], repositoryRoot);
+      await command('git', ['checkout', '-B', FIXED_BOT_BRANCH, 'origin/main'], repositoryRoot);
     },
-    repository: {
-      readCommittedRevision: async () => parseCommittedRevision(
-        await readFile(resolve(repositoryRoot, 'src/data/bundles.ts'), 'utf8'),
-      ),
-      baselineIsCurrent: (prepared) => baselineIsCurrent(repositoryRoot, prepared as PreparedBaseline),
-      prepareFixedBranch: async () => {
-        await command('git', ['fetch', 'origin', 'main'], repositoryRoot);
-        await command('git', ['checkout', '-B', FIXED_BOT_BRANCH, 'origin/main'], repositoryRoot);
-      },
-      writeBaseline: (prepared) => writePreparedBaseline(repositoryRoot, prepared as PreparedBaseline),
-      changedPaths: async () => {
-        const result = await command('git', ['status', '--short'], repositoryRoot);
-        return result.stdout.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3).trim());
-      },
-      verify: async () => { await command('npm', ['run', 'quality'], repositoryRoot); },
-      commitAndPush: async (message) => {
-        await command('git', ['add', '--', GENERATED_CATALOG_PATH, GENERATED_ASSET_PREFIX], repositoryRoot);
-        await command('git', ['commit', '-m', message], repositoryRoot);
-        await command('git', ['push', '--force-with-lease', 'origin', `HEAD:${FIXED_BOT_BRANCH}`], repositoryRoot);
-      },
+    writeBaseline: (prepared) => writePreparedBaseline(repositoryRoot, prepared as PreparedBaseline),
+    changedPaths: async () => {
+      const result = await command('git', ['status', '--short'], repositoryRoot);
+      return result.stdout.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3).trim());
     },
-    github: {
-      upsertRollingPullRequest: async (metadata) => {
+    verify: async () => { await command('npm', ['run', 'quality'], repositoryRoot); },
+    commitAndPush: async (message) => {
+      await command('git', ['add', '--', GENERATED_CATALOG_PATH, GENERATED_ASSET_PREFIX], repositoryRoot);
+      await command('git', ['commit', '-m', message], repositoryRoot);
+      await command('git', ['push', '--force-with-lease', 'origin', `HEAD:${FIXED_BOT_BRANCH}`], repositoryRoot);
+    },
+  };
+}
+
+function createGitHubAdapter(repositoryRoot: string): ReconciliationDependencies['github'] {
+  return {
+    upsertRollingPullRequest: async (metadata) => {
         const title = `chore(catalog): reconcile baseline to revision ${metadata.activeRevision}`;
         const body = [
           'Automated Bundled Catalog Baseline reconciliation.', '',
@@ -213,8 +211,8 @@ export function createProductionDependencies(repositoryRoot: string): Reconcilia
         const number = Number(created.stdout.trim().match(/\/(\d+)\s*$/)?.[1]);
         if (!Number.isInteger(number)) throw new Error('GitHub did not return a pull request number.');
         return { number };
-      },
-      waitForRequiredChecks: async (number) => {
+    },
+    waitForRequiredChecks: async (number) => {
         try {
           await command('gh', [
             'pr', 'checks', String(number), '--required', '--watch', '--interval', '10', '--fail-fast',
@@ -224,8 +222,8 @@ export function createProductionDependencies(repositoryRoot: string): Reconcilia
           console.warn(`Required checks did not pass; pull request #${number} remains open.`, error);
           return false;
         }
-      },
-      enableAutoMerge: async (number) => {
+    },
+    enableAutoMerge: async (number) => {
         try {
           await command('gh', ['pr', 'merge', String(number), '--auto', '--squash'], repositoryRoot);
           return true;
@@ -233,8 +231,19 @@ export function createProductionDependencies(repositoryRoot: string): Reconcilia
           console.warn(`Auto-merge is unavailable; pull request #${number} remains open.`, error);
           return false;
         }
-      },
     },
+  };
+}
+
+export function createProductionDependencies(repositoryRoot: string): ReconciliationDependencies {
+  return {
+    manifestUrl: process.env.CATALOG_MANIFEST_URL ?? '',
+    fetchActiveBaseline: async (url) => {
+      const prepared = await fetchPreparedBaseline(url);
+      return { revision: prepared.catalog.revision, prepared };
+    },
+    repository: createRepositoryAdapter(repositoryRoot),
+    github: createGitHubAdapter(repositoryRoot),
   };
 }
 
