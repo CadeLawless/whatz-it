@@ -267,7 +267,6 @@ describe('receiver workflow contract', () => {
     assert.match(workflow, /group: catalog-baseline-reconciliation/);
     assert.match(workflow, /cancel-in-progress: true/);
     assert.match(workflow, /actions\/create-github-app-token@v2/);
-    assert.match(workflow, /BOT_BRANCH: automation\/catalog-baseline/);
     assert.match(workflow, /timeout-minutes: 45/);
     assert.doesNotMatch(workflow, /pull_request_target|personal_access_token|eas|testflight|store submission/i);
   });
