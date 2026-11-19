@@ -44,8 +44,8 @@ describe('catalog baseline reconciliation', () => {
       'committed-revision',
       'write',
       'changed-paths',
-      'verify',
       'publish:forward:42:publication-123',
+      'verify',
       'checks',
       'auto-merge',
     ]);
@@ -74,8 +74,8 @@ describe('catalog baseline reconciliation', () => {
       'write',
       'changed-paths',
       'disable-existing-auto-merge',
-      'verify',
       'publish:forward:42:publication-123',
+      'verify',
       'disable-auto-merge',
     ]);
   });
@@ -138,7 +138,26 @@ describe('catalog baseline reconciliation', () => {
     assert.equal(fixture.calls.includes('auto-merge'), false);
   });
 
-  it('does not publish when verification fails', async () => {
+  it('fails closed after publishing when required checks cannot be observed', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
+    });
+    fixture.dependencies.waitForRequiredChecks = async () => {
+      fixture.calls.push('checks');
+      throw new Error('GitHub checks unavailable');
+    };
+
+    await assert.rejects(
+      reconcileCatalogBaseline(fixture.request, fixture.dependencies),
+      /GitHub checks unavailable/,
+    );
+    assert.equal(fixture.calls.some((call) => call.startsWith('publish:')), true);
+    assert.equal(fixture.calls.includes('auto-merge'), false);
+  });
+
+  it('keeps a reviewable pull request when local verification fails', async () => {
     const fixture = reconciliationFixture({
       committedRevision: 41,
       activeRevision: 42,
@@ -150,7 +169,8 @@ describe('catalog baseline reconciliation', () => {
       reconcileCatalogBaseline(fixture.request, fixture.dependencies),
       /Quality verification failed/,
     );
-    assert.equal(fixture.calls.some((call) => call.startsWith('publish:')), false);
+    assert.equal(fixture.calls.some((call) => call.startsWith('publish:')), true);
+    assert.ok(fixture.calls.indexOf('publish:forward:42:publication-123') < fixture.calls.indexOf('verify'));
   });
 
   it('fails before generation when required configuration is missing', async () => {

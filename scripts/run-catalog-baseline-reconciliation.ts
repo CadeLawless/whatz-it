@@ -84,15 +84,9 @@ function runtimeDependencies({
     },
     changedPaths: gitChangedPaths,
     verify: async () => {
-      await npm(['run', 'typecheck']);
-      await npm(['test']);
-      await npm(['run', 'lint']);
-      await npm([
-        'run',
-        'catalog:baseline:check',
-        '--',
-        `--manifest-url=${manifestUrl}`,
-      ]);
+      // Keep reconciliation on the same single quality contract used by pull
+      // requests. CATALOG_MANIFEST_URL is already present in the workflow env.
+      await npm(['run', 'quality']);
     },
     publish: async (details) => {
       const previousPullRequest = await openPullRequest(repository);
@@ -168,26 +162,19 @@ function runtimeDependencies({
       return { pullRequestNumber: created.number, pullRequestUrl: created.url };
     },
     waitForRequiredChecks: async (pullRequestNumber) => {
-      try {
-        await gh([
-          'pr',
-          'checks',
-          String(pullRequestNumber),
-          '--repo',
-          repository,
-          '--required',
-          '--watch',
-          '--interval',
-          '10',
-          '--fail-fast',
-        ]);
-        return true;
-      } catch {
-        console.log(
-          '::warning::Required checks did not pass; the catalog pull request remains open.',
-        );
-        return false;
-      }
+      await gh([
+        'pr',
+        'checks',
+        String(pullRequestNumber),
+        '--repo',
+        repository,
+        '--required',
+        '--watch',
+        '--interval',
+        '10',
+        '--fail-fast',
+      ]);
+      return true;
     },
     enableAutoMerge: async (pullRequestNumber) => {
       const autoMergeAllowed = (await gh([

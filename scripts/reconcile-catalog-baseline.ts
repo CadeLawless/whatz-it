@@ -11,6 +11,16 @@ export type CatalogReconciliationRequest = {
   publishedRevision?: number;
 };
 
+export type CatalogPublishMetadata = {
+  branch: typeof CATALOG_BASELINE_BRANCH;
+  correlationId: string;
+  direction: 'forward' | 'regression';
+  environment: 'production';
+  publishedRevision?: number;
+  revision: number;
+  unexpectedPaths: string[];
+};
+
 export type CatalogReconciliationDependencies<
   Prepared extends PreparedCatalogBaseline = PreparedCatalogBaseline,
 > = {
@@ -20,15 +30,10 @@ export type CatalogReconciliationDependencies<
   write: (prepared: Prepared) => Promise<void>;
   changedPaths: () => Promise<string[]>;
   verify: () => Promise<void>;
-  publish: (details: {
-    branch: typeof CATALOG_BASELINE_BRANCH;
-    correlationId: string;
-    direction: 'forward' | 'regression';
-    environment: 'production';
-    publishedRevision?: number;
-    revision: number;
-     unexpectedPaths: string[];
-  }) => Promise<{ pullRequestNumber: number; pullRequestUrl: string }>;
+  publish: (details: CatalogPublishMetadata) => Promise<{
+    pullRequestNumber: number;
+    pullRequestUrl: string;
+  }>;
   waitForRequiredChecks: (pullRequestNumber: number) => Promise<boolean>;
   enableAutoMerge: (
     pullRequestNumber: number,
@@ -78,7 +83,6 @@ export async function reconcileCatalogBaseline<Prepared extends PreparedCatalogB
     await dependencies.disableExistingAutoMerge();
   }
 
-  await dependencies.verify();
   const pullRequest = await dependencies.publish({
     branch: CATALOG_BASELINE_BRANCH,
     correlationId: request.correlationId,
@@ -88,6 +92,10 @@ export async function reconcileCatalogBaseline<Prepared extends PreparedCatalogB
     revision: prepared.revision,
     unexpectedPaths,
   });
+  // Publishing first preserves a reviewable PR even when local verification cannot
+  // complete. Automation authority remains limited to generated paths; unexpected
+  // content is exposed separately as review evidence and is never committed.
+  await dependencies.verify();
   let autoMerge: 'enabled' | 'unavailable' | 'not-eligible' | 'checks-failed' |
     'unexpected-paths' = unexpectedPaths.length > 0 ? 'unexpected-paths' : 'not-eligible';
   if (direction === 'forward' && unexpectedPaths.length === 0) {
