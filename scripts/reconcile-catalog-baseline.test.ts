@@ -1,287 +1,277 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import {
-  classifyRevision,
   reconcileCatalogBaseline,
-  validateGeneratedPaths,
-  type ReconciliationDependencies,
+  type CatalogReconciliationDependencies,
+  type CatalogReconciliationRequest,
 } from './reconcile-catalog-baseline';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-
-function fixture(overrides: Partial<ReconciliationDependencies> = {}) {
-  const calls: string[] = [];
-  const dependencies: ReconciliationDependencies = {
-    manifestUrl: 'https://catalog.example/manifest.json',
-    fetchActiveBaseline: async (url) => {
-      calls.push(`fetch:${url}`);
-      return { revision: 11, prepared: {} };
-    },
-    repository: {
-      readCommittedRevision: async () => 10,
-      baselineIsCurrent: async () => false,
-      prepareFixedBranch: async () => { calls.push('prepare'); },
-      writeBaseline: async () => { calls.push('write'); },
-      changedPaths: async () => ['src/data/bundles.ts'],
-      verify: async () => { calls.push('verify'); },
-      commitAndPush: async (message) => { calls.push(`push:${message}`); },
-    },
-    github: {
-      upsertRollingPullRequest: async (metadata) => {
-        calls.push(`pr:${metadata.correlationId}`);
-        return { number: 18 };
-      },
-      waitForRequiredChecks: async (number) => { calls.push(`checks:${number}`); return true; },
-      enableAutoMerge: async (number) => { calls.push(`merge:${number}`); return true; },
-    },
-    ...overrides,
-  };
-  return { calls, dependencies };
-}
-
-describe('catalog baseline reconciliation policy', () => {
-  it('classifies forward, equal, and regression revisions', () => {
-    assert.equal(classifyRevision(11, 10), 'forward');
-    assert.equal(classifyRevision(10, 10), 'equal');
-    assert.equal(classifyRevision(9, 10), 'regression');
-  });
-
-  it('accepts only generated baseline paths', () => {
-    assert.deepEqual(validateGeneratedPaths([
-      'src/data/bundles.ts',
-      'assets/images/decks/baseline/a.webp',
-    ]), { allowed: true, unexpected: [] });
-    assert.deepEqual(validateGeneratedPaths(['package.json']), {
-      allowed: false,
-      unexpected: ['package.json'],
-    });
-  });
-});
-
 describe('catalog baseline reconciliation', () => {
-  it('ignores non-production and unsuccessful publication events before fetching', async () => {
-    const { calls, dependencies } = fixture();
-    const result = await reconcileCatalogBaseline(dependencies, {
-      trigger: 'repository_dispatch', environment: 'staging', status: 'succeeded',
-      publishedRevision: 99, correlationId: 'pub-staging',
+  it('does nothing when the Bundled Catalog Baseline already matches production', async () => {
+    const fixture = reconciliationFixture({ committedRevision: 41, activeRevision: 41 });
+
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
+    assert.deepEqual(result, { status: 'current', revision: 41 });
+    assert.deepEqual(fixture.calls, ['prepare', 'is-current', 'close-obsolete']);
+  });
+
+  it('publishes a verified forward update and enables auto-merge', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: [
+        'src/data/bundles.ts',
+        `assets/images/decks/baseline/${'a'.repeat(64)}.webp`,
+      ],
     });
+
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
     assert.deepEqual(result, {
-      outcome: 'ignored', reason: 'non-production-publication', correlationId: 'pub-staging',
+      status: 'pull-request',
+      revision: 42,
+      direction: 'forward',
+      pullRequestNumber: 18,
+      pullRequestUrl: 'https://example.test/pr/18',
+      autoMerge: 'enabled',
+      unexpectedPaths: [],
     });
-    assert.deepEqual(calls, []);
-  });
-
-  it('rejects a production event without complete trace metadata before fetching', async () => {
-    const { calls, dependencies } = fixture();
-    await assert.rejects(
-      reconcileCatalogBaseline(dependencies, {
-        trigger: 'repository_dispatch', environment: 'production', status: 'succeeded',
-        correlationId: '',
-      }),
-      /published revision and correlation identifier/,
-    );
-    assert.deepEqual(calls, []);
-  });
-
-  it('does nothing when the independently fetched active baseline is current', async () => {
-    const { calls, dependencies } = fixture({
-      repository: {
-        readCommittedRevision: async () => 11,
-        baselineIsCurrent: async () => true,
-        prepareFixedBranch: async () => { throw new Error('must not write'); },
-        writeBaseline: async () => { throw new Error('must not write'); },
-        changedPaths: async () => [], verify: async () => {}, commitAndPush: async () => {},
-      },
-    });
-    const result = await reconcileCatalogBaseline(dependencies, {
-      trigger: 'schedule', correlationId: 'scheduled-1',
-    });
-    assert.deepEqual(result, {
-      outcome: 'current', activeRevision: 11, correlationId: 'scheduled-1',
-    });
-    assert.deepEqual(calls, ['fetch:https://catalog.example/manifest.json']);
-  });
-
-  it('publishes and enables auto-merge for a verified forward update', async () => {
-    const { calls, dependencies } = fixture();
-    const result = await reconcileCatalogBaseline(dependencies, {
-      trigger: 'repository_dispatch', environment: 'production', status: 'succeeded',
-      publishedRevision: 77, correlationId: 'publication-abc',
-    });
-    assert.deepEqual(result, { outcome: 'pull-request', pullRequestNumber: 18,
-      direction: 'forward', autoMerge: 'enabled', activeRevision: 11 });
-    assert.deepEqual(calls, [
-      'fetch:https://catalog.example/manifest.json', 'prepare', 'write', 'verify',
-      'push:chore(catalog): reconcile baseline to revision 11 [publication-abc]',
-      'pr:publication-abc', 'checks:18', 'merge:18',
+    assert.deepEqual(fixture.calls, [
+      'prepare',
+      'is-current',
+      'committed-revision',
+      'write',
+      'changed-paths',
+      'verify',
+      'publish:forward:42:publication-123',
+      'checks',
+      'auto-merge',
     ]);
   });
 
-  it('converges two publications through one fixed branch and one rolling pull request', async () => {
-    const activeRevisions = [11, 12];
-    const writtenRevisions: number[] = [];
-    const branchPreparations: string[] = [];
-    const pullRequests = new Map<string, { number: number; revision: number }>();
-    let preparedRevision = 0;
-    const { dependencies } = fixture({
-      fetchActiveBaseline: async () => {
-        const revision = activeRevisions.shift();
-        assert.ok(revision);
-        return { revision, prepared: { revision } };
-      },
-      repository: {
-        readCommittedRevision: async () => 10,
-        baselineIsCurrent: async () => false,
-        prepareFixedBranch: async () => { branchPreparations.push('automation/catalog-baseline'); },
-        writeBaseline: async (prepared) => {
-          preparedRevision = (prepared as { revision: number }).revision;
-          writtenRevisions.push(preparedRevision);
-        },
-        changedPaths: async () => ['src/data/bundles.ts'],
-        verify: async () => {},
-        commitAndPush: async () => {},
-      },
-      github: {
-        upsertRollingPullRequest: async (metadata) => {
-          const branch = 'automation/catalog-baseline';
-          const existing = pullRequests.get(branch);
-          const pullRequest = existing ?? { number: 18, revision: preparedRevision };
-          pullRequest.revision = metadata.activeRevision;
-          pullRequests.set(branch, pullRequest);
-          return { number: pullRequest.number };
-        },
-        waitForRequiredChecks: async () => true,
-        enableAutoMerge: async () => true,
-      },
+  it('publishes allowed paths with unexpected-path review metadata and no auto-merge', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts', '.github/workflows/upload-testflight.yml'],
     });
 
-    const first = await reconcileCatalogBaseline(dependencies, {
-      trigger: 'repository_dispatch', environment: 'production', status: 'succeeded',
-      publishedRevision: 11, correlationId: 'publication-11',
-    });
-    const second = await reconcileCatalogBaseline(dependencies, {
-      trigger: 'repository_dispatch', environment: 'production', status: 'succeeded',
-      publishedRevision: 12, correlationId: 'publication-12',
-    });
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
 
-    assert.deepEqual(writtenRevisions, [11, 12]);
-    assert.deepEqual(branchPreparations, ['automation/catalog-baseline', 'automation/catalog-baseline']);
-    assert.equal(pullRequests.size, 1);
-    assert.deepEqual(pullRequests.get('automation/catalog-baseline'), { number: 18, revision: 12 });
-    assert.equal(first.outcome, 'pull-request');
-    assert.equal(second.outcome, 'pull-request');
-    assert.equal(first.pullRequestNumber, 18);
-    assert.equal(second.pullRequestNumber, 18);
-    assert.equal(second.activeRevision, 12);
+    assert.equal(result.status, 'pull-request');
+    if (result.status !== 'pull-request') return;
+    assert.equal(result.autoMerge, 'unexpected-paths');
+    assert.deepEqual(result.unexpectedPaths, ['.github/workflows/upload-testflight.yml']);
+    assert.deepEqual(fixture.published[0].unexpectedPaths, [
+      '.github/workflows/upload-testflight.yml',
+    ]);
+    assert.deepEqual(fixture.calls, [
+      'prepare',
+      'is-current',
+      'committed-revision',
+      'write',
+      'changed-paths',
+      'disable-existing-auto-merge',
+      'verify',
+      'publish:forward:42:publication-123',
+      'disable-auto-merge',
+    ]);
   });
 
-  it('leaves the pull request open when required checks fail', async () => {
-    const { calls, dependencies } = fixture();
-    dependencies.github.waitForRequiredChecks = async (number) => {
-      calls.push(`checks:${number}`);
+  it('publishes a regression for review without enabling auto-merge', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 43,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
+    });
+
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
+    assert.equal(result.status, 'pull-request');
+    if (result.status !== 'pull-request') return;
+    assert.equal(result.direction, 'regression');
+    assert.equal(result.autoMerge, 'not-eligible');
+    assert.equal(fixture.calls.includes('auto-merge'), false);
+    assert.equal(fixture.calls.includes('checks'), false);
+    assert.equal(fixture.calls.includes('disable-auto-merge'), true);
+    assert.equal(fixture.calls.includes('disable-existing-auto-merge'), true);
+    assert.ok(
+      fixture.calls.indexOf('disable-existing-auto-merge')
+        < fixture.calls.indexOf('verify'),
+    );
+  });
+
+  it('leaves a valid forward pull request open when auto-merge is unavailable', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
+      autoMergeUnavailable: true,
+    });
+
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
+    assert.equal(result.status, 'pull-request');
+    if (result.status !== 'pull-request') return;
+    assert.equal(result.autoMerge, 'unavailable');
+    assert.equal(result.pullRequestNumber, 18);
+  });
+
+  it('leaves a forward pull request open when required checks fail', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
+    });
+    fixture.dependencies.waitForRequiredChecks = async () => {
+      fixture.calls.push('checks');
       return false;
     };
-    const result = await reconcileCatalogBaseline(dependencies, {
-      trigger: 'schedule', correlationId: 'scheduled-check-failure',
-    });
-    assert.equal(result.outcome, 'pull-request');
+
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
+    assert.equal(result.status, 'pull-request');
+    if (result.status !== 'pull-request') return;
     assert.equal(result.autoMerge, 'checks-failed');
-    assert.ok(!calls.some((call) => call.startsWith('merge:')));
+    assert.equal(fixture.calls.includes('auto-merge'), false);
   });
 
-  it('leaves a regression pull request open for review', async () => {
-    const { calls, dependencies } = fixture({
-      fetchActiveBaseline: async () => ({ revision: 9, prepared: {} }),
+  it('does not publish when verification fails', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
+      verificationFails: true,
     });
-    const result = await reconcileCatalogBaseline(dependencies, {
-      trigger: 'workflow_dispatch', correlationId: 'manual-review',
-    });
-    assert.equal(result.outcome, 'pull-request');
-    assert.equal(result.direction, 'regression');
-    assert.equal(result.autoMerge, 'not-requested');
-    assert.ok(!calls.some((call) => call.startsWith('merge:')));
-  });
 
-  it('opens a review-only pull request without committing unexpected generated paths', async () => {
-    const { calls, dependencies } = fixture();
-    let reviewedUnexpectedPaths: string[] | undefined;
-    dependencies.repository.changedPaths = async () => ['src/data/bundles.ts', 'app.json'];
-    dependencies.github.upsertRollingPullRequest = async (metadata) => {
-      calls.push(`pr:${metadata.correlationId}`);
-      reviewedUnexpectedPaths = metadata.unexpectedPaths;
-      return { number: 18 };
-    };
-    const result = await reconcileCatalogBaseline(
-      dependencies,
-      { trigger: 'schedule', correlationId: 'scheduled-2' },
-    );
-    assert.deepEqual(result, {
-      outcome: 'pull-request', pullRequestNumber: 18, direction: 'forward',
-      autoMerge: 'unexpected-paths', activeRevision: 11, unexpectedPaths: ['app.json'],
-    });
-    assert.ok(calls.includes(
-      'push:chore(catalog): reconcile baseline to revision 11 [scheduled-2]',
-    ));
-    assert.ok(calls.includes('pr:scheduled-2'));
-    assert.deepEqual(reviewedUnexpectedPaths, ['app.json']);
-    assert.ok(!calls.some((call) => call.startsWith('checks:') || call.startsWith('merge:')));
-  });
-
-  it('fails closed when configuration or verification is missing', async () => {
-    const { dependencies } = fixture({ manifestUrl: '' });
     await assert.rejects(
-      reconcileCatalogBaseline(dependencies, { trigger: 'schedule', correlationId: 'x' }),
-      /CATALOG_MANIFEST_URL/,
+      reconcileCatalogBaseline(fixture.request, fixture.dependencies),
+      /Quality verification failed/,
     );
-    const second = fixture();
-    second.dependencies.repository.verify = async () => { throw new Error('quality failed'); };
-    await assert.rejects(
-      reconcileCatalogBaseline(second.dependencies, { trigger: 'schedule', correlationId: 'y' }),
-      /quality failed/,
-    );
-    assert.ok(!second.calls.some((call) => call.startsWith('push:')));
+    assert.equal(fixture.calls.some((call) => call.startsWith('publish:')), false);
   });
 
-  it('keeps a valid pull request open when repository auto-merge is unavailable', async () => {
-    const { calls, dependencies } = fixture();
-    dependencies.github.enableAutoMerge = async () => false;
-    const result = await reconcileCatalogBaseline(dependencies, {
-      trigger: 'schedule', correlationId: 'scheduled-3',
+  it('fails before generation when required configuration is missing', async () => {
+    const fixture = reconciliationFixture({ committedRevision: 41, activeRevision: 42 });
+    fixture.request.manifestUrl = '';
+
+    await assert.rejects(
+      reconcileCatalogBaseline(fixture.request, fixture.dependencies),
+      /CATALOG_MANIFEST_URL is required/,
+    );
+    assert.deepEqual(fixture.calls, []);
+  });
+
+  it('converges rapid publications on one fixed branch and pull request', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
     });
-    assert.equal(result.outcome, 'pull-request');
-    assert.equal(result.autoMerge, 'unavailable');
-    assert.ok(calls.includes('checks:18'));
+
+    const first = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+    fixture.setActiveRevision(43);
+    const second = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
+    assert.equal(first.status, 'pull-request');
+    assert.equal(second.status, 'pull-request');
+    if (first.status !== 'pull-request' || second.status !== 'pull-request') return;
+    assert.deepEqual([first.pullRequestNumber, second.pullRequestNumber], [18, 18]);
+    assert.deepEqual(
+      fixture.published.map((details) => details.branch),
+      ['automation/catalog-baseline', 'automation/catalog-baseline'],
+    );
+    assert.deepEqual(fixture.published.map((details) => details.revision), [42, 43]);
+  });
+
+  it('treats the event revision as trace metadata and trusts the fetched manifest', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
+    });
+    fixture.request.publishedRevision = 999;
+
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
+    assert.equal(result.revision, 42);
+    assert.equal(fixture.published[0].publishedRevision, 999);
+    assert.equal(fixture.published[0].environment, 'production');
+    assert.equal(fixture.published[0].revision, 42);
   });
 });
 
-describe('receiver workflow contract', () => {
-  it('uses App authentication, one fixed branch/concurrency group, and no release trigger', async () => {
-    const workflow = await readFile(resolve(root, '.github/workflows/reconcile-catalog-baseline.yml'), 'utf8');
-    assert.match(workflow, /repository_dispatch:\s*\n\s*types: \[catalog-production-published\]/);
-    assert.match(workflow, /schedule:\s*\n\s*- cron: '17 9 \* \* \*'/);
-    assert.match(workflow, /workflow_dispatch:/);
-    assert.match(workflow, /group: catalog-baseline-reconciliation/);
-    assert.match(workflow, /cancel-in-progress: true/);
-    assert.match(workflow, /actions\/create-github-app-token@v2/);
-    assert.match(workflow, /timeout-minutes: 45/);
-    assert.doesNotMatch(workflow, /pull_request_target|personal_access_token|eas|testflight|store submission/i);
-  });
-
-  it('documents the external publication sender owner and exact handoff boundary', async () => {
-    const documentation = (
-      await readFile(resolve(root, 'docs/catalog-baseline-reconciliation.md'), 'utf8')
-    ).replace(/\s+/g, ' ');
-    assert.match(documentation, /private `CadeLawless\/whatz-it-deck-platform` repository/);
-    assert.match(documentation, /`PublicationCoordinator::publish\(\)`/);
-    assert.match(documentation, /`ArtifactPromoter::activateManifest\(\)` succeeds/);
-    assert.match(documentation, /`publication_preparations` transitions from `database_active` to `active`/);
-    assert.match(documentation, /public `\/api\/v1\/catalog\/manifest`/);
-    assert.match(documentation, /`preparationId` as `correlation_id`/);
-    assert.match(documentation, /`catalog\.revision` as `published_revision`/);
-    assert.match(documentation, /sender implementation and integration exercise remain required externally/i);
-  });
-});
+function reconciliationFixture({
+  committedRevision,
+  activeRevision,
+  changedPaths = [],
+  autoMergeUnavailable = false,
+  verificationFails = false,
+}: {
+  committedRevision: number;
+  activeRevision: number;
+  changedPaths?: string[];
+  autoMergeUnavailable?: boolean;
+  verificationFails?: boolean;
+}) {
+  const calls: string[] = [];
+  const published: Parameters<CatalogReconciliationDependencies['publish']>[0][] = [];
+  let currentActiveRevision = activeRevision;
+  const request: CatalogReconciliationRequest = {
+    manifestUrl: 'https://api.example.test/catalog/manifest',
+    correlationId: 'publication-123',
+    environment: 'production',
+  };
+  const dependencies: CatalogReconciliationDependencies = {
+    prepare: async () => {
+      calls.push('prepare');
+      return { revision: currentActiveRevision };
+    },
+    isCurrent: async () => {
+      calls.push('is-current');
+      return committedRevision === currentActiveRevision;
+    },
+    committedRevision: async () => {
+      calls.push('committed-revision');
+      return committedRevision;
+    },
+    write: async () => { calls.push('write'); },
+    changedPaths: async () => {
+      calls.push('changed-paths');
+      return changedPaths;
+    },
+    verify: async () => {
+      calls.push('verify');
+      if (verificationFails) throw new Error('Quality verification failed');
+    },
+    publish: async (details) => {
+      published.push(details);
+      calls.push(
+        `publish:${details.direction}:${details.revision}:${details.correlationId}`,
+      );
+      return { pullRequestNumber: 18, pullRequestUrl: 'https://example.test/pr/18' };
+    },
+    waitForRequiredChecks: async () => {
+      calls.push('checks');
+      return true;
+    },
+    enableAutoMerge: async () => {
+      calls.push('auto-merge');
+      return autoMergeUnavailable ? 'unavailable' : 'enabled';
+    },
+    disableExistingAutoMerge: async () => {
+      calls.push('disable-existing-auto-merge');
+    },
+    disableAutoMerge: async () => { calls.push('disable-auto-merge'); },
+    closeObsoletePullRequest: async () => { calls.push('close-obsolete'); },
+  };
+  return {
+    calls,
+    dependencies,
+    published,
+    request,
+    setActiveRevision: (revision: number) => { currentActiveRevision = revision; },
+  };
+}

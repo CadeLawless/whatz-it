@@ -1,4 +1,6 @@
-name: Reconcile catalog baseline
+name: Reconcile Bundled Catalog Baseline
+
+run-name: Reconcile catalog (${{ github.event.client_payload.correlation_id || inputs.correlation_id || format('reconcile-{0}-{1}', github.run_id, github.run_attempt) }})
 
 on:
   repository_dispatch:
@@ -6,9 +8,13 @@ on:
   schedule:
     - cron: '17 9 * * *'
   workflow_dispatch:
+    inputs:
+      correlation_id:
+        description: Optional trace identifier for this manual recovery run
+        required: false
+        type: string
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: catalog-baseline-reconciliation
@@ -16,34 +22,33 @@ concurrency:
 
 jobs:
   reconcile:
-    name: Reconcile through verified pull request
+    name: Reconcile active public manifest
+    if: >-
+      github.event_name != 'repository_dispatch'
+      || (github.event.client_payload.environment == 'production'
+      && github.event.client_payload.status == 'succeeded')
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      CATALOG_MANIFEST_URL: ${{ vars.CATALOG_MANIFEST_URL }}
-      RECONCILIATION_TRIGGER: ${{ github.event_name }}
-      PUBLICATION_ENVIRONMENT: ${{ github.event.client_payload.environment }}
-      PUBLICATION_STATUS: ${{ github.event.client_payload.status }}
-      PUBLISHED_REVISION: ${{ github.event.client_payload.published_revision }}
-      CORRELATION_ID: ${{ github.event.client_payload.correlation_id || (github.event_name != 'repository_dispatch' && format('recovery-{0}', github.run_id)) }}
+    timeout-minutes: 30
 
     steps:
-      - name: Create narrowly scoped installation token
+      - name: Create narrowly scoped GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.CATALOG_BASELINE_APP_ID }}
-          private-key: ${{ secrets.CATALOG_BASELINE_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.CATALOG_RECONCILER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CATALOG_RECONCILER_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
 
-      - name: Check out main
-        uses: actions/checkout@v4
+      - name: Check out main with the GitHub App identity
+        uses: actions/checkout@v6
         with:
-          ref: main
           fetch-depth: 0
+          ref: main
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -51,12 +56,23 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Configure bot commit identity
-        run: |
-          git config user.name "catalog-baseline[bot]"
-          git config user.email "catalog-baseline[bot]@users.noreply.github.com"
-
-      - name: Reconcile active public manifest
+      - name: Configure GitHub App commit identity
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: npx tsx scripts/reconcile-catalog-baseline.ts
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          bot_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+      - name: Reconcile through the fixed bot pull request
+        env:
+          CATALOG_MANIFEST_URL: ${{ vars.CATALOG_MANIFEST_URL }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PUBLICATION_CORRELATION_ID: ${{ github.event.client_payload.correlation_id || inputs.correlation_id || format('reconcile-{0}-{1}', github.run_id, github.run_attempt) }}
+          PUBLICATION_ENVIRONMENT: ${{ github.event.client_payload.environment || '' }}
+          PUBLICATION_STATUS: ${{ github.event.client_payload.status || '' }}
+          PUBLISHED_REVISION: ${{ github.event.client_payload.published_revision || '' }}
+          RECONCILIATION_TRIGGER: ${{ github.event_name == 'repository_dispatch' && 'publication' || github.event_name }}
+        run: npm run catalog:baseline:reconcile

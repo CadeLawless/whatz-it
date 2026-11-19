@@ -1,0 +1,3 @@
+# Update the bundled catalog baseline through verified pull requests
+
+After Deck Manager publishes a production catalog revision, WHATZ IT will fetch the active public manifest and regenerate the bundled catalog baseline on a bot-managed pull request rather than writing directly to `main`. A narrowly scoped GitHub App may auto-merge forward-revision updates only when the diff contains generated baseline files and all required quality checks pass; revision regressions and unexpected file changes require human review. Publish events provide prompt updates, while scheduled and manual reconciliation recover missed events, and merging a baseline update never starts an app release automatically.

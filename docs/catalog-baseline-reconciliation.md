@@ -16,8 +16,8 @@ manifest. One cancelling concurrency group prevents obsolete runs from creating 
 Configure these values in repository settings:
 
 - Variable `CATALOG_MANIFEST_URL`: the active public HTTPS manifest.
-- Variable `CATALOG_BASELINE_APP_ID`: the dedicated GitHub App ID.
-- Secret `CATALOG_BASELINE_APP_PRIVATE_KEY`: that App's private key. The repository owner is
+- Variable `CATALOG_RECONCILER_APP_CLIENT_ID`: the dedicated GitHub App client ID.
+- Secret `CATALOG_RECONCILER_APP_PRIVATE_KEY`: that App's private key. The repository owner is
   responsible for storage, rotation, and revoking replaced keys.
 
 Install the App only on this repository with read/write **Contents** and **Pull requests**
@@ -28,8 +28,9 @@ not bypass branch protection or write directly to `main`.
 
 ## Safety and recovery
 
-Automation permits only `src/data/bundles.ts` and
-`assets/images/decks/baseline/**`. It runs the canonical quality command before pushing. A
+Automation stages only `src/data/bundles.ts` and content-addressed WebP files under
+`assets/images/decks/baseline/`. Unexpected paths are named in review metadata and disable
+auto-merge. It runs the canonical quality command before pushing. A
 forward revision may request auto-merge; a regression remains open for human review. If
 auto-merge is disabled or unavailable, a valid PR remains open and is not treated as generation
 failure. Correlation IDs appear in the commit and PR body for publication-log tracing.

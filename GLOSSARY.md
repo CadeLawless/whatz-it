@@ -41,3 +41,13 @@ _Avoid_: Failed recording
 **Incomplete Recording**:
 A round recording that retains valid captured footage but ends before the round itself is complete.
 _Avoid_: Failed recording, partial video
+
+## Catalog
+
+**Published Catalog Revision**:
+The active public catalog revision that installed apps can download through catalog synchronization.
+_Avoid_: Current build catalog
+
+**Bundled Catalog Baseline**:
+The verified catalog snapshot committed to the app repository and embedded as the offline fallback in the next app binary.
+_Avoid_: Current build baseline, published catalog
