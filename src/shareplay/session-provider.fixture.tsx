@@ -1,4 +1,7 @@
-import type { SharePlaySnapshot } from '../../modules/whatz-it-shareplay/src/WhatzItSharePlay.types';
+import type {
+  SharePlaySnapshot,
+  WhatzItSharePlayModuleEvents,
+} from '../../modules/whatz-it-shareplay/src/WhatzItSharePlay.types';
 import { renderProviderHarness } from '../test/provider-harness';
 
 export const idleSnapshot: SharePlaySnapshot = {
@@ -6,7 +9,13 @@ export const idleSnapshot: SharePlaySnapshot = {
   participantIds: [], isHost: false, hostParticipantId: null, activity: null,
 };
 
-type Listener = (value: never) => void;
+type FixtureEventName = keyof WhatzItSharePlayModuleEvents;
+type FixtureListeners = {
+  [Name in FixtureEventName]: Set<WhatzItSharePlayModuleEvents[Name]>;
+};
+type FixtureListenerEntry = {
+  [Name in FixtureEventName]: [Name, WhatzItSharePlayModuleEvents[Name]];
+}[FixtureEventName];
 type CatalogDeck = { id: string; title: string; access: 'free' | 'paid'; cards: never[] };
 const defaultCatalogDecks: CatalogDeck[] = [
   { id: 'animals', title: 'Animals', access: 'free', cards: [] },
@@ -17,7 +26,12 @@ const mockRuntime = {
   inviteResult: 'success' as 'success' | 'cancelled',
   leaveFails: false,
   deferredLeave: null as null | { promise: Promise<void>; resolve: () => void },
-  listeners: new Map<string, Set<Listener>>(),
+  listeners: {
+    onSession: new Set<WhatzItSharePlayModuleEvents['onSession']>(),
+    onMessage: new Set<WhatzItSharePlayModuleEvents['onMessage']>(),
+    onError: new Set<WhatzItSharePlayModuleEvents['onError']>(),
+    onDiagnostic: new Set<WhatzItSharePlayModuleEvents['onDiagnostic']>(),
+  } satisfies FixtureListeners,
   storage: new Map<string, string>(),
   nativeCalls: [] as string[],
   removedKeys: [] as string[],
@@ -50,12 +64,29 @@ jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true
     mockRuntime.removedKeys.push(key); mockRuntime.storage.delete(key);
   }),
 } }));
+function mockAddListener(...entry: FixtureListenerEntry) {
+  const [name, listener] = entry;
+  switch (name) {
+    case 'onSession': mockRuntime.listeners.onSession.add(listener); break;
+    case 'onMessage': mockRuntime.listeners.onMessage.add(listener); break;
+    case 'onError': mockRuntime.listeners.onError.add(listener); break;
+    case 'onDiagnostic': mockRuntime.listeners.onDiagnostic.add(listener); break;
+  }
+  return {
+    remove: jest.fn(() => {
+      switch (name) {
+        case 'onSession': mockRuntime.listeners.onSession.delete(listener); break;
+        case 'onMessage': mockRuntime.listeners.onMessage.delete(listener); break;
+        case 'onError': mockRuntime.listeners.onError.delete(listener); break;
+        case 'onDiagnostic': mockRuntime.listeners.onDiagnostic.delete(listener); break;
+      }
+      mockRuntime.subscriptionRemovals++;
+    }),
+  };
+}
+
 jest.mock('../../modules/whatz-it-shareplay/src/WhatzItSharePlayModule', () => ({ __esModule: true, default: {
-  addListener: jest.fn((name: string, listener: Listener) => {
-    const listeners = mockRuntime.listeners.get(name) ?? new Set<Listener>();
-    listeners.add(listener); mockRuntime.listeners.set(name, listeners);
-    return { remove: jest.fn(() => { listeners.delete(listener); mockRuntime.subscriptionRemovals++; }) };
-  }),
+  addListener: jest.fn(mockAddListener),
   startAsync: jest.fn(async () => mockRuntime.snapshot),
   stopAsync: jest.fn(async () => undefined),
   getSnapshotAsync: jest.fn(async () => mockRuntime.snapshot),
@@ -117,7 +148,10 @@ export function mountSharePlayProvider(options: Options = {}) {
     const promise = new Promise<void>((done) => { resolve = done; });
     return { promise, resolve };
   })() : null;
-  mockRuntime.listeners.clear();
+  mockRuntime.listeners.onSession.clear();
+  mockRuntime.listeners.onMessage.clear();
+  mockRuntime.listeners.onError.clear();
+  mockRuntime.listeners.onDiagnostic.clear();
   mockRuntime.storage = new Map([['shareplay.player-name.v1', 'Cade']]);
   if (options.savedRejoinNonce) mockRuntime.storage.set('whatz-it.shareplay.rejoin-session', options.savedRejoinNonce);
   mockRuntime.nativeCalls = []; mockRuntime.removedKeys = []; mockRuntime.liveGameSessions = [];
@@ -130,10 +164,10 @@ export function mountSharePlayProvider(options: Options = {}) {
     ...harness,
     emitSession(next: SharePlaySnapshot) {
       mockRuntime.snapshot = next;
-      mockRuntime.listeners.get('onSession')?.forEach((listener) => listener(next as never));
+      mockRuntime.listeners.onSession.forEach((listener) => listener(next));
     },
     emitError(code: string) {
-      mockRuntime.listeners.get('onError')?.forEach((listener) => listener({ code } as never));
+      mockRuntime.listeners.onError.forEach((listener) => listener({ code }));
     },
     setNativeSnapshot(next: SharePlaySnapshot) { mockRuntime.snapshot = next; },
     setInviteResult(result: 'success' | 'cancelled') { mockRuntime.inviteResult = result; },
@@ -142,7 +176,10 @@ export function mountSharePlayProvider(options: Options = {}) {
     liveGameSessions: mockRuntime.liveGameSessions,
     advanceTime(milliseconds: number) { jest.advanceTimersByTime(milliseconds); },
     pendingTimerCount: () => jest.getTimerCount(),
-    activeSubscriptions: () => [...mockRuntime.listeners.values()].reduce((total, listeners) => total + listeners.size, 0),
+    activeSubscriptions: () => (
+      mockRuntime.listeners.onSession.size + mockRuntime.listeners.onMessage.size +
+      mockRuntime.listeners.onError.size + mockRuntime.listeners.onDiagnostic.size
+    ),
     subscriptionRemovals: () => mockRuntime.subscriptionRemovals,
   };
 }

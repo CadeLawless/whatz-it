@@ -49,6 +49,7 @@ type PullRequestMetadata = {
   direction: RevisionDirection;
   correlationId: string;
   publishedRevision?: number;
+  unexpectedPaths?: string[];
 };
 
 export type RevisionDirection = 'forward' | 'equal' | 'regression';
@@ -77,7 +78,11 @@ export async function reconcileCatalogBaseline(
     trigger.trigger === 'repository_dispatch' &&
     (trigger.environment !== 'production' || trigger.status !== 'succeeded')
   ) {
-    return { outcome: 'ignored' as const, reason: 'non-production-publication' as const };
+    return {
+      outcome: 'ignored' as const,
+      reason: 'non-production-publication' as const,
+      correlationId: trigger.correlationId,
+    };
   }
   if (
     trigger.trigger === 'repository_dispatch' &&
@@ -89,16 +94,17 @@ export async function reconcileCatalogBaseline(
   const active = await dependencies.fetchActiveBaseline(dependencies.manifestUrl);
   const committedRevision = await dependencies.repository.readCommittedRevision();
   if (await dependencies.repository.baselineIsCurrent(active.prepared)) {
-    return { outcome: 'current' as const, activeRevision: active.revision };
+    return {
+      outcome: 'current' as const,
+      activeRevision: active.revision,
+      correlationId: trigger.correlationId,
+    };
   }
 
   await dependencies.repository.prepareFixedBranch();
   await dependencies.repository.writeBaseline(active.prepared);
   const pathValidation = validateGeneratedPaths(await dependencies.repository.changedPaths());
-  if (!pathValidation.allowed) {
-    throw new Error(`Unexpected generated path: ${pathValidation.unexpected.join(', ')}`);
-  }
-  await dependencies.repository.verify();
+  if (pathValidation.allowed) await dependencies.repository.verify();
 
   const direction = classifyRevision(active.revision, committedRevision);
   await dependencies.repository.commitAndPush(
@@ -110,10 +116,12 @@ export async function reconcileCatalogBaseline(
     direction,
     correlationId: trigger.correlationId,
     ...(trigger.publishedRevision === undefined ? {} : { publishedRevision: trigger.publishedRevision }),
+    ...(pathValidation.allowed ? {} : { unexpectedPaths: pathValidation.unexpected }),
   });
 
-  let autoMerge: 'enabled' | 'unavailable' | 'checks-failed' | 'not-requested' = 'not-requested';
-  if (direction === 'forward') {
+  let autoMerge: 'enabled' | 'unavailable' | 'checks-failed' | 'not-requested' |
+    'unexpected-paths' = pathValidation.allowed ? 'not-requested' : 'unexpected-paths';
+  if (direction === 'forward' && pathValidation.allowed) {
     if (await dependencies.github.waitForRequiredChecks(pullRequest.number)) {
       autoMerge = await dependencies.github.enableAutoMerge(pullRequest.number)
         ? 'enabled'
@@ -128,6 +136,7 @@ export async function reconcileCatalogBaseline(
     direction,
     autoMerge,
     activeRevision: active.revision,
+    ...(pathValidation.allowed ? {} : { unexpectedPaths: pathValidation.unexpected }),
   };
 }
 
@@ -181,6 +190,11 @@ export function createProductionDependencies(repositoryRoot: string): Reconcilia
           `- Publication correlation ID: \`${metadata.correlationId}\``,
           ...(metadata.publishedRevision === undefined
             ? [] : [`- Event published revision (trace only): ${metadata.publishedRevision}`]),
+          ...(metadata.unexpectedPaths?.length
+            ? [
+              `- Auto-merge disabled: unexpected changed paths require review: ${metadata.unexpectedPaths
+                .map((path) => `\`${path}\``).join(', ')}`,
+            ] : []),
           '', 'Generated from the independently fetched active public manifest. Closes #18.',
         ].join('\n');
         const listed = await command('gh', [

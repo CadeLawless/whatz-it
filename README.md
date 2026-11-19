@@ -195,6 +195,15 @@ For individual checks:
 ```bash
 npm run typecheck
 npm run lint
+npm run test:node
+npm run test:react
+npm test
 ```
+
+`test:node` runs the platform-independent `*.test.ts` suites with Node's test
+runner. `test:react` runs the `*.react-test.tsx` component and provider suites
+through Jest and the Expo React Native preset. The aggregate `test` command
+runs both collections in that order; use it when a change crosses the pure
+logic and rendered React boundaries.
 
 See [PROJECT_PLAN.md](./PROJECT_PLAN.md) for the complete scope, milestones, architecture, and release criteria.

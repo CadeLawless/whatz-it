@@ -69,7 +69,9 @@ describe('catalog baseline reconciliation', () => {
       trigger: 'repository_dispatch', environment: 'staging', status: 'succeeded',
       publishedRevision: 99, correlationId: 'pub-staging',
     });
-    assert.deepEqual(result, { outcome: 'ignored', reason: 'non-production-publication' });
+    assert.deepEqual(result, {
+      outcome: 'ignored', reason: 'non-production-publication', correlationId: 'pub-staging',
+    });
     assert.deepEqual(calls, []);
   });
 
@@ -98,7 +100,9 @@ describe('catalog baseline reconciliation', () => {
     const result = await reconcileCatalogBaseline(dependencies, {
       trigger: 'schedule', correlationId: 'scheduled-1',
     });
-    assert.deepEqual(result, { outcome: 'current', activeRevision: 11 });
+    assert.deepEqual(result, {
+      outcome: 'current', activeRevision: 11, correlationId: 'scheduled-1',
+    });
     assert.deepEqual(calls, ['fetch:https://catalog.example/manifest.json']);
   });
 
@@ -168,6 +172,8 @@ describe('catalog baseline reconciliation', () => {
     assert.deepEqual(branchPreparations, ['automation/catalog-baseline', 'automation/catalog-baseline']);
     assert.equal(pullRequests.size, 1);
     assert.deepEqual(pullRequests.get('automation/catalog-baseline'), { number: 18, revision: 12 });
+    assert.equal(first.outcome, 'pull-request');
+    assert.equal(second.outcome, 'pull-request');
     assert.equal(first.pullRequestNumber, 18);
     assert.equal(second.pullRequestNumber, 18);
     assert.equal(second.activeRevision, 12);
@@ -200,14 +206,29 @@ describe('catalog baseline reconciliation', () => {
     assert.ok(!calls.some((call) => call.startsWith('merge:')));
   });
 
-  it('rejects an unexpected generated path before push or pull request', async () => {
+  it('opens a review-only pull request without committing unexpected generated paths', async () => {
     const { calls, dependencies } = fixture();
+    let reviewedUnexpectedPaths: string[] | undefined;
     dependencies.repository.changedPaths = async () => ['src/data/bundles.ts', 'app.json'];
-    await assert.rejects(
-      reconcileCatalogBaseline(dependencies, { trigger: 'schedule', correlationId: 'scheduled-2' }),
-      /Unexpected generated path: app\.json/,
+    dependencies.github.upsertRollingPullRequest = async (metadata) => {
+      calls.push(`pr:${metadata.correlationId}`);
+      reviewedUnexpectedPaths = metadata.unexpectedPaths;
+      return { number: 18 };
+    };
+    const result = await reconcileCatalogBaseline(
+      dependencies,
+      { trigger: 'schedule', correlationId: 'scheduled-2' },
     );
-    assert.ok(!calls.some((call) => call.startsWith('push:') || call.startsWith('pr:')));
+    assert.deepEqual(result, {
+      outcome: 'pull-request', pullRequestNumber: 18, direction: 'forward',
+      autoMerge: 'unexpected-paths', activeRevision: 11, unexpectedPaths: ['app.json'],
+    });
+    assert.ok(calls.includes(
+      'push:chore(catalog): reconcile baseline to revision 11 [scheduled-2]',
+    ));
+    assert.ok(calls.includes('pr:scheduled-2'));
+    assert.deepEqual(reviewedUnexpectedPaths, ['app.json']);
+    assert.ok(!calls.some((call) => call.startsWith('checks:') || call.startsWith('merge:')));
   });
 
   it('fails closed when configuration or verification is missing', async () => {
