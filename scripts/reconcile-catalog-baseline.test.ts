@@ -36,6 +36,7 @@ describe('catalog baseline reconciliation', () => {
       pullRequestNumber: 18,
       pullRequestUrl: 'https://example.test/pr/18',
       autoMerge: 'enabled',
+      unexpectedPaths: [],
     });
     assert.deepEqual(fixture.calls, [
       'prepare',
@@ -43,23 +44,29 @@ describe('catalog baseline reconciliation', () => {
       'committed-revision',
       'write',
       'changed-paths',
-      'verify',
       'publish:forward:42:publication-123',
+      'verify',
+      'checks',
       'auto-merge',
     ]);
   });
 
-  it('rejects unexpected generated paths before verification or publication', async () => {
+  it('publishes allowed paths with unexpected-path review metadata and no auto-merge', async () => {
     const fixture = reconciliationFixture({
       committedRevision: 41,
       activeRevision: 42,
       changedPaths: ['src/data/bundles.ts', '.github/workflows/upload-testflight.yml'],
     });
 
-    await assert.rejects(
-      reconcileCatalogBaseline(fixture.request, fixture.dependencies),
-      /Refusing to publish unexpected paths: \.github\/workflows\/upload-testflight\.yml/,
-    );
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
+    assert.equal(result.status, 'pull-request');
+    if (result.status !== 'pull-request') return;
+    assert.equal(result.autoMerge, 'unexpected-paths');
+    assert.deepEqual(result.unexpectedPaths, ['.github/workflows/upload-testflight.yml']);
+    assert.deepEqual(fixture.published[0].unexpectedPaths, [
+      '.github/workflows/upload-testflight.yml',
+    ]);
     assert.deepEqual(fixture.calls, [
       'prepare',
       'is-current',
@@ -67,6 +74,9 @@ describe('catalog baseline reconciliation', () => {
       'write',
       'changed-paths',
       'disable-existing-auto-merge',
+      'publish:forward:42:publication-123',
+      'verify',
+      'disable-auto-merge',
     ]);
   });
 
@@ -84,6 +94,7 @@ describe('catalog baseline reconciliation', () => {
     assert.equal(result.direction, 'regression');
     assert.equal(result.autoMerge, 'not-eligible');
     assert.equal(fixture.calls.includes('auto-merge'), false);
+    assert.equal(fixture.calls.includes('checks'), false);
     assert.equal(fixture.calls.includes('disable-auto-merge'), true);
     assert.equal(fixture.calls.includes('disable-existing-auto-merge'), true);
     assert.ok(
@@ -108,7 +119,45 @@ describe('catalog baseline reconciliation', () => {
     assert.equal(result.pullRequestNumber, 18);
   });
 
-  it('does not publish when verification fails', async () => {
+  it('leaves a forward pull request open when required checks fail', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
+    });
+    fixture.dependencies.waitForRequiredChecks = async () => {
+      fixture.calls.push('checks');
+      return false;
+    };
+
+    const result = await reconcileCatalogBaseline(fixture.request, fixture.dependencies);
+
+    assert.equal(result.status, 'pull-request');
+    if (result.status !== 'pull-request') return;
+    assert.equal(result.autoMerge, 'checks-failed');
+    assert.equal(fixture.calls.includes('auto-merge'), false);
+  });
+
+  it('fails closed after publishing when required checks cannot be observed', async () => {
+    const fixture = reconciliationFixture({
+      committedRevision: 41,
+      activeRevision: 42,
+      changedPaths: ['src/data/bundles.ts'],
+    });
+    fixture.dependencies.waitForRequiredChecks = async () => {
+      fixture.calls.push('checks');
+      throw new Error('GitHub checks unavailable');
+    };
+
+    await assert.rejects(
+      reconcileCatalogBaseline(fixture.request, fixture.dependencies),
+      /GitHub checks unavailable/,
+    );
+    assert.equal(fixture.calls.some((call) => call.startsWith('publish:')), true);
+    assert.equal(fixture.calls.includes('auto-merge'), false);
+  });
+
+  it('keeps a reviewable pull request when local verification fails', async () => {
     const fixture = reconciliationFixture({
       committedRevision: 41,
       activeRevision: 42,
@@ -120,7 +169,8 @@ describe('catalog baseline reconciliation', () => {
       reconcileCatalogBaseline(fixture.request, fixture.dependencies),
       /Quality verification failed/,
     );
-    assert.equal(fixture.calls.some((call) => call.startsWith('publish:')), false);
+    assert.equal(fixture.calls.some((call) => call.startsWith('publish:')), true);
+    assert.ok(fixture.calls.indexOf('publish:forward:42:publication-123') < fixture.calls.indexOf('verify'));
   });
 
   it('fails before generation when required configuration is missing', async () => {
@@ -222,6 +272,10 @@ function reconciliationFixture({
         `publish:${details.direction}:${details.revision}:${details.correlationId}`,
       );
       return { pullRequestNumber: 18, pullRequestUrl: 'https://example.test/pr/18' };
+    },
+    waitForRequiredChecks: async () => {
+      calls.push('checks');
+      return true;
     },
     enableAutoMerge: async () => {
       calls.push('auto-merge');

@@ -186,7 +186,8 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
     if (terminalSessionId && visible.sessionId && visible.sessionId !== terminalSessionId) {
       return Promise.resolve();
     }
-    if (terminalSessionId && visible.sessionId === terminalSessionId) {
+    if ((terminalSessionId && visible.sessionId === terminalSessionId) ||
+      (!visible.sessionId && ['ended', 'idle'].includes(visible.status))) {
       const hidden = { ...emptySession, revision: visible.revision };
       sessionRef.current = hidden;
       setSession(hidden);
@@ -374,9 +375,18 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       ['waiting', 'joined'].includes(incoming.status)) {
       logSharePlay('session.dismissed-snapshot', { revision: incoming.revision }, true); return;
     }
+    const previous = sessionRef.current;
+    // Native teardown callbacks can trail activation of a replacement session.
+    // A terminal callback that identifies a different session is stale and must
+    // not clear the currently visible replacement, even when its revision is newer.
+    if (incoming.status === 'ended' && incoming.sessionId && previous.sessionId &&
+      incoming.sessionId !== previous.sessionId) {
+      dismissedSessions.current.add(incoming.sessionId);
+      logSharePlay('session.stale-terminal', { session: shortSharePlayId(incoming.sessionId) }, true);
+      return;
+    }
     nativeSessionRef.current = incoming;
     if (startupPending.current) return;
-    const previous = sessionRef.current;
     if (incoming.sessionId !== previous.sessionId) {
       hostElectionActive.current = false;
       electedHostId.current = null;

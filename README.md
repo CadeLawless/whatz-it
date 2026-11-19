@@ -193,6 +193,7 @@ publication and include this `client_payload`:
 ```json
 {
   "environment": "production",
+  "status": "succeeded",
   "published_revision": 42,
   "correlation_id": "publication-01J..."
 }
@@ -205,10 +206,11 @@ scoped GitHub App installation token rather than a personal access token.
 
 Each run independently fetches and verifies the active public manifest and its
 artifacts. Only `src/data/bundles.ts` and content-addressed files under
-`assets/images/decks/baseline/` may be committed. Forward revisions become
-auto-merge eligible after local lint, typecheck, test, and live-baseline checks;
-revision regressions stay open with auto-merge disabled. A failed check or an
-unexpected path stops publication. Neither reconciliation nor merging invokes
+`assets/images/decks/baseline/` are staged. Unexpected paths are included in
+review metadata and keep the pull request out of auto-merge. Forward revisions
+become auto-merge eligible after local lint, typecheck, test, and live-baseline
+checks; revision regressions stay open with auto-merge disabled. A failed check
+leaves the pull request open. Neither reconciliation nor merging invokes
 EAS, TestFlight, or a store submission.
 
 For recovery, correct missing variables or App installation permissions and
@@ -219,9 +221,46 @@ pull-request body to trace a publication end to end.
 
 ## Checks
 
+The canonical local and CI quality gate runs cacheless ESLint, TypeScript,
+the complete test suite, and a live read-only Bundled Catalog Baseline check,
+in that order. Set the production manifest URL before running it:
+
+```bash
+# PowerShell
+$env:CATALOG_MANIFEST_URL = 'https://api.example.com/api/v1/catalog/manifest'
+npm run quality
+
+# bash/zsh
+CATALOG_MANIFEST_URL=https://api.example.com/api/v1/catalog/manifest npm run quality
+```
+
+The command fails clearly when `CATALOG_MANIFEST_URL` is missing. Live catalog
+requests make at most three attempts for transient network failures, timeouts,
+rate limiting, and server errors; invalid data and integrity failures fail
+immediately. To enable the same gate in GitHub Actions, create the repository
+variable `CATALOG_MANIFEST_URL` under **Settings → Secrets and variables →
+Actions → Variables**. Use the public production HTTPS manifest URL; no secret
+credential is required or expected.
+
+After the workflow has completed successfully on `main`, an administrator must
+manually add **Canonical quality gate** as a required status check in the
+`main` branch protection rule (or ruleset). Repository workflows cannot safely
+make that governance change themselves.
+
+For individual checks:
+
 ```bash
 npm run typecheck
 npm run lint
+npm run test:node
+npm run test:react
+npm test
 ```
+
+`test:node` runs the platform-independent `*.test.ts` suites with Node's test
+runner. `test:react` runs the `*.react-test.tsx` component and provider suites
+through Jest and the Expo React Native preset. The aggregate `test` command
+runs both collections in that order; use it when a change crosses the pure
+logic and rendered React boundaries.
 
 See [PROJECT_PLAN.md](./PROJECT_PLAN.md) for the complete scope, milestones, architecture, and release criteria.

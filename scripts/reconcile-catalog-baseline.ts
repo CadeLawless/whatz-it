@@ -11,6 +11,16 @@ export type CatalogReconciliationRequest = {
   publishedRevision?: number;
 };
 
+export type CatalogPublishMetadata = {
+  branch: typeof CATALOG_BASELINE_BRANCH;
+  correlationId: string;
+  direction: 'forward' | 'regression';
+  environment: 'production';
+  publishedRevision?: number;
+  revision: number;
+  unexpectedPaths: string[];
+};
+
 export type CatalogReconciliationDependencies<
   Prepared extends PreparedCatalogBaseline = PreparedCatalogBaseline,
 > = {
@@ -20,14 +30,11 @@ export type CatalogReconciliationDependencies<
   write: (prepared: Prepared) => Promise<void>;
   changedPaths: () => Promise<string[]>;
   verify: () => Promise<void>;
-  publish: (details: {
-    branch: typeof CATALOG_BASELINE_BRANCH;
-    correlationId: string;
-    direction: 'forward' | 'regression';
-    environment: 'production';
-    publishedRevision?: number;
-    revision: number;
-  }) => Promise<{ pullRequestNumber: number; pullRequestUrl: string }>;
+  publish: (details: CatalogPublishMetadata) => Promise<{
+    pullRequestNumber: number;
+    pullRequestUrl: string;
+  }>;
+  waitForRequiredChecks: (pullRequestNumber: number) => Promise<boolean>;
   enableAutoMerge: (
     pullRequestNumber: number,
   ) => Promise<'enabled' | 'unavailable'>;
@@ -44,7 +51,8 @@ export type CatalogReconciliationResult =
       direction: 'forward' | 'regression';
       pullRequestNumber: number;
       pullRequestUrl: string;
-      autoMerge: 'enabled' | 'unavailable' | 'not-eligible';
+       autoMerge: 'enabled' | 'unavailable' | 'not-eligible' | 'checks-failed' | 'unexpected-paths';
+       unexpectedPaths: string[];
     };
 
 export async function reconcileCatalogBaseline<Prepared extends PreparedCatalogBaseline>(
@@ -74,13 +82,7 @@ export async function reconcileCatalogBaseline<Prepared extends PreparedCatalogB
   if (direction === 'regression' || unexpectedPaths.length > 0) {
     await dependencies.disableExistingAutoMerge();
   }
-  if (unexpectedPaths.length > 0) {
-    throw new Error(
-      `Refusing to publish unexpected paths: ${unexpectedPaths.join(', ')}`,
-    );
-  }
 
-  await dependencies.verify();
   const pullRequest = await dependencies.publish({
     branch: CATALOG_BASELINE_BRANCH,
     correlationId: request.correlationId,
@@ -88,10 +90,18 @@ export async function reconcileCatalogBaseline<Prepared extends PreparedCatalogB
     environment: request.environment,
     publishedRevision: request.publishedRevision,
     revision: prepared.revision,
+    unexpectedPaths,
   });
-  let autoMerge: 'enabled' | 'unavailable' | 'not-eligible' = 'not-eligible';
-  if (direction === 'forward') {
-    autoMerge = await dependencies.enableAutoMerge(pullRequest.pullRequestNumber);
+  // Publishing first preserves a reviewable PR even when local verification cannot
+  // complete. Automation authority remains limited to generated paths; unexpected
+  // content is exposed separately as review evidence and is never committed.
+  await dependencies.verify();
+  let autoMerge: 'enabled' | 'unavailable' | 'not-eligible' | 'checks-failed' |
+    'unexpected-paths' = unexpectedPaths.length > 0 ? 'unexpected-paths' : 'not-eligible';
+  if (direction === 'forward' && unexpectedPaths.length === 0) {
+    autoMerge = await dependencies.waitForRequiredChecks(pullRequest.pullRequestNumber)
+      ? await dependencies.enableAutoMerge(pullRequest.pullRequestNumber)
+      : 'checks-failed';
   } else {
     await dependencies.disableAutoMerge(pullRequest.pullRequestNumber);
   }
@@ -101,6 +111,7 @@ export async function reconcileCatalogBaseline<Prepared extends PreparedCatalogB
     direction,
     ...pullRequest,
     autoMerge,
+    unexpectedPaths,
   };
 }
 

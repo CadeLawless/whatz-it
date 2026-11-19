@@ -13,6 +13,7 @@ describe('catalog baseline reconciliation workflow contract', () => {
     assert.match(workflow, /schedule:\s*\n\s+- cron: ['"]\d+ \d+ \* \* \*['"]/);
     assert.match(workflow, /workflow_dispatch:/);
     assert.match(workflow, /client_payload\.environment == 'production'/);
+    assert.match(workflow, /client_payload\.status == 'succeeded'/);
     assert.match(workflow, /client_payload\.published_revision/);
     assert.match(workflow, /client_payload\.correlation_id/);
   });

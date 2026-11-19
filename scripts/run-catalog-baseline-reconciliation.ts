@@ -84,15 +84,9 @@ function runtimeDependencies({
     },
     changedPaths: gitChangedPaths,
     verify: async () => {
-      await npm(['run', 'typecheck']);
-      await npm(['test']);
-      await npm(['run', 'lint']);
-      await npm([
-        'run',
-        'catalog:baseline:check',
-        '--',
-        `--manifest-url=${manifestUrl}`,
-      ]);
+      // Keep reconciliation on the same single quality contract used by pull
+      // requests. CATALOG_MANIFEST_URL is already present in the workflow env.
+      await npm(['run', 'quality']);
     },
     publish: async (details) => {
       const previousPullRequest = await openPullRequest(repository);
@@ -129,6 +123,7 @@ function runtimeDependencies({
         manifestUrl,
         publishedRevision: details.publishedRevision,
         revision: details.revision,
+        unexpectedPaths: details.unexpectedPaths,
       });
       const existing = previousPullRequest ?? await openPullRequest(repository);
       if (existing) {
@@ -165,6 +160,21 @@ function runtimeDependencies({
       const created = await openPullRequest(repository);
       if (!created) throw new Error(`Created pull request was not discoverable: ${url}`);
       return { pullRequestNumber: created.number, pullRequestUrl: created.url };
+    },
+    waitForRequiredChecks: async (pullRequestNumber) => {
+      await gh([
+        'pr',
+        'checks',
+        String(pullRequestNumber),
+        '--repo',
+        repository,
+        '--required',
+        '--watch',
+        '--interval',
+        '10',
+        '--fail-fast',
+      ]);
+      return true;
     },
     enableAutoMerge: async (pullRequestNumber) => {
       const autoMergeAllowed = (await gh([
@@ -313,6 +323,7 @@ function pullRequestBody({
   manifestUrl,
   publishedRevision,
   revision,
+  unexpectedPaths,
 }: {
   correlationId: string;
   direction: 'forward' | 'regression';
@@ -320,9 +331,13 @@ function pullRequestBody({
   manifestUrl: string;
   publishedRevision?: number;
   revision: number;
+  unexpectedPaths: string[];
 }) {
   const regression = direction === 'regression'
     ? '\n\n> [!WARNING]\n> The active manifest revision is lower than main. This PR requires human review and will not be auto-merged.'
+    : '';
+  const unexpected = unexpectedPaths.length > 0
+    ? `\n\n> [!WARNING]\n> Unexpected changed paths were not staged and require human review: ${unexpectedPaths.map((path) => `\`${path}\``).join(', ')}`
     : '';
   return [
     '## Automated Bundled Catalog Baseline reconciliation',
@@ -336,6 +351,7 @@ function pullRequestBody({
     '',
     'Only generated baseline catalog source and content-addressed baseline assets are included.',
     regression,
+    unexpected,
   ].join('\n');
 }
 
@@ -343,6 +359,9 @@ function validatePublicationMetadata() {
   if (process.env.RECONCILIATION_TRIGGER !== 'publication') return;
   if (process.env.PUBLICATION_ENVIRONMENT !== 'production') {
     throw new Error('Publication reconciliation accepts only the production environment.');
+  }
+  if (process.env.PUBLICATION_STATUS !== 'succeeded') {
+    throw new Error('Publication reconciliation accepts only succeeded publications.');
   }
   if (optionalPositiveInteger(process.env.PUBLISHED_REVISION) === undefined) {
     throw new Error('A positive published revision is required for publication events.');
