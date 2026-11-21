@@ -27,16 +27,16 @@ const bundleCatalog: PortableCatalog =
 /* DECK_MANAGER_CATALOG_START */
 {
     "schemaVersion": 5,
-    "revision": 76,
-    "updatedAt": "2026-10-15T18:11:59Z",
+    "revision": 77,
+    "updatedAt": "2026-11-21T04:46:30Z",
     "decks": [
         {
             "id": "celebrity-shuffle",
             "order": 1,
-            "title": "Celebrity Shuffle",
+            "title": "Celebrity Shuffles",
             "description": "Hollywood Legends, famous musicians, sports heroes, and internet superstars.",
             "coverImage": "assets/images/decks/baseline/89c808874ae09c7d307861505979ac2061cb1f61d4af80d393daf8670c965629.webp",
-            "version": 14,
+            "version": 15,
             "cardContentVersion": 5,
             "cardCount": 303,
             "featuredCards": [
