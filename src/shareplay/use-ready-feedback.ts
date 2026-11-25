@@ -21,7 +21,7 @@ export function useSharePlayReadyFeedback() {
     const view = current.game.view;
     const localId = current.session.localParticipantId;
     if (!view || !localId || current.busy || current.session.status !== 'joined' ||
-      !['lobby', 'paused'].includes(view.phase) || view.ready.includes(localId) ||
+      view.phase !== 'lobby' || view.ready.includes(localId) ||
       AppState.currentState !== 'active') return;
     const at = performance.now();
     const key = `${view.roundId}:${view.phase}`;
@@ -29,7 +29,7 @@ export function useSharePlayReadyFeedback() {
     lastTap.current = { key, at };
     const isCurrent = () => mounted.current && AppState.currentState === 'active' &&
       latest.current.session.status === 'joined' && latest.current.game.view?.roundId === view.roundId &&
-      ['lobby', 'paused', 'countdown'].includes(latest.current.game.view.phase) &&
+      ['lobby', 'countdown'].includes(latest.current.game.view.phase) &&
       performance.now() - at < 1000;
     void triggerRoundHaptic('card-flip', { cameraActive: false });
     void prepareForSharePlay(isCurrent).then((ready) => {

@@ -144,13 +144,13 @@ test('Classic advances to the next guesser after an unanswered card', () => {
 });
 
 for (const pauseDuringFeedback of [false, true]) {
-  test(`pause during ${pauseDuringFeedback ? 'correct feedback' : 'next turn'} resumes the same next clue giver after readiness`, () => {
+  test(`pause during ${pauseDuringFeedback ? 'correct feedback' : 'next turn'} resumes the same next clue giver`, () => {
     const round = create(); start(round); correct(round, 3000);
     const pausedAt = pauseDuringFeedback ? 3100 : 3700;
     assert.equal(act(round, 'host', pausedAt, { kind: 'pause' }), 'accepted');
     assert.equal(round.viewFor('host', pausedAt)!.guesserId, 'bob');
-    for (const id of members) assert.equal(act(round, id, 5000, { kind: 'ready', contentHash }), 'accepted');
-    assert.equal(act(round, 'bob', 5000, { kind: 'resume' }), 'accepted');
+    assert.equal(act(round, 'bob', 5000, { kind: 'resume' }), 'rejected');
+    assert.equal(act(round, 'host', 5000, { kind: 'resume' }), 'accepted');
     const resumed = round.viewFor('bob', 8000)!;
     assert.equal(resumed.phase, 'playing');
     assert.equal(resumed.guesserId, 'bob');

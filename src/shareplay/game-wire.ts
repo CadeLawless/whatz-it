@@ -52,18 +52,21 @@ export function parseRemoteView(value: unknown, sessionId: string, recipientId: 
   const v = value as Record<string, unknown>;
   const participants = Array.isArray(v.participants) ? v.participants : [];
   if (!exact(v, ['sessionId', 'roundId', 'revision', 'phase', 'hostId', 'guesserId',
+    'controllerId', 'resumeOwnerId',
     'participants', 'ready', 'deck', 'durationSeconds', 'startsAt', 'deadline',
     'remainingMs', 'score', 'canAnswer', 'cardNonce', 'card', 'feedback', 'resultReason', 'results',
     ...(v.mode === undefined ? [] : ['mode']),
     ...(v.resultsViewingIds === undefined ? [] : ['resultsViewingIds'])]) ||
     (v.mode !== undefined && !['classic', 'pass-n-play'].includes(String(v.mode))) ||
     v.sessionId !== sessionId || !id(v.roundId) || !id(v.hostId) || !id(v.guesserId) ||
+    !id(v.controllerId) || !(v.resumeOwnerId === null || id(v.resumeOwnerId)) ||
     !Number.isSafeInteger(v.revision) || (v.revision as number) < 0 ||
     !['lobby', 'countdown', 'playing', 'feedback', 'paused', 'results', 'ended'].includes(String(v.phase)) ||
     !Array.isArray(v.participants) || participants.length < 1 ||
     !participants.every(id) || new Set(participants).size !== participants.length ||
     !participants.includes(recipientId) || !participants.includes(v.hostId) ||
-    !participants.includes(v.guesserId) ||
+    !participants.includes(v.guesserId) || !participants.includes(v.controllerId) ||
+    (v.resumeOwnerId !== null && !participants.includes(v.resumeOwnerId)) ||
     !Number.isInteger(v.durationSeconds) || (v.durationSeconds as number) < 30 || (v.durationSeconds as number) > 300 ||
     !Array.isArray(v.ready) || !v.ready.every((member: unknown) => id(member) && participants.includes(member)) ||
     (v.resultsViewingIds !== undefined && (!Array.isArray(v.resultsViewingIds) ||
@@ -94,6 +97,7 @@ export function parseRemoteView(value: unknown, sessionId: string, recipientId: 
   if (v.phase !== 'results' && v.results !== null) return null;
   if (v.phase !== 'playing' &&
     (v.card !== null || v.cardNonce !== null || v.canAnswer !== false)) return null;
+  if ((v.phase === 'paused') !== (v.resumeOwnerId !== null)) return null;
   return v as RemoteView;
 }
 

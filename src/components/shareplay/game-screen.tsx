@@ -63,7 +63,8 @@ export function SharePlayGameScreen() {
   const localId = sharePlay.session.localParticipantId;
   useSharePlayRoundCues(view, countdown, remainingMs, localId, sharePlay.gameVisible);
   const isTurnOwner = !!localId && (sharedView?.guesserId ?? view?.guesserId) === localId;
-  const canResume = canPlaySharedRound(sharePlay.session.participantIds, localId,
+  const isResumeOwner = !!localId && sharedView?.resumeOwnerId === localId;
+  const canResume = isResumeOwner && canPlaySharedRound(sharePlay.session.participantIds, localId,
     sharePlay.session.hostParticipantId, sharePlay.peers);
   const canPlayAgain = canPlayAgainFromResults(sharePlay.session.participantIds, view,
     sharedView, sharePlay.decks.selectedDeckId);
@@ -80,6 +81,8 @@ export function SharePlayGameScreen() {
         view?.phase === 'paused' ? 135 : 80);
   const guesserName = view?.guesserId === localId ? sharePlay.localPlayerName :
     sharePlay.playerNames[view?.guesserId ?? ''];
+  const resumeOwnerName = view?.resumeOwnerId === localId ? 'You' :
+    sharePlay.playerNames[view?.resumeOwnerId ?? ''] || 'The Resume Owner';
   const deckId = view?.deck.deckId ?? sharePlay.decks.selectedDeckId ?? sharePlay.session.activity?.deckId;
   const deckTitle = (deckId ? catalog.getDeckById(deckId)?.title : null) ??
     sharePlay.session.activity?.deckTitle ?? 'SharePlay';
@@ -162,12 +165,12 @@ export function SharePlayGameScreen() {
               <View style={styles.content}>
                 <Text style={styles.clock}>{clock}</Text>
                 <Text accessibilityRole="header" style={styles.title}>ROUND PAUSED</Text>
-                <Text style={styles.message}>The starting player can resume the round.</Text>
+                <Text style={styles.message}>{resumeOwnerName} can resume the round.</Text>
               </View>
             </View>
             <View style={styles.footer}>
               {reactionBar}
-              {isTurnOwner && <Action label="PLAY" disabled={!canResume} onPress={sharePlay.gameActions.resume} />}
+              {isResumeOwner && <Action label="PLAY" disabled={!canResume} onPress={sharePlay.gameActions.resume} />}
             </View>
           </>}
 

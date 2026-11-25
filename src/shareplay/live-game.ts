@@ -406,7 +406,8 @@ export class LiveGame {
     this.round = new RemoteRound({
       sessionId: current.sessionId, environment: this.callbacks.environment,
       hostId: current.localParticipantId, roundId: this.callbacks.uuid(), participants: players,
-      guesserId, initialReady: this.savedReady, durationSeconds: this.selectedDurationSeconds, mode: this.selectedMode,
+      guesserId, controllerId: guesserId, initialReady: this.savedReady,
+      durationSeconds: this.selectedDurationSeconds, mode: this.selectedMode,
       deck: { deckId, contentHash, sponsorId }, cards,
     }, () => `card-${++this.nonce}-${this.callbacks.uuid()}`);
     this.guesserId = guesserId;
