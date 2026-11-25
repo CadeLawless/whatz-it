@@ -3,7 +3,10 @@ import { act } from '@testing-library/react-native';
 import type { SharePlaySnapshot } from '../../modules/whatz-it-shareplay/src/WhatzItSharePlay.types';
 import { idleSnapshot, mountSharePlayProvider } from './session-provider.fixture';
 
-const setup = { deckId: 'animals', deckTitle: 'Animals', durationSeconds: 60, access: 'free' as const };
+const setup = {
+  deckId: 'animals', deckTitle: 'Animals', durationSeconds: 60,
+  mode: 'classic' as const, access: 'free' as const,
+};
 const waiting: SharePlaySnapshot = {
   revision: 1, status: 'waiting', sessionId: 'session-1', localParticipantId: 'cade',
   participantIds: ['cade'], isHost: true, hostParticipantId: 'cade',
@@ -19,6 +22,48 @@ beforeEach(() => jest.useFakeTimers());
 afterEach(() => {
   jest.clearAllTimers();
   jest.useRealTimers();
+});
+
+it.each([
+  { mode: 'classic', durationSeconds: 45 },
+  { mode: 'pass-n-play', durationSeconds: 120 },
+] as const)('seeds a $mode setup from the visible deck selection', async ({ mode, durationSeconds }) => {
+  const provider = mountSharePlayProvider();
+  await provider.flush();
+  const visibleSelection = { ...setup, mode, durationSeconds };
+
+  act(() => provider.value().open(visibleSelection));
+
+  expect(provider.value().setupMode).toBe(mode);
+  expect(provider.value().setup?.durationSeconds).toBe(durationSeconds);
+  expect(visibleSelection).toMatchObject({ mode, durationSeconds });
+  await provider.unmount();
+});
+
+it('keeps setup edits isolated and takes a fresh snapshot after close and reopen', async () => {
+  const provider = mountSharePlayProvider();
+  await provider.flush();
+  const firstVisibleSelection = { ...setup, mode: 'pass-n-play' as const, durationSeconds: 90 };
+
+  act(() => provider.value().open(firstVisibleSelection));
+  act(() => {
+    provider.value().updateSetupMode('classic');
+    provider.value().updateSetupDuration(180);
+  });
+  expect(provider.value()).toMatchObject({
+    setupMode: 'classic', setup: { durationSeconds: 180 },
+  });
+  expect(firstVisibleSelection).toMatchObject({ mode: 'pass-n-play', durationSeconds: 90 });
+
+  act(() => provider.value().close());
+  const nextVisibleSelection = { ...setup, mode: 'classic' as const, durationSeconds: 30 };
+  act(() => provider.value().open(nextVisibleSelection));
+
+  expect(provider.value()).toMatchObject({
+    setupMode: 'classic', setup: { durationSeconds: 30 }, isOpen: true,
+  });
+  expect(nextVisibleSelection).toMatchObject({ mode: 'classic', durationSeconds: 30 });
+  await provider.unmount();
 });
 
 it('leaves invitation cancellation immediately retryable', async () => {
