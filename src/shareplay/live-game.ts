@@ -8,6 +8,7 @@ import { MAX_ROUND_DURATION, MIN_ROUND_DURATION } from '@/game/round-duration';
 import type { GameMode } from '../game/game-types';
 import { canReactInPhase, SharePlayReactionGate, type SharePlayReactionEvent,
   type SharePlayReactionIndex } from './reactions';
+import { recoveryStandbyIds } from './host-election';
 
 type Callbacks = {
   environment: string;
@@ -67,8 +68,10 @@ export class LiveGame {
   private reactionGate = new SharePlayReactionGate();
   private resultsRoundId: string | null = null;
   private resultsViewers = new Set<string>();
-  private hostedRecovery: { checkpoint: RecoveryCheckpoint; standbyId: string; acknowledged: boolean } | null = null;
+  private hostedRecovery = new Map<string, { checkpoint: RecoveryCheckpoint; acknowledged: boolean }>();
   private standbyRecovery: { checkpoint: RecoveryCheckpoint; confirmed: boolean } | null = null;
+  private recoveryParts = new Map<string, { senderId: string; checkpointId: string; roundId: string;
+    revision: number; total: number; parts: Map<number, string> }>();
 
   constructor(private callbacks: Callbacks) {}
 
@@ -129,7 +132,7 @@ export class LiveGame {
       this.rememberedCards.clear();
       this.reactionGate.reset();
       this.resultsRoundId = null; this.resultsViewers.clear();
-      this.hostedRecovery = null; this.standbyRecovery = null;
+      this.hostedRecovery.clear(); this.standbyRecovery = null; this.recoveryParts.clear();
       this.round = null; this.guesserId = null; this.savedReady = []; this.autoStartNext = false; this.clock.reset();
       this.inventories.clear(); this.inventoryParts.clear(); this.pendingDeckRequest = null;
       this.selectedDeckId = next.activity?.deckId ?? null;
@@ -143,13 +146,17 @@ export class LiveGame {
       this.lastViewHostTime = -1; this.lastSelectionHostTime = -1; this.setView(null);
       this.lastPrepareAt = -Infinity;
     } else if (old && (next.hostParticipantId !== old.hostParticipantId || next.hostTerm !== old.hostTerm)) {
+      const lostPausedRound = this.view?.phase === 'paused';
       this.generation++;
       this.round = null; this.pendingDeckRequest = null; this.guesserId = null;
       this.resultsRoundId = null; this.resultsViewers.clear();
       this.clock.reset(); this.lastSnapshotAt = 0; this.lastHostTime = -1;
       this.lastViewHostTime = -1; this.lastSelectionHostTime = -1;
       this.setView(null);
-      if (old.hostParticipantId && !this.standbyRecovery?.confirmed) this.callbacks.onLobby();
+      if (old.hostParticipantId && !this.standbyRecovery?.confirmed) {
+        if (lostPausedRound) this.callbacks.onError('The paused round could not be recovered. Returning to the lobby.');
+        this.callbacks.onLobby();
+      }
     }
     this.session = next;
     if (next.isHost && next.status === 'joined' && next.localParticipantId && !this.round &&
@@ -158,7 +165,7 @@ export class LiveGame {
       this.round = RemoteRound.recover(this.standbyRecovery.checkpoint, next.localParticipantId,
         next.participantIds, performance.now(), () => this.callbacks.uuid());
       if (this.round) {
-        this.hostedRecovery = null;
+        this.hostedRecovery.clear();
         this.callbacks.trace?.('recovery.restored', { revision: this.standbyRecovery.checkpoint.revision });
         this.publish();
       }
@@ -184,7 +191,8 @@ export class LiveGame {
     this.refreshAvailableDecks();
     if (next.status !== 'joined' || !next.sessionId || !next.localParticipantId) {
       if (next.status === 'ended' || next.status === 'idle') {
-        this.round = null; this.hostedRecovery = null; this.standbyRecovery = null; this.setView(null);
+        this.round = null; this.hostedRecovery.clear(); this.standbyRecovery = null;
+        this.recoveryParts.clear(); this.setView(null);
       }
       return;
     }
@@ -452,7 +460,7 @@ export class LiveGame {
     local.resultsViewingIds = resultsViewingIds;
     this.setView(local);
     if (local.phase !== 'paused') {
-      this.hostedRecovery = null;
+      this.hostedRecovery.clear();
       this.standbyRecovery = null;
     }
     this.lastPublishAt = now;
@@ -470,22 +478,41 @@ export class LiveGame {
   private publishRecoveryCheckpoint(view: RemoteView) {
     const session = this.session;
     if (!this.round || !session?.isHost || !session.localParticipantId) return;
-    const standbyId = view.participants.filter((id) => id !== session.localParticipantId).sort()[0];
-    const existing = this.hostedRecovery;
-    if (!standbyId) return;
-    if (existing?.checkpoint.roundId === view.roundId && existing.checkpoint.revision === view.revision &&
-      existing.standbyId === standbyId) {
-      this.send(existing.acknowledged ? { version: 3, kind: 'recovery-confirm',
-        checkpointId: existing.checkpoint.checkpointId, roundId: existing.checkpoint.roundId,
-        revision: existing.checkpoint.revision } :
-        { version: 3, kind: 'recovery-checkpoint', checkpoint: existing.checkpoint }, [standbyId]);
+    const standbyIds = recoveryStandbyIds(view.participants, session.localParticipantId);
+    for (const id of [...this.hostedRecovery.keys()]) if (!standbyIds.includes(id)) this.hostedRecovery.delete(id);
+    for (const standbyId of standbyIds) {
+      let existing = this.hostedRecovery.get(standbyId);
+      if (!existing || existing.checkpoint.roundId !== view.roundId ||
+        existing.checkpoint.revision !== view.revision) {
+        const checkpoint = this.round.checkpoint(this.callbacks.uuid(), session.hostTerm ?? 0);
+        if (!checkpoint) continue;
+        existing = { checkpoint, acknowledged: false };
+        this.hostedRecovery.set(standbyId, existing);
+      }
+      if (existing.acknowledged) {
+        this.send({ version: 3, kind: 'recovery-confirm', checkpointId: existing.checkpoint.checkpointId,
+          roundId: existing.checkpoint.roundId, revision: existing.checkpoint.revision }, [standbyId]);
+      } else this.sendRecoveryCheckpoint(existing.checkpoint, standbyId);
+    }
+  }
+
+  private sendRecoveryCheckpoint(checkpoint: RecoveryCheckpoint, standbyId: string) {
+    const payload = JSON.stringify(checkpoint);
+    if (encodeURIComponent(payload).length <= 8_192) {
+      this.send({ version: 3, kind: 'recovery-checkpoint', checkpoint }, [standbyId]);
       return;
     }
-    const checkpointId = this.callbacks.uuid();
-    const checkpoint = this.round.checkpoint(checkpointId, session.hostTerm ?? 0);
-    if (!checkpoint) return;
-    this.hostedRecovery = { checkpoint, standbyId, acknowledged: false };
-    this.send({ version: 3, kind: 'recovery-checkpoint', checkpoint }, [standbyId]);
+    const generation = this.callbacks.uuid();
+    // 2,000 UTF-16 code units remain below the 16 KiB native envelope even
+    // when every character needs the largest URI encoding used by send().
+    const parts = payload.match(/[\s\S]{1,2000}/g) ?? [];
+    if (parts.length < 2 || parts.length > 64) {
+      this.callbacks.trace?.('recovery.oversize', { bytes: payload.length }, true);
+      return;
+    }
+    parts.forEach((part, index) => this.send({ version: 3, kind: 'recovery-checkpoint-part', generation,
+      checkpointId: checkpoint.checkpointId, roundId: checkpoint.roundId, revision: checkpoint.revision,
+      index, total: parts.length, payload: part }, [standbyId]));
   }
 
   receive(message: SharePlayMessage) {
@@ -510,21 +537,40 @@ export class LiveGame {
     }
     const fromHost = message.senderId === session.hostParticipantId &&
       (message.senderIsHost || session.electedHost === true);
+    if (wire.kind === 'recovery-checkpoint-part') {
+      if (session.isHost || !fromHost) return;
+      const key = `${message.senderId}:${wire.generation}`;
+      let pending = this.recoveryParts.get(key);
+      if (!pending) {
+        if (this.recoveryParts.size >= 8) this.recoveryParts.delete(this.recoveryParts.keys().next().value!);
+        pending = { senderId: message.senderId, checkpointId: wire.checkpointId, roundId: wire.roundId,
+          revision: wire.revision, total: wire.total, parts: new Map() };
+        this.recoveryParts.set(key, pending);
+      }
+      if (pending.senderId !== message.senderId || pending.checkpointId !== wire.checkpointId ||
+        pending.roundId !== wire.roundId || pending.revision !== wire.revision || pending.total !== wire.total) return;
+      pending.parts.set(wire.index, wire.payload);
+      if (pending.parts.size !== pending.total) return;
+      this.recoveryParts.delete(key);
+      const payload = Array.from({ length: pending.total }, (_, index) => pending!.parts.get(index)).join('');
+      let checkpoint: RecoveryCheckpoint | null = null;
+      try {
+        const candidate: unknown = JSON.parse(payload);
+        checkpoint = parseGameWire(JSON.stringify({ version: 3, kind: 'recovery-checkpoint',
+          checkpoint: candidate }))?.kind === 'recovery-checkpoint' ? candidate as RecoveryCheckpoint : null;
+      } catch { checkpoint = null; }
+      if (!checkpoint || checkpoint.checkpointId !== wire.checkpointId ||
+        checkpoint.roundId !== wire.roundId || checkpoint.revision !== wire.revision) return;
+      this.acceptRecoveryCheckpoint(checkpoint, message.senderId, fromHost);
+      return;
+    }
     if (wire.kind === 'recovery-checkpoint') {
-      if (session.isHost || !fromHost || wire.checkpoint.sessionId !== session.sessionId ||
-        wire.checkpoint.environment !== this.callbacks.environment ||
-        wire.checkpoint.authorityRevision !== (session.hostTerm ?? 0)) return;
-      const current = this.standbyRecovery?.checkpoint;
-      if (current && (wire.checkpoint.authorityRevision < current.authorityRevision ||
-        (wire.checkpoint.authorityRevision === current.authorityRevision && wire.checkpoint.revision < current.revision))) return;
-      this.standbyRecovery = { checkpoint: wire.checkpoint, confirmed: false };
-      this.send({ version: 3, kind: 'recovery-ack', checkpointId: wire.checkpoint.checkpointId,
-        roundId: wire.checkpoint.roundId, revision: wire.checkpoint.revision }, [message.senderId]);
+      this.acceptRecoveryCheckpoint(wire.checkpoint, message.senderId, fromHost);
       return;
     }
     if (wire.kind === 'recovery-ack') {
-      const hosted = this.hostedRecovery;
-      if (!session.isHost || !hosted || message.senderId !== hosted.standbyId ||
+      const hosted = this.hostedRecovery.get(message.senderId);
+      if (!session.isHost || !hosted ||
         wire.checkpointId !== hosted.checkpoint.checkpointId || wire.roundId !== hosted.checkpoint.roundId ||
         wire.revision !== hosted.checkpoint.revision) return;
       hosted.acknowledged = true;
@@ -708,6 +754,23 @@ export class LiveGame {
       if (!accepted || wasSynchronized !== this.synchronized)
         this.callbacks.trace?.('clock.reply', { accepted, synchronized: this.synchronized }, !accepted);
     }
+  }
+
+  private acceptRecoveryCheckpoint(checkpoint: RecoveryCheckpoint, senderId: string, fromHost: boolean) {
+    const session = this.session;
+    if (!session || session.isHost || !fromHost || checkpoint.sessionId !== session.sessionId ||
+      checkpoint.environment !== this.callbacks.environment ||
+      checkpoint.authorityRevision !== (session.hostTerm ?? 0)) return;
+    const current = this.standbyRecovery?.checkpoint;
+    if (current && (checkpoint.authorityRevision < current.authorityRevision ||
+      (checkpoint.authorityRevision === current.authorityRevision && checkpoint.revision <= current.revision))) {
+      if (checkpoint.checkpointId === current.checkpointId) this.send({ version: 3, kind: 'recovery-ack',
+        checkpointId: checkpoint.checkpointId, roundId: checkpoint.roundId, revision: checkpoint.revision }, [senderId]);
+      return;
+    }
+    this.standbyRecovery = { checkpoint, confirmed: false };
+    this.send({ version: 3, kind: 'recovery-ack', checkpointId: checkpoint.checkpointId,
+      roundId: checkpoint.roundId, revision: checkpoint.revision }, [senderId]);
   }
 
   private requestSnapshot() {

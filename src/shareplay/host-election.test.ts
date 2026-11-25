@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SharePlaySnapshot } from '../../modules/whatz-it-shareplay/src/WhatzItSharePlay.types';
 import { acceptsSharePlayHostClaim, recoveryHost, rejoinLobbyRecoveryTarget,
-  resolveSharePlayHost, shouldRecoverSharePlayHost } from './host-election';
+  recoveryStandbyIds, resolveSharePlayHost, shouldRecoverSharePlayHost } from './host-election';
 import { SharePlayParticipation } from './participation';
 
 const base: SharePlaySnapshot = {
@@ -50,6 +50,14 @@ test('heartbeat recovery automatically picks a connected player and ignores the 
   assert.equal(recoveryHost(base, ['inviter', 'bob']), 'alice');
   assert.equal(recoveryHost({ ...base, localParticipantId: 'bob' }, ['inviter', 'alice']), 'alice');
   assert.equal(recoveryHost(base, ['outsider']), 'alice');
+});
+
+test('recovery deterministically replicates to at most two standbys and prefers a surviving replica', () => {
+  assert.deepEqual(recoveryStandbyIds(['host', 'carol', 'alice', 'bob'], 'host'), ['alice', 'bob']);
+  assert.deepEqual(recoveryStandbyIds(['host', 'alice'], 'host'), ['alice']);
+  assert.equal(recoveryHost({ ...base, localParticipantId: 'carol',
+    participantIds: ['inviter', 'alice', 'bob', 'carol'] },
+    ['bob', 'carol']), 'bob');
 });
 
 test('rejoining and simultaneous host claims converge without a player vote', () => {
