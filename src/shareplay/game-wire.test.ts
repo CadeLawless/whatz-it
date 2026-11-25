@@ -824,3 +824,63 @@ test('host retries a lost deck inventory request after both phones join', async 
   assert.equal(host.currentView?.phase, 'lobby');
   assert.equal(host.currentView?.deck.sponsorId, 'guest');
 });
+
+test('an acknowledged standby restores and resumes a paused round after host departure', async (context) => {
+  let now = 1_000;
+  context.mock.method(performance, 'now', () => now);
+  let sequence = 0;
+  const deliveries: Promise<void>[] = [];
+  const kinds: string[] = [];
+  let host!: LiveGame;
+  let guest!: LiveGame;
+  const flush = async () => {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await Promise.all(deliveries.splice(0));
+      await Promise.resolve();
+    }
+  };
+  const common = { environment: 'test', uuid: () => `recovery-${++sequence}`,
+    digest: async () => hash, availableDeckIds: () => ['deck'],
+    onDecks: () => undefined, onView: () => undefined,
+    onError: (message: string) => { throw new Error(message); },
+    onActive: () => undefined, onLobby: () => undefined };
+  host = new LiveGame({ ...common, cards: () => [
+    { answer: 'FIRST SECRET', byline: '' }, { answer: 'SECOND SECRET', byline: '' },
+  ], send: async (body, recipients) => {
+    kinds.push(JSON.parse(body).kind);
+    if (recipients.includes('guest')) deliveries.push(Promise.resolve().then(() => guest.receive({
+      sessionId: 'session', senderId: 'host', senderIsHost: true, body,
+    })));
+  } });
+  guest = new LiveGame({ ...common, cards: () => null, send: async (body, recipients) => {
+    kinds.push(JSON.parse(body).kind);
+    if (recipients.includes('host')) deliveries.push(Promise.resolve().then(() => host.receive({
+      sessionId: 'session', senderId: 'guest', senderIsHost: false, body,
+    })));
+  } });
+  const hostSession = { ...session, localParticipantId: 'host', isHost: true, hostTerm: 0 };
+  host.setSession(hostSession);
+  guest.setSession({ ...session, hostTerm: 0 });
+  await flush();
+  host.act('ready'); guest.act('ready'); await flush();
+  host.act('start'); await flush();
+  now = 4_000; host.pulse(); await flush();
+  guest.act('pause'); await flush();
+  assert.equal(host.currentView?.phase, 'paused');
+  assert.equal(host.currentView?.resumeOwnerId, 'guest');
+  assert.deepEqual(kinds.filter((kind) => kind.startsWith('recovery-')),
+    ['recovery-checkpoint', 'recovery-ack', 'recovery-confirm']);
+
+  now = 5_000;
+  guest.setSession({ ...session, participantIds: ['guest'], isHost: true,
+    hostParticipantId: 'guest', electedHost: true, hostTerm: 1 });
+  assert.equal(guest.currentView?.phase, 'paused');
+  assert.equal(guest.currentView?.hostId, 'guest');
+  assert.equal(guest.currentView?.guesserId, 'guest');
+  assert.equal(guest.currentView?.resumeOwnerId, 'guest');
+  assert.equal(guest.currentView?.remainingMs, 60_000);
+  guest.act('resume');
+  assert.equal(guest.currentView?.phase, 'countdown');
+  assert.equal(guest.currentView?.startsAt, 8_000);
+  assert.equal(guest.currentView?.deadline, 68_000);
+});

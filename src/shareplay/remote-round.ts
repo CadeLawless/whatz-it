@@ -38,10 +38,59 @@ export type RemoteView = {
   results: (RemoteCard & { outcome: RemoteResultOutcome })[] | null;
   resultsViewingIds?: string[];
 };
+export type RecoveryCheckpoint = {
+  version: 1; authorityRevision: number; checkpointId: string;
+  sessionId: string; environment: string; roundId: string; revision: number;
+  hostId: string; guesserId: string; controllerId: string; resumeOwnerId: string;
+  participants: string[]; ready: string[]; mode: GameMode; durationSeconds: number;
+  deck: DeckAgreement; cards: RemoteCard[]; index: number; remainingMs: number;
+  outcomes: (RemoteCard & { outcome: RemoteResultOutcome })[]; acceptedCommands: string[];
+};
 
 const identifier = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-zA-Z0-9:_-]{1,128}$/.test(value);
 const hash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const checkpointCardFields = (value: unknown): value is RemoteCard => !!value && typeof value === 'object' &&
+  !Array.isArray(value) &&
+  typeof (value as RemoteCard).answer === 'string' && (value as RemoteCard).answer.length > 0 &&
+  (value as RemoteCard).answer.length <= 256 && typeof (value as RemoteCard).byline === 'string' &&
+  (value as RemoteCard).byline.length <= 256;
+
+export function validateRecoveryCheckpoint(value: unknown): value is RecoveryCheckpoint {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const keys = ['version', 'authorityRevision', 'checkpointId', 'sessionId', 'environment', 'roundId',
+    'revision', 'hostId', 'guesserId', 'controllerId', 'resumeOwnerId', 'participants', 'ready',
+    'mode', 'durationSeconds', 'deck', 'cards', 'index', 'remainingMs', 'outcomes', 'acceptedCommands'];
+  const participants = Array.isArray(v.participants) ? v.participants : [];
+  const deck = v.deck as Record<string, unknown> | null;
+  return Object.keys(v).sort().join() === keys.sort().join() && v.version === 1 &&
+    Number.isSafeInteger(v.authorityRevision) && (v.authorityRevision as number) >= 0 &&
+    Number.isSafeInteger(v.revision) && (v.revision as number) >= 0 &&
+    [v.checkpointId, v.sessionId, v.environment, v.roundId, v.hostId, v.guesserId,
+      v.controllerId, v.resumeOwnerId].every(identifier) &&
+    participants.length >= 2 && participants.length <= 32 && participants.every(identifier) &&
+    new Set(participants).size === participants.length &&
+    [v.hostId, v.guesserId, v.controllerId, v.resumeOwnerId].every((id) => participants.includes(id as string)) &&
+    Array.isArray(v.ready) && v.ready.every((id) => identifier(id) && participants.includes(id)) &&
+    new Set(v.ready).size === v.ready.length && ['classic', 'pass-n-play'].includes(String(v.mode)) &&
+    Number.isInteger(v.durationSeconds) && (v.durationSeconds as number) >= MIN_ROUND_DURATION &&
+    (v.durationSeconds as number) <= MAX_ROUND_DURATION && !!deck && !Array.isArray(deck) &&
+    Object.keys(deck).sort().join() === 'contentHash,deckId,sponsorId' && identifier(deck.deckId) &&
+    hash(deck.contentHash) && identifier(deck.sponsorId) && participants.includes(deck.sponsorId) &&
+    Array.isArray(v.cards) && v.cards.length > 0 && v.cards.length <= 1000 && v.cards.every((item) =>
+      checkpointCardFields(item) && Object.keys(item as Record<string, unknown>).sort().join() === 'answer,byline') &&
+    Number.isInteger(v.index) && (v.index as number) >= 0 && (v.index as number) < v.cards.length &&
+    Number.isFinite(v.remainingMs) && (v.remainingMs as number) >= 0 &&
+    (v.remainingMs as number) <= (v.durationSeconds as number) * 1000 &&
+    Array.isArray(v.outcomes) && v.outcomes.length === v.index && v.outcomes.every((item) =>
+      checkpointCardFields(item) && ['correct', 'pass', 'neutral'].includes(String((item as Record<string, unknown>).outcome)) &&
+      Object.keys(item as Record<string, unknown>).sort().join() === 'answer,byline,outcome') &&
+    Array.isArray(v.acceptedCommands) && v.acceptedCommands.length <= 4096 &&
+    v.acceptedCommands.every((key) => typeof key === 'string' &&
+      /^[a-zA-Z0-9:_-]{1,128}\/[a-zA-Z0-9:_-]{1,128}$/.test(key)) &&
+    new Set(v.acceptedCommands).size === v.acceptedCommands.length;
+}
 
 /** Strict command boundary; identity must come from the transport, never the JSON. */
 export function parseRemoteIntent(body: string): RemoteIntent | null {
@@ -82,10 +131,11 @@ export class RemoteRound {
   private remainingMs: number;
   private feedbackUntil = 0;
   private pendingHandoff = false;
-  private readonly controllerId: string;
+  private controllerId: string;
   private resumeOwnerId: string | null = null;
   private outcomes: (RemoteCard & { outcome: RemoteResultOutcome })[] = [];
   private lastNow = 0;
+  private recovered = false;
 
   constructor(config: RemoteRoundConfig, private readonly nextNonce: () => string) {
     const ids = [config.sessionId, config.environment, config.hostId, config.roundId, ...config.participants];
@@ -110,6 +160,54 @@ export class RemoteRound {
     this.members = [...config.participants];
     this.ready = new Set(config.initialReady?.filter((id) => this.members.includes(id)) ?? []);
     this.remainingMs = config.durationSeconds * 1000;
+  }
+
+  checkpoint(checkpointId: string, authorityRevision: number): RecoveryCheckpoint | null {
+    if (this.phase !== 'paused' || !this.resumeOwnerId || !identifier(checkpointId) ||
+      !Number.isSafeInteger(authorityRevision) || authorityRevision < 0) return null;
+    return {
+      version: 1, authorityRevision, checkpointId,
+      sessionId: this.config.sessionId, environment: this.config.environment,
+      roundId: this.config.roundId, revision: this.revision,
+      hostId: this.config.hostId, guesserId: this.config.guesserId,
+      controllerId: this.controllerId, resumeOwnerId: this.resumeOwnerId,
+      participants: [...this.members], ready: [...this.ready], mode: this.config.mode ?? 'classic',
+      durationSeconds: this.config.durationSeconds,
+      deck: { ...this.config.deck }, cards: this.config.cards.map((card) => ({ ...card })),
+      index: this.index, remainingMs: this.remainingMs,
+      outcomes: this.outcomes.map((outcome) => ({ ...outcome })),
+      acceptedCommands: [...this.accepted],
+    };
+  }
+
+  static recover(checkpoint: RecoveryCheckpoint, successorId: string, participants: string[],
+    now: number, nextNonce: () => string) {
+    if (!validateRecoveryCheckpoint(checkpoint) || !identifier(successorId) ||
+      !participants.includes(successorId) || !Number.isFinite(now) || now < 0) return null;
+    const active = checkpoint.participants.filter((id) => participants.includes(id));
+    if (!active.includes(successorId)) active.push(successorId);
+    const round = new RemoteRound({
+      sessionId: checkpoint.sessionId, environment: checkpoint.environment,
+      hostId: checkpoint.hostId, roundId: checkpoint.roundId,
+      participants: checkpoint.participants, guesserId: checkpoint.guesserId,
+      controllerId: checkpoint.controllerId, mode: checkpoint.mode,
+      durationSeconds: checkpoint.durationSeconds, deck: checkpoint.deck, cards: checkpoint.cards,
+    }, nextNonce);
+    round.config.hostId = successorId;
+    round.members = active;
+    round.config.guesserId = active.includes(checkpoint.guesserId) ? checkpoint.guesserId : successorId;
+    round.controllerId = active.includes(checkpoint.controllerId) ? checkpoint.controllerId : successorId;
+    round.resumeOwnerId = active.includes(checkpoint.resumeOwnerId) ? checkpoint.resumeOwnerId
+      : active.includes(round.config.guesserId) ? round.config.guesserId : round.controllerId;
+    round.ready = new Set(checkpoint.ready.filter((id) => active.includes(id)));
+    round.accepted = new Set(checkpoint.acceptedCommands);
+    round.revision = checkpoint.revision + 1;
+    round.phase = 'paused'; round.index = checkpoint.index;
+    round.remainingMs = checkpoint.remainingMs;
+    round.outcomes = checkpoint.outcomes.map((outcome) => ({ ...outcome }));
+    round.startsAt = null; round.deadline = null; round.nonce = null; round.lastNow = now;
+    round.recovered = true;
+    return round;
   }
 
   private finish(reason: RemoteResultReason) {
@@ -180,7 +278,7 @@ export class RemoteRound {
       case 'resume':
         if (senderId !== (intent.kind === 'start' ? this.config.guesserId : this.resumeOwnerId) ||
           this.phase !== (intent.kind === 'start' ? 'lobby' : 'paused') ||
-          this.members.length < 2 ||
+          (this.members.length < 2 && !this.recovered) ||
           !this.members.includes(this.config.guesserId) ||
           (intent.kind === 'start' && !this.members.includes(this.config.deck.sponsorId))) return 'rejected';
         this.phase = 'countdown'; this.startsAt = now + 3000; this.deadline = this.startsAt + this.remainingMs;

@@ -1,4 +1,5 @@
-import type { RemoteCard, RemoteIntent, RemoteView } from './remote-round';
+import { validateRecoveryCheckpoint, type RecoveryCheckpoint, type RemoteCard, type RemoteIntent,
+  type RemoteView } from './remote-round';
 import type { GameMode } from '../game/game-types';
 import { canSeeSharePlayAnswer } from './round-roles';
 import type { SharePlayReactionIndex, SharePlayReactionSet } from './reactions';
@@ -31,7 +32,10 @@ export type GameWire =
   | { version: 3; kind: 'clock-reply'; nonce: string; received: number; sent: number }
   | { version: 3; kind: 'inventory'; generation: string; index: number; total: number; deckIds: string[] }
   | { version: 3; kind: 'deck-request'; requestId: string; deckId: string }
-  | { version: 3; kind: 'deck-cards'; requestId: string; deckId: string; contentHash: string; cards: RemoteCard[] };
+  | { version: 3; kind: 'deck-cards'; requestId: string; deckId: string; contentHash: string; cards: RemoteCard[] }
+  | { version: 3; kind: 'recovery-checkpoint'; checkpoint: RecoveryCheckpoint }
+  | { version: 3; kind: 'recovery-ack' | 'recovery-confirm'; checkpointId: string;
+    roundId: string; revision: number };
 
 const id = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-zA-Z0-9:_-]{1,128}$/.test(value);
@@ -102,7 +106,7 @@ export function parseRemoteView(value: unknown, sessionId: string, recipientId: 
 }
 
 export function parseGameWire(body: string): GameWire | null {
-  if (body.length > 16_384) return null;
+  if (body.length > 262_144) return null;
   try {
     const raw: unknown = JSON.parse(body);
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -183,6 +187,12 @@ export function parseGameWire(body: string): GameWire | null {
         !id(v.requestId) || !id(v.deckId) || !/^[a-f0-9]{64}$/.test(String(v.contentHash)) ||
         !Array.isArray(v.cards) || v.cards.length < 1 || v.cards.length > 20 ||
         !v.cards.every(card)) return null;
+    } else if (v.kind === 'recovery-checkpoint') {
+      if (!exact(v, ['version', 'kind', 'checkpoint']) || !validateRecoveryCheckpoint(v.checkpoint)) return null;
+    } else if (v.kind === 'recovery-ack' || v.kind === 'recovery-confirm') {
+      if (!exact(v, ['version', 'kind', 'checkpointId', 'roundId', 'revision']) ||
+        !id(v.checkpointId) || !id(v.roundId) || !Number.isSafeInteger(v.revision) ||
+        (v.revision as number) < 0) return null;
     } else return null;
     return v as GameWire;
   } catch { return null; }
