@@ -29,7 +29,7 @@ function start(round: RemoteRound, participants = ['host', 'guesser']) {
   assert.equal(round.receive(starter, command(round, starter, 0, { kind: 'start' }), 0), 'accepted');
 }
 
-test('a prepared round can resume after its deck owner leaves, once all remaining players ready again', () => {
+test('a prepared round can resume after its deck owner leaves without another ready cycle', () => {
   const participants = ['host', 'guesser', 'owner'];
   const round = new RemoteRound({ sessionId: 'session', environment: 'test', hostId: 'host',
     roundId: 'round', participants, guesserId: 'guesser', durationSeconds: 30,
@@ -39,11 +39,55 @@ test('a prepared round can resume after its deck owner leaves, once all remainin
   round.removeParticipant('owner', 3000);
   assert.equal(round.viewFor('host', 3000)?.phase, 'playing');
   assert.equal(round.receive('host', command(round, 'host', 3001, { kind: 'pause' }), 3001), 'accepted');
-  assert.equal(round.receive('host', command(round, 'host', 3002, { kind: 'ready', contentHash }), 3002), 'accepted');
-  assert.equal(round.receive('host', command(round, 'host', 3002, { kind: 'resume' }), 3002), 'rejected');
-  assert.equal(round.receive('guesser', command(round, 'guesser', 3003, { kind: 'ready', contentHash }), 3003), 'accepted');
-  assert.equal(round.receive('guesser', command(round, 'guesser', 3003, { kind: 'resume' }), 3003), 'accepted');
+  assert.equal(round.receive('host', command(round, 'host', 3002, { kind: 'ready', contentHash }), 3002), 'rejected');
+  assert.equal(round.receive('guesser', command(round, 'guesser', 3002, { kind: 'resume' }), 3002), 'rejected');
+  assert.equal(round.receive('host', command(round, 'host', 3003, { kind: 'resume' }), 3003), 'accepted');
   assert.equal(round.viewFor('host', 3003)?.phase, 'countdown');
+});
+
+test('resume authority survives stale commands, transfers on departure, and is not reclaimed on rejoin', () => {
+  const participants = ['host', 'controller', 'turn', 'pauser'];
+  const round = new RemoteRound({
+    sessionId: 'session', environment: 'test', hostId: 'host', roundId: 'round', participants,
+    guesserId: 'turn', controllerId: 'controller', durationSeconds: 30,
+    deck: { deckId: 'deck', contentHash, sponsorId: 'host' },
+    cards: [{ answer: 'ANSWER', byline: '' }],
+  }, () => 'card-nonce');
+  start(round, participants);
+
+  const staleResume = command(round, 'pauser', 2999, { kind: 'resume' });
+  const pause = command(round, 'pauser', 3000, { kind: 'pause' });
+  assert.equal(round.receive('pauser', pause, 3000), 'accepted');
+  assert.equal(round.receive('pauser', pause, 3000), 'duplicate');
+  const paused = round.viewFor('host', 3000)!;
+  assert.equal(paused.resumeOwnerId, 'pauser');
+  assert.equal(paused.guesserId, 'turn');
+  assert.equal(paused.controllerId, 'controller');
+  assert.equal(paused.hostId, 'host');
+  assert.equal(round.receive('pauser', staleResume, 3000), 'rejected');
+  assert.equal(round.receive('turn', command(round, 'turn', 3000, { kind: 'resume' }), 3000), 'rejected');
+
+  round.removeParticipant('pauser', 3001);
+  assert.equal(round.viewFor('host', 3001)?.resumeOwnerId, 'turn');
+  round.addParticipant('pauser', 3002);
+  assert.equal(round.viewFor('host', 3002)?.resumeOwnerId, 'turn');
+  assert.equal(round.receive('pauser', command(round, 'pauser', 3002, { kind: 'resume' }), 3002), 'rejected');
+  assert.equal(round.receive('turn', command(round, 'turn', 3002, { kind: 'resume' }), 3002), 'accepted');
+});
+
+test('a departing Resume Owner who was also Turn Owner falls back to the Session Controller', () => {
+  const participants = ['host', 'controller', 'turn'];
+  const round = new RemoteRound({
+    sessionId: 'session', environment: 'test', hostId: 'host', roundId: 'round', participants,
+    guesserId: 'turn', controllerId: 'controller', durationSeconds: 30,
+    deck: { deckId: 'deck', contentHash, sponsorId: 'host' },
+    cards: [{ answer: 'ANSWER', byline: '' }],
+  }, () => 'card-nonce');
+  start(round, participants);
+  assert.equal(round.receive('turn', command(round, 'turn', 3000, { kind: 'pause' }), 3000), 'accepted');
+  round.removeParticipant('turn', 3001);
+  assert.equal(round.viewFor('host', 3001)?.resumeOwnerId, 'controller');
+  assert.equal(round.receive('controller', command(round, 'controller', 3001, { kind: 'resume' }), 3001), 'accepted');
 });
 
 test('guesser projections never contain card content before results; controls follow roles', () => {
@@ -106,7 +150,7 @@ test('expiry wins against answers and pause, including without a timer tick arri
   assert.equal(round.viewFor('host', 34000)?.revision, revision);
 });
 
-test('readiness requires matching deck content and every participant; resume requires fresh readiness', () => {
+test('readiness is limited to the lobby and resume belongs to the participant who paused', () => {
   const round = create();
   assert.equal(round.receive('guesser', command(round, 'guesser', 0, { kind: 'ready', contentHash: 'b'.repeat(64) }), 0), 'rejected');
   assert.equal(round.receive('host', command(round, 'host', 0, { kind: 'start' }), 0), 'rejected');
@@ -114,15 +158,16 @@ test('readiness requires matching deck content and every participant; resume req
   assert.equal(round.receive('host', command(round, 'host', 5000, { kind: 'pause' }), 5000), 'accepted');
   assert.equal(round.viewFor('host', 5000)?.card, null);
   assert.equal(round.viewFor('host', 5000)?.remainingMs, 28000);
-  assert.equal(round.receive('host', command(round, 'host', 6000, { kind: 'resume' }), 6000), 'rejected');
-  for (const id of ['host', 'guesser']) round.receive(id, command(round, id, 6000, { kind: 'ready', contentHash }), 6000);
-  assert.equal(round.receive('guesser', command(round, 'guesser', 6000, { kind: 'resume' }), 6000), 'accepted');
+  assert.equal(round.receive('guesser', command(round, 'guesser', 6000, { kind: 'resume' }), 6000), 'rejected');
+  for (const id of ['host', 'guesser'])
+    assert.equal(round.receive(id, command(round, id, 6000, { kind: 'ready', contentHash }), 6000), 'rejected');
+  assert.equal(round.receive('host', command(round, 'host', 6000, { kind: 'resume' }), 6000), 'accepted');
   assert.equal(round.viewFor('host', 6000)?.deadline, 37000);
   assert.equal(round.viewFor('host', 8999)?.card, null);
   assert.equal(round.viewFor('host', 9000)?.phase, 'playing');
 });
 
-test('readiness from before a pause cannot acknowledge the new paused state', () => {
+test('paused rounds reject both delayed and current readiness commands', () => {
   const round = create();
   const delayedReady = command(round, 'guesser', 0, { kind: 'ready', contentHash });
   start(round);
@@ -130,12 +175,11 @@ test('readiness from before a pause cannot acknowledge the new paused state', ()
   assert.equal(round.receive('guesser', delayedReady, 4000), 'rejected');
   assert.deepEqual(round.viewFor('host', 4000)?.ready, []);
 
-  // Both players can still acknowledge the same paused snapshot concurrently.
   const hostReady = command(round, 'host', 4000, { kind: 'ready', contentHash });
   const guestReady = command(round, 'guesser', 4000, { kind: 'ready', contentHash });
-  assert.equal(round.receive('host', hostReady, 4000), 'accepted');
-  assert.equal(round.receive('guesser', guestReady, 4000), 'accepted');
-  assert.equal(round.receive('guesser', command(round, 'guesser', 4000, { kind: 'resume' }), 4000), 'accepted');
+  assert.equal(round.receive('host', hostReady, 4000), 'rejected');
+  assert.equal(round.receive('guesser', guestReady, 4000), 'rejected');
+  assert.equal(round.receive('host', command(round, 'host', 4000, { kind: 'resume' }), 4000), 'accepted');
 });
 
 test('a roster change keeps readiness from remaining players', () => {
@@ -197,7 +241,6 @@ test('a member can pause after a missed countdown transition, but cannot resume 
   assert.equal(round.viewFor('host', 3000)?.phase, 'paused');
   assert.equal(round.viewFor('host', 3000)?.card, null);
   assert.equal(round.viewFor('host', 3000)?.remainingMs, 30000);
-  for (const id of ['host', 'guesser']) round.receive(id, command(round, id, 3000, { kind: 'ready', contentHash }), 3000);
   assert.equal(round.receive('host', staleResume, 3000), 'rejected');
   assert.equal(round.receive('guesser', command(round, 'guesser', 3000, { kind: 'resume' }), 3000), 'accepted');
 });
