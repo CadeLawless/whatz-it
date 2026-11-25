@@ -2,7 +2,8 @@ import type { SharePlayMessage, SharePlaySnapshot } from '../../modules/whatz-it
 import { RemoteClock } from './remote-clock';
 import { parseProbe } from './connection-probe';
 import { parseGameWire, parseRemoteView, type GameControl, type GameWire, type SetupControl } from './game-wire';
-import { RemoteRound, type RemoteCard, type RemoteIntent, type RemoteOutcome, type RemoteView } from './remote-round';
+import { RemoteRound, type RecoveryCheckpoint, type RemoteCard, type RemoteIntent, type RemoteOutcome,
+  type RemoteView } from './remote-round';
 import { MAX_ROUND_DURATION, MIN_ROUND_DURATION } from '@/game/round-duration';
 import type { GameMode } from '../game/game-types';
 import { canReactInPhase, SharePlayReactionGate, type SharePlayReactionEvent,
@@ -66,6 +67,8 @@ export class LiveGame {
   private reactionGate = new SharePlayReactionGate();
   private resultsRoundId: string | null = null;
   private resultsViewers = new Set<string>();
+  private hostedRecovery: { checkpoint: RecoveryCheckpoint; standbyId: string; acknowledged: boolean } | null = null;
+  private standbyRecovery: { checkpoint: RecoveryCheckpoint; confirmed: boolean } | null = null;
 
   constructor(private callbacks: Callbacks) {}
 
@@ -126,6 +129,7 @@ export class LiveGame {
       this.rememberedCards.clear();
       this.reactionGate.reset();
       this.resultsRoundId = null; this.resultsViewers.clear();
+      this.hostedRecovery = null; this.standbyRecovery = null;
       this.round = null; this.guesserId = null; this.savedReady = []; this.autoStartNext = false; this.clock.reset();
       this.inventories.clear(); this.inventoryParts.clear(); this.pendingDeckRequest = null;
       this.selectedDeckId = next.activity?.deckId ?? null;
@@ -139,17 +143,26 @@ export class LiveGame {
       this.lastViewHostTime = -1; this.lastSelectionHostTime = -1; this.setView(null);
       this.lastPrepareAt = -Infinity;
     } else if (old && (next.hostParticipantId !== old.hostParticipantId || next.hostTerm !== old.hostTerm)) {
-      // The former host's hidden card order and clock cannot be reconstructed
-      // from guest views. Start a fresh lobby under the elected host.
       this.generation++;
       this.round = null; this.pendingDeckRequest = null; this.guesserId = null;
       this.resultsRoundId = null; this.resultsViewers.clear();
       this.clock.reset(); this.lastSnapshotAt = 0; this.lastHostTime = -1;
       this.lastViewHostTime = -1; this.lastSelectionHostTime = -1;
       this.setView(null);
-      if (old.hostParticipantId) this.callbacks.onLobby();
+      if (old.hostParticipantId && !this.standbyRecovery?.confirmed) this.callbacks.onLobby();
     }
     this.session = next;
+    if (next.isHost && next.status === 'joined' && next.localParticipantId && !this.round &&
+      this.standbyRecovery?.confirmed &&
+      this.standbyRecovery.checkpoint.authorityRevision < (next.hostTerm ?? 0)) {
+      this.round = RemoteRound.recover(this.standbyRecovery.checkpoint, next.localParticipantId,
+        next.participantIds, performance.now(), () => this.callbacks.uuid());
+      if (this.round) {
+        this.hostedRecovery = null;
+        this.callbacks.trace?.('recovery.restored', { revision: this.standbyRecovery.checkpoint.revision });
+        this.publish();
+      }
+    }
     if (next.status === 'joined' && next.participantIds.length === 1 && next.localParticipantId) {
       // A prepared round needs two players. Keep its setup choices, but give
       // control to the remaining player instead of retaining a departed guesser.
@@ -171,7 +184,7 @@ export class LiveGame {
     this.refreshAvailableDecks();
     if (next.status !== 'joined' || !next.sessionId || !next.localParticipantId) {
       if (next.status === 'ended' || next.status === 'idle') {
-        this.round = null; this.setView(null);
+        this.round = null; this.hostedRecovery = null; this.standbyRecovery = null; this.setView(null);
       }
       return;
     }
@@ -206,6 +219,7 @@ export class LiveGame {
 
   private setView(view: RemoteView | null) {
     const previous = this.view;
+    if (view && view.phase !== 'paused') this.standbyRecovery = null;
     if (this.session?.isHost && view?.phase === 'results' && this.resultsRoundId !== view.roundId) {
       this.resultsRoundId = view.roundId;
       this.resultsViewers = new Set(view.participants);
@@ -437,6 +451,10 @@ export class LiveGame {
     const resultsViewingIds = [...this.resultsViewers].filter((id) => local.participants.includes(id));
     local.resultsViewingIds = resultsViewingIds;
     this.setView(local);
+    if (local.phase !== 'paused') {
+      this.hostedRecovery = null;
+      this.standbyRecovery = null;
+    }
     this.lastPublishAt = now;
     for (const id of local.participants) {
       if (id === session.localParticipantId) continue;
@@ -446,6 +464,28 @@ export class LiveGame {
         this.send({ version: 3, kind: 'view', view, hostTime: now }, [id]);
       }
     }
+    if (local.phase === 'paused') this.publishRecoveryCheckpoint(local);
+  }
+
+  private publishRecoveryCheckpoint(view: RemoteView) {
+    const session = this.session;
+    if (!this.round || !session?.isHost || !session.localParticipantId) return;
+    const standbyId = view.participants.filter((id) => id !== session.localParticipantId).sort()[0];
+    const existing = this.hostedRecovery;
+    if (!standbyId) return;
+    if (existing?.checkpoint.roundId === view.roundId && existing.checkpoint.revision === view.revision &&
+      existing.standbyId === standbyId) {
+      this.send(existing.acknowledged ? { version: 3, kind: 'recovery-confirm',
+        checkpointId: existing.checkpoint.checkpointId, roundId: existing.checkpoint.roundId,
+        revision: existing.checkpoint.revision } :
+        { version: 3, kind: 'recovery-checkpoint', checkpoint: existing.checkpoint }, [standbyId]);
+      return;
+    }
+    const checkpointId = this.callbacks.uuid();
+    const checkpoint = this.round.checkpoint(checkpointId, session.hostTerm ?? 0);
+    if (!checkpoint) return;
+    this.hostedRecovery = { checkpoint, standbyId, acknowledged: false };
+    this.send({ version: 3, kind: 'recovery-checkpoint', checkpoint }, [standbyId]);
   }
 
   receive(message: SharePlayMessage) {
@@ -470,6 +510,35 @@ export class LiveGame {
     }
     const fromHost = message.senderId === session.hostParticipantId &&
       (message.senderIsHost || session.electedHost === true);
+    if (wire.kind === 'recovery-checkpoint') {
+      if (session.isHost || !fromHost || wire.checkpoint.sessionId !== session.sessionId ||
+        wire.checkpoint.environment !== this.callbacks.environment ||
+        wire.checkpoint.authorityRevision !== (session.hostTerm ?? 0)) return;
+      const current = this.standbyRecovery?.checkpoint;
+      if (current && (wire.checkpoint.authorityRevision < current.authorityRevision ||
+        (wire.checkpoint.authorityRevision === current.authorityRevision && wire.checkpoint.revision < current.revision))) return;
+      this.standbyRecovery = { checkpoint: wire.checkpoint, confirmed: false };
+      this.send({ version: 3, kind: 'recovery-ack', checkpointId: wire.checkpoint.checkpointId,
+        roundId: wire.checkpoint.roundId, revision: wire.checkpoint.revision }, [message.senderId]);
+      return;
+    }
+    if (wire.kind === 'recovery-ack') {
+      const hosted = this.hostedRecovery;
+      if (!session.isHost || !hosted || message.senderId !== hosted.standbyId ||
+        wire.checkpointId !== hosted.checkpoint.checkpointId || wire.roundId !== hosted.checkpoint.roundId ||
+        wire.revision !== hosted.checkpoint.revision) return;
+      hosted.acknowledged = true;
+      this.send({ ...wire, kind: 'recovery-confirm' }, [message.senderId]);
+      return;
+    }
+    if (wire.kind === 'recovery-confirm') {
+      const stored = this.standbyRecovery;
+      if (session.isHost || !fromHost || !stored || wire.checkpointId !== stored.checkpoint.checkpointId ||
+        wire.roundId !== stored.checkpoint.roundId || wire.revision !== stored.checkpoint.revision) return;
+      stored.confirmed = true;
+      this.callbacks.trace?.('recovery.acknowledged', { revision: wire.revision });
+      return;
+    }
     if (fromHost && ['view', 'deck-selection', 'clock-reply', 'host-transfer', 'session-end'].includes(wire.kind))
       this.callbacks.onHostActivity?.();
     if (wire.kind === 'session-end') {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseRemoteIntent, RemoteRound, type RemoteView } from './remote-round';
+import { parseRemoteIntent, RemoteRound, validateRecoveryCheckpoint, type RemoteView } from './remote-round';
 import { parseRemoteView } from './game-wire';
 import { RemoteClock } from './remote-clock';
 import { SimulatedTransport } from './simulated-transport';
@@ -88,6 +88,23 @@ test('a departing Resume Owner who was also Turn Owner falls back to the Session
   round.removeParticipant('turn', 3001);
   assert.equal(round.viewFor('host', 3001)?.resumeOwnerId, 'controller');
   assert.equal(round.receive('controller', command(round, 'controller', 3001, { kind: 'resume' }), 3001), 'accepted');
+});
+
+test('a recovery checkpoint is strict and preserves duplicate-command protection', () => {
+  const round = create(); start(round);
+  const pause = command(round, 'guesser', 3_000, { kind: 'pause' });
+  assert.equal(round.receive('guesser', pause, 3_000), 'accepted');
+  const checkpoint = round.checkpoint('checkpoint-1', 4)!;
+  assert.equal(validateRecoveryCheckpoint(checkpoint), true);
+  assert.equal(validateRecoveryCheckpoint({ ...checkpoint, unexpected: true }), false);
+  assert.equal(validateRecoveryCheckpoint({ ...checkpoint, remainingMs: 99_999 }), false);
+
+  const recovered = RemoteRound.recover(checkpoint, 'guesser', ['guesser'], 10_000, () => 'new-nonce')!;
+  assert.equal(recovered.receive('guesser', pause, 10_000), 'duplicate');
+  assert.equal(recovered.viewFor('guesser', 10_000)?.hostId, 'guesser');
+  assert.equal(recovered.viewFor('guesser', 10_000)?.resumeOwnerId, 'guesser');
+  assert.equal(recovered.receive('guesser', command(recovered, 'guesser', 10_000, { kind: 'resume' }), 10_000), 'accepted');
+  assert.equal(recovered.viewFor('guesser', 10_000)?.deadline, 43_000);
 });
 
 test('guesser projections never contain card content before results; controls follow roles', () => {
