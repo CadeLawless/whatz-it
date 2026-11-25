@@ -33,6 +33,7 @@ const emptySession: SharePlaySnapshot = {
   participantIds: [], isHost: false, hostParticipantId: null, activity: null,
 };
 type Setup = Pick<SharePlayActivity, 'deckId' | 'deckTitle' | 'durationSeconds'> & { access: 'free' | 'paid' };
+type OpenSetup = Setup & { mode: GameMode };
 type SharePlayContextValue = {
   enabled: boolean;
   available: boolean;
@@ -73,7 +74,7 @@ type SharePlayContextValue = {
     endGame: () => void;
   };
   closeGame: () => void;
-  open: (setup: Setup) => void;
+  open: (setup: OpenSetup) => void;
   updateSetupDuration: (seconds: number) => void;
   updateSetupMode: (mode: GameMode) => void;
   updateSetupDeck: (deckId: string) => void;
@@ -831,9 +832,9 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
       setGameVisible(false); gameActive.current = false; manualLobby.current = true; setOpen(true);
       if (sessionRef.current.isHost) liveGame.current?.returnToLobby();
     },
-    open(next) {
+    open({ mode, ...next }) {
       if (!enabled) return;
-      setupModeRef.current = 'classic'; setSetupMode('classic');
+      setupModeRef.current = mode; setSetupMode(mode);
       setSetup(next); setOpen(true); setSharePlayAudioBlocked(true);
       // Preserve startup failures so an unavailable build has a useful explanation.
       if (initialized) setError(null);

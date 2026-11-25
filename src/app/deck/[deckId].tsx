@@ -303,7 +303,7 @@ export default function DeckDetailsScreen() {
             onBack={handleBack}
             onSettings={() => router.push('/settings')}
             onSharePlay={sharePlay.enabled ? () => sharePlay.open({
-              deckId: deck.id, deckTitle: deck.title, durationSeconds: duration, access: deck.access,
+              deckId: deck.id, deckTitle: deck.title, durationSeconds: duration, mode, access: deck.access,
             }) : undefined}
           />
           <View style={styles.mainContent}>
