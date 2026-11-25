@@ -52,7 +52,16 @@ export function acceptsSharePlayHostClaim(currentId: string | null, currentTerm:
 }
 
 export function recoveryHost(snapshot: SharePlaySnapshot, responsiveIds: string[]) {
-  return [...new Set([snapshot.localParticipantId, ...responsiveIds])]
+  const responsive = new Set([snapshot.localParticipantId, ...responsiveIds]);
+  const standby = recoveryStandbyIds(snapshot.participantIds, snapshot.hostParticipantId)
+    .find((id) => responsive.has(id));
+  if (standby) return standby;
+  return [...responsive]
     .filter((id): id is string => !!id && snapshot.participantIds.includes(id) &&
       id !== snapshot.hostParticipantId).sort()[0] ?? snapshot.localParticipantId;
+}
+
+/** Every participant can derive the same bounded recovery replicas without exchanging extra state. */
+export function recoveryStandbyIds(participantIds: string[], hostParticipantId: string | null) {
+  return participantIds.filter((id) => id !== hostParticipantId).sort().slice(0, 2);
 }

@@ -21,6 +21,17 @@ const session: SharePlaySnapshot = {
     deckId: 'deck', deckTitle: 'Deck', durationSeconds: 60, hostPublicKey: 'key' },
 };
 
+test('recovery checkpoint chunks require bounded, self-consistent framing', () => {
+  const valid = { version: 3, kind: 'recovery-checkpoint-part', generation: 'generation-1',
+    checkpointId: 'checkpoint-1', roundId: 'round-1', revision: 7, index: 1, total: 2,
+    payload: '{"part":2}' };
+  assert.deepEqual(parseGameWire(JSON.stringify(valid)), valid);
+  assert.equal(parseGameWire(JSON.stringify({ ...valid, index: 2 })), null);
+  assert.equal(parseGameWire(JSON.stringify({ ...valid, total: 65 })), null);
+  assert.equal(parseGameWire(JSON.stringify({ ...valid, payload: 'x'.repeat(2_049) })), null);
+  assert.equal(parseGameWire(JSON.stringify({ ...valid, unexpected: true })), null);
+});
+
 test('a request from a perceived host does not keep a stalled election alive', () => {
   let hostActivity = 0;
   const game = new LiveGame({ environment: 'test', uuid: () => 'heartbeat-test',

@@ -34,6 +34,8 @@ export type GameWire =
   | { version: 3; kind: 'deck-request'; requestId: string; deckId: string }
   | { version: 3; kind: 'deck-cards'; requestId: string; deckId: string; contentHash: string; cards: RemoteCard[] }
   | { version: 3; kind: 'recovery-checkpoint'; checkpoint: RecoveryCheckpoint }
+  | { version: 3; kind: 'recovery-checkpoint-part'; generation: string; checkpointId: string;
+    roundId: string; revision: number; index: number; total: number; payload: string }
   | { version: 3; kind: 'recovery-ack' | 'recovery-confirm'; checkpointId: string;
     roundId: string; revision: number };
 
@@ -189,6 +191,13 @@ export function parseGameWire(body: string): GameWire | null {
         !v.cards.every(card)) return null;
     } else if (v.kind === 'recovery-checkpoint') {
       if (!exact(v, ['version', 'kind', 'checkpoint']) || !validateRecoveryCheckpoint(v.checkpoint)) return null;
+    } else if (v.kind === 'recovery-checkpoint-part') {
+      if (!exact(v, ['version', 'kind', 'generation', 'checkpointId', 'roundId', 'revision',
+        'index', 'total', 'payload']) || !id(v.generation) || !id(v.checkpointId) || !id(v.roundId) ||
+        !Number.isSafeInteger(v.revision) || (v.revision as number) < 0 ||
+        !Number.isInteger(v.index) || !Number.isInteger(v.total) || (v.total as number) < 2 ||
+        (v.total as number) > 64 || (v.index as number) < 0 || (v.index as number) >= (v.total as number) ||
+        typeof v.payload !== 'string' || v.payload.length < 1 || v.payload.length > 2_048) return null;
     } else if (v.kind === 'recovery-ack' || v.kind === 'recovery-confirm') {
       if (!exact(v, ['version', 'kind', 'checkpointId', 'roundId', 'revision']) ||
         !id(v.checkpointId) || !id(v.roundId) || !Number.isSafeInteger(v.revision) ||
