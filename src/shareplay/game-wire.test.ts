@@ -704,6 +704,17 @@ test('all players see the matching reaction set during play and results', async 
   await flush();
   assert.deepEqual(hostReactions, ['round:0', 'round:3', 'results:0']);
   assert.deepEqual(guestReactions, ['round:0', 'round:3', 'results:0']);
+
+  const roundId = host.currentView!.roundId;
+  host.exitResults(roundId);
+  await flush();
+  assert.equal(host.currentView?.phase, 'lobby');
+  assert.deepEqual(guest.currentView?.resultsViewingIds, ['guest']);
+  now += 1000;
+  guest.react(1);
+  await flush();
+  assert.deepEqual(guestReactions, ['round:0', 'round:3', 'results:0', 'results:1']);
+  assert.deepEqual(hostReactions, ['round:0', 'round:3', 'results:0']);
 });
 
 test('host and a guest without deck ownership reach the same countdown', async () => {
