@@ -77,6 +77,7 @@ type RoundContextValue = {
   pauseRecording: () => Promise<void>;
   resumeRecording: (options?: { restoreOverlay?: boolean }) => Promise<boolean>;
   cancelRecording: () => Promise<void>;
+  disableRecordingForRound: () => Promise<void>;
 };
 
 type CapturedRoundSegment = {
@@ -705,6 +706,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
     return cancellingPromise.current;
   }, [finishCameraSession]);
 
+  const disableRecordingForRound = useCallback(async () => {
+    roundRecordingEnabled.current = false;
+    await cancelRecording();
+  }, [cancelRecording]);
+
   const deleteCurrentVideo = useCallback(async () => {
     const video = currentVideo;
     if (!video) return;
@@ -743,6 +749,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       pauseRecording,
       resumeRecording,
       cancelRecording,
+      disableRecordingForRound,
       configureRound: async (deckId, durationSeconds, mode = 'classic') => {
         if (cancellingPromise.current) await cancellingPromise.current;
         if (stoppingPromise.current) await stoppingPromise.current;
@@ -913,6 +920,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       cancelRecording,
       currentVideo,
       deleteCurrentVideo,
+      disableRecordingForRound,
       dispatch,
       getRecordingTimerEndsAtMs,
       getDeckById,
@@ -945,9 +953,9 @@ export function RoundProvider({ children }: PropsWithChildren) {
         onError={(error) => {
             warnVideoDiagnostic('camera session failed', error);
             cameraReady.current = false;
-            setCameraEnabled(false);
             cameraReadyResolver.current?.(false);
             cameraReadyResolver.current = null;
+            setCameraEnabled(false);
         }}
         ref={cameraRef}
       />

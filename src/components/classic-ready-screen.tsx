@@ -1,7 +1,7 @@
 import { type Href, useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
@@ -32,6 +32,7 @@ export default function ClassicReadyScreen() {
   const router = useRouter();
   const {
     cancelRecording,
+    disableRecordingForRound,
     isRecording,
     pauseRecording,
     prepareRecording,
@@ -76,13 +77,28 @@ export default function ClassicReadyScreen() {
   useFocusEffect(useCallback(() => {
     mounted.current = true;
     stopAll();
+    const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (leaving.current || launched.current) return true;
+      leaving.current = true;
+      operation.current += 1;
+      stopAll();
+      setIsLeaving(true);
+      void cancelRecording().then(() => {
+        resetRound();
+        if (router.canGoBack()) router.back();
+        else if (deck) router.replace(`/deck/${deck.id}` as Href);
+        else router.replace('/');
+      });
+      return true;
+    });
     return () => {
+      backSubscription.remove();
       mounted.current = false;
       operation.current += 1;
       stopIntro();
       if (!launched.current) void cancelRecording();
     };
-  }, [cancelRecording, stopAll, stopIntro]));
+  }, [cancelRecording, deck, resetRound, router, stopAll, stopIntro]));
   const foreheadStatus = useForeheadPosition(focused && appActive && !isLeaving && round.status === 'ready');
   const positionReady =
     introComplete || introEndsAt !== null ||
@@ -93,7 +109,6 @@ export default function ClassicReadyScreen() {
     foreheadStatus === 'denied' || foreheadStatus === 'unavailable';
   const recordingPrepared =
     recordingPreparation === 'ready' ||
-    recordingPreparation === 'permission-denied' ||
     recordingPreparation === 'unavailable';
   const handleCountdownSecond = useCallback(
     (remaining: number) => {
@@ -371,15 +386,25 @@ export default function ClassicReadyScreen() {
   const countSize = Math.max(92, Math.min(138, height * 0.34));
 
   const handleRetryCamera = async () => {
+    if (leaving.current) return;
+    const currentOperation = ++operation.current;
     logRoundDiagnostic('manual camera retry requested');
     await cancelRecording();
+    if (!mounted.current || leaving.current || currentOperation !== operation.current) return;
     setRecordingPreparation('preparing');
-    setRecordingPreparation(await prepareRecording());
+    const preparation = await prepareRecording();
+    if (mounted.current && !leaving.current && currentOperation === operation.current) {
+      setRecordingPreparation(preparation);
+    }
   };
 
   const handlePlayWithoutVideo = async () => {
-    await cancelRecording();
-    setRecordingPreparation('unavailable');
+    if (leaving.current) return;
+    const currentOperation = ++operation.current;
+    await disableRecordingForRound();
+    if (mounted.current && !leaving.current && currentOperation === operation.current) {
+      setRecordingPreparation('unavailable');
+    }
   };
 
   const handleCancel = async () => {
@@ -414,7 +439,7 @@ export default function ClassicReadyScreen() {
             onClose={handleCancel}
             recordingIndicatorPosition={motionControlsUnavailable ? 'top-left' : 'bottom-left'}
           >
-              {recordingPreparation === 'error' ? (
+              {recordingPreparation === 'error' || recordingPreparation === 'permission-denied' ? (
                 <>
                   <Text style={styles.positionTitle}>CAMERA NOT READY</Text>
                   <Text style={styles.instructions}>

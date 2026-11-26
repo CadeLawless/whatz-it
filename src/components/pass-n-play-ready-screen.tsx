@@ -1,7 +1,7 @@
 import { useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { AppState, BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CloseButton } from '@/components/close-button';
@@ -9,7 +9,7 @@ import { RecordingIndicator } from '@/components/recording-indicator';
 import {
   initialPassNPlayReadyState, passNPlayReadyReducer, type PassNPlayReadyAction,
 } from '@/game/pass-n-play-ready';
-import { useRound } from '@/game/round-context';
+import { type RecordingPreparation, useRound } from '@/game/round-context';
 import { useRoundTimer } from '@/hooks/use-round-timer';
 import { colors, radius, spacing, typography } from '@/theme';
 import { triggerRoundHaptic } from '@/utils/round-haptics';
@@ -19,13 +19,16 @@ export function PassNPlayReadyScreen() {
   const router = useRouter();
   const focused = useIsFocused();
   const { round, roundDeck, resetRound, prepareRecording, startRecording,
-    cancelRecording, recordOverlayEvent, pauseRecording, resumeRecording, isRecording } = useRound();
+    cancelRecording, disableRecordingForRound, recordOverlayEvent, pauseRecording,
+    resumeRecording, isRecording } = useRound();
   // Keep the outgoing card visible while the native back transition runs.
   const [deck] = useState(roundDeck);
   const { play, prepareForRound, stopAll, stopIntro } = useRoundSounds();
   const [timeline, commit] = useReducer(passNPlayReadyReducer, initialPassNPlayReadyState);
   const current = useRef(initialPassNPlayReadyState);
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const [recordingPreparation, setRecordingPreparation] =
+    useState<RecordingPreparation | 'preparing'>('preparing');
   const mounted = useRef(false);
   const leaving = useRef(false);
   const launched = useRef(false);
@@ -50,19 +53,35 @@ export function PassNPlayReadyScreen() {
     const grace = new Promise<void>((resolve) => {
       preparationTimeout = setTimeout(resolve, 4000);
     });
-    const recording = prepareRecording().then((preparation) => {
-      if (preparation !== 'ready' || !canContinue() || cueGeneration !== generation.current) return false;
-      return current.current.phase === 'waiting' ? startRecording()
-        : resumeRecording({ restoreOverlay: false });
-    }).catch(() => false);
-    void Promise.race([Promise.all([recording, prepareForRound().catch(() => false)]), grace]).then(() => {
+    const recording = prepareRecording().then(async (preparation) => {
+      if (!canContinue() || cueGeneration !== generation.current) return false;
+      if (preparation === 'unavailable') {
+        setRecordingPreparation(preparation);
+        return 'video-disabled' as const;
+      }
+      if (preparation !== 'ready') {
+        setRecordingPreparation(preparation);
+        return null;
+      }
+      const started = current.current.phase === 'waiting' ? await startRecording()
+        : await resumeRecording({ restoreOverlay: false });
+      if (!canContinue() || cueGeneration !== generation.current) return false;
+      setRecordingPreparation(started ? 'ready' : 'error');
+      return started ? ('recording' as const) : null;
+    }).catch(() => {
+      if (canContinue() && cueGeneration === generation.current) setRecordingPreparation('error');
+      return null;
+    });
+    const audio = Promise.race([prepareForRound().catch(() => false), grace]);
+    void Promise.all([recording, audio]).then(([captureState]) => {
       clearTimeout(preparationTimeout);
-      if (!canContinue() || cueGeneration !== generation.current || current.current.phase !== 'waiting') return;
+      if (!captureState || !canContinue() || cueGeneration !== generation.current ||
+          current.current.phase !== 'waiting') return;
       send({ type: 'BEGIN', now: Date.now() });
       recordOverlayEvent({ kind: 'countdown', text: 'GET READY' });
       void play('get-ready', () => canContinue() && cueGeneration === generation.current &&
         current.current.phase === 'intro');
-      void triggerRoundHaptic('get-ready', { cameraActive: false });
+      void triggerRoundHaptic('get-ready', { cameraActive: captureState === 'recording' });
     });
     return () => {
       clearTimeout(preparationTimeout);
@@ -74,6 +93,42 @@ export function PassNPlayReadyScreen() {
     };
   }, [appActive, canContinue, focused, play, prepareForRound, prepareRecording, recordOverlayEvent,
     pauseRecording, resumeRecording, round.status, send, startRecording, stopAll, stopIntro]);
+
+  const retryCamera = useCallback(async () => {
+    if (leaving.current || current.current.phase !== 'waiting') return;
+    const retryGeneration = ++generation.current;
+    await cancelRecording();
+    if (!canContinue() || retryGeneration !== generation.current) return;
+    setRecordingPreparation('preparing');
+    const preparation = await prepareRecording();
+    if (!canContinue() || retryGeneration !== generation.current) return;
+    if (preparation !== 'ready') {
+      setRecordingPreparation(preparation === 'unavailable' ? 'error' : preparation);
+      return;
+    }
+    const started = await startRecording();
+    if (!canContinue() || retryGeneration !== generation.current) return;
+    setRecordingPreparation(started ? 'ready' : 'error');
+    if (started) {
+      await prepareForRound().catch(() => false);
+      if (!canContinue() || retryGeneration !== generation.current) return;
+      send({ type: 'BEGIN', now: Date.now() });
+      recordOverlayEvent({ kind: 'countdown', text: 'GET READY' });
+      void play('get-ready', () => canContinue() && retryGeneration === generation.current);
+    }
+  }, [canContinue, cancelRecording, play, prepareForRound, prepareRecording,
+    recordOverlayEvent, send, startRecording]);
+
+  const playWithoutVideo = useCallback(async () => {
+    if (leaving.current || current.current.phase !== 'waiting') return;
+    const skipGeneration = ++generation.current;
+    await disableRecordingForRound();
+    if (!canContinue() || skipGeneration !== generation.current) return;
+    setRecordingPreparation('unavailable');
+    send({ type: 'BEGIN', now: Date.now() });
+    void play('get-ready', () => canContinue() && skipGeneration === generation.current);
+    void triggerRoundHaptic('get-ready', { cameraActive: false });
+  }, [canContinue, disableRecordingForRound, play, send]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -173,7 +228,18 @@ export function PassNPlayReadyScreen() {
           <Text style={styles.deckTitle}>{deck.title}</Text>
         </View>
         <ScrollView contentContainerStyle={styles.content}>
-          {timeline.phase === 'countdown' || timeline.phase === 'complete' ? (
+          {recordingPreparation === 'error' || recordingPreparation === 'permission-denied' ? (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>CAMERA NOT READY</Text>
+              <Text style={styles.cameraMessage}>The round will wait so your full video is not missed.</Text>
+              <Pressable accessibilityRole="button" onPress={() => void retryCamera()} style={styles.retryButton}>
+                <Text style={styles.retryButtonText}>RETRY CAMERA</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => void playWithoutVideo()} style={styles.skipButton}>
+                <Text style={styles.skipButtonText}>PLAY WITHOUT VIDEO</Text>
+              </Pressable>
+            </>
+          ) : timeline.phase === 'countdown' || timeline.phase === 'complete' ? (
             <Text accessibilityLiveRegion="polite" style={styles.count}>{Math.max(1, count)}</Text>
           ) : (
             <Text accessibilityRole="header" style={styles.title}>GET READY</Text>
@@ -200,4 +266,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
   count: { fontFamily: 'Inter_900Black', fontSize: 128, lineHeight: 145,
     color: colors.white, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  cameraMessage: { ...typography.body, color: colors.white, textAlign: 'center' },
+  retryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+    borderRadius: radius.pill, backgroundColor: colors.surface },
+  retryButtonText: { color: colors.ink, fontFamily: 'Inter_900Black', letterSpacing: 1.2 },
+  skipButton: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  skipButtonText: { color: colors.white, fontFamily: 'Inter_900Black', letterSpacing: 1.1 },
 });

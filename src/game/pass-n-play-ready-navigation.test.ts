@@ -9,15 +9,44 @@ import * as readyTimeline from './pass-n-play-ready';
 import * as theme from '../theme';
 
 const require = createRequire(import.meta.url);
-type TestElement = { props: { children: TestElement[]; onPress: () => void } };
+type TestNode = TestElement | string | number | null | undefined;
+type TestElement = { type?: unknown; props: { children?: TestNode | TestNode[]; onPress?: () => void } };
+
+function containsText(node: TestNode, label: string): boolean {
+  if (typeof node === 'string' || typeof node === 'number') return String(node) === label;
+  if (!node?.props) return false;
+  const children = Array.isArray(node.props.children) ? node.props.children : [node.props.children];
+  return children.some((child) => containsText(child, label));
+}
+
+function findButtonOrNull(node: TestNode, label: string): TestElement | null {
+  if (node && typeof node === 'object' && node.props.onPress && containsText(node, label)) return node;
+  if (node && typeof node === 'object') {
+    const children = Array.isArray(node.props.children) ? node.props.children : [node.props.children];
+    for (const child of children) {
+      const match = findButtonOrNull(child, label);
+      if (match) return match;
+    }
+  }
+  return null;
+}
+
+function findButton(node: TestNode, label: string): TestElement {
+  const match = findButtonOrNull(node, label);
+  if (match) return match;
+  throw new Error(`Button not found: ${label}`);
+}
 
 // Exercise the real X handler with a navigation stack, without native rendering.
-function mountReady(hasPreviousDeck: boolean, prepare = () => Promise.resolve(true), recordVideo = false) {
+function mountReady(hasPreviousDeck: boolean, prepare = () => Promise.resolve(true), recordVideo = false,
+  cameraPreparation: 'ready' | 'permission-denied' | 'error' = 'ready', startSucceeds = true) {
   const stack = hasPreviousDeck ? ['/', '/deck/animals', '/ready'] : ['/ready'];
   const events: string[] = [];
   let timeline = readyTimeline.initialPassNPlayReadyState;
   let refIndex = 0;
+  let stateIndex = 0;
   const refs: { current: unknown }[] = [];
+  const states: unknown[] = [];
   const effects: (() => void | (() => void))[] = [];
   let now = 1000;
   const timers = new Map<number, { callback: () => void; at: number }>();
@@ -44,7 +73,14 @@ function mountReady(hasPreviousDeck: boolean, prepare = () => Promise.resolve(tr
         ...require('react'), useCallback: (callback: unknown) => callback,
         useEffect: (effect: () => void | (() => void)) => effects.push(effect),
         useRef: (current: unknown) => refs[refIndex++] ?? (refs[refIndex - 1] = { current }),
-        useState: (initial: unknown) => [initial, noop],
+        useState: (initial: unknown) => {
+          const index = stateIndex++;
+          if (!(index in states)) states[index] = initial;
+          return [states[index], (value: unknown) => {
+            states[index] = typeof value === 'function'
+              ? (value as (current: unknown) => unknown)(states[index]) : value;
+          }];
+        },
         useReducer: () => [timeline, (action: readyTimeline.PassNPlayReadyAction) => {
           timeline = readyTimeline.passNPlayReadyReducer(timeline, action);
         }],
@@ -62,7 +98,7 @@ function mountReady(hasPreviousDeck: boolean, prepare = () => Promise.resolve(tr
       };
       if (name === 'react-native') return {
         AppState: { currentState: 'active' }, BackHandler: {},
-        ScrollView: 'scroll', Text: 'text', View: 'view',
+        Pressable: 'pressable', ScrollView: 'scroll', Text: 'text', View: 'view',
         StyleSheet: { create: (styles: unknown) => styles },
       };
       if (name === 'react-native-safe-area-context') return { SafeAreaView: 'safe' };
@@ -74,9 +110,11 @@ function mountReady(hasPreviousDeck: boolean, prepare = () => Promise.resolve(tr
         useRound: () => ({
           round: { status: 'ready', deckId: 'animals', durationSeconds: 60 },
           roundDeck: { title: 'Animals' }, resetRound: () => { events.push('reset'); },
-          prepareRecording: async () => recordVideo ? 'ready' : 'unavailable',
-          startRecording: async () => { events.push('recording'); return true; },
-          cancelRecording: async () => {}, recordOverlayEvent: noop,
+          prepareRecording: async () => recordVideo ? cameraPreparation : 'unavailable',
+          startRecording: async () => { events.push('recording'); return startSucceeds; },
+          cancelRecording: async () => {},
+          disableRecordingForRound: async () => { events.push('disable-recording'); },
+          recordOverlayEvent: noop,
           pauseRecording: async () => {}, resumeRecording: async () => false,
         }),
       };
@@ -97,12 +135,16 @@ function mountReady(hasPreviousDeck: boolean, prepare = () => Promise.resolve(tr
   assert.ok(exports.PassNPlayReadyScreen);
   const render = () => {
     refIndex = 0;
+    stateIndex = 0;
     effects.length = 0;
     return exports.PassNPlayReadyScreen!() as unknown as TestElement;
   };
   const screen = render();
-  const panel = screen.props.children[1];
-  const close = panel.props.children[0].props.children[0];
+  const screenChildren = screen.props.children as TestElement[];
+  const panel = screenChildren[1];
+  const panelChildren = panel.props.children as TestElement[];
+  const headerChildren = panelChildren[0].props.children as TestElement[];
+  const close = headerChildren[0];
   return {
     stack, events, effects, render, phase: () => timeline.phase,
     expireCountdown: () => timerOptions.onExpire(),
@@ -177,4 +219,27 @@ it('starts optional video before the ready chime', async () => {
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(ready.phase(), 'intro');
   assert.deepEqual(ready.events, ['recording', 'get-ready']);
+});
+
+it('keeps camera failures and recording-start failures out of the intro', async () => {
+  for (const [preparation, startSucceeds] of [
+    ['permission-denied', true], ['error', true], ['ready', false],
+  ] as const) {
+    const ready = mountReady(true, () => Promise.resolve(true), true, preparation, startSucceeds);
+    ready.effects[0]();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(ready.phase(), 'waiting');
+    assert.equal(ready.events.includes('get-ready'), false);
+  }
+});
+
+it('recovers from camera failure by disabling video for only this round', async () => {
+  const ready = mountReady(true, () => Promise.resolve(true), true, 'error');
+  ready.effects[0]();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const screen = ready.render();
+  findButton(screen, 'PLAY WITHOUT VIDEO').props.onPress?.();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(ready.phase(), 'intro');
+  assert.deepEqual(ready.events, ['disable-recording', 'get-ready']);
 });
