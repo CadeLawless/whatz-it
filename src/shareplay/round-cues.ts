@@ -52,3 +52,27 @@ export class SharePlayRoundCues {
     return cues;
   }
 }
+
+/** Session-scoped cue history lives outside the game screen so navigation
+ * remounts cannot replay the snapshot used to rebuild that screen. */
+export class SharePlayRoundCueRegistry {
+  private planners = new Map<string, SharePlayRoundCues>();
+
+  next(participantId: string, view: RemoteView, countdown: number,
+    remainingMs: number): SharePlayRoundCue[] {
+    const key = `${view.sessionId}:${participantId}`;
+    let planner = this.planners.get(key);
+    if (!planner) {
+      planner = new SharePlayRoundCues();
+      this.planners.set(key, planner);
+      // The first synchronized snapshot is a baseline. Late joiners and a
+      // freshly restored app hear only cues that occur after it.
+      planner.next(view, countdown, remainingMs);
+      if (this.planners.size > 64) this.planners.delete(this.planners.keys().next().value!);
+      return [];
+    }
+    return planner.next(view, countdown, remainingMs);
+  }
+}
+
+export const sharePlayRoundCueRegistry = new SharePlayRoundCueRegistry();

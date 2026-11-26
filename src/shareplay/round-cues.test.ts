@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RemoteView } from './remote-round';
-import { SharePlayRoundCues } from './round-cues';
+import { SharePlayRoundCueRegistry, SharePlayRoundCues } from './round-cues';
 
 const view = (phase: RemoteView['phase'], patch: Partial<RemoteView> = {}) => ({
   sessionId: 'session', roundId: 'round', phase, startsAt: 3000, deadline: 78000,
@@ -53,4 +53,30 @@ test('late joins and temporary missing views do not replay previous answers or r
   assert.deepEqual(cues.next(null, 0, 0), []);
   assert.deepEqual(cues.next(view('feedback', { feedback: 'pass' }), 0, 70000), []);
   assert.deepEqual(cues.next(view('results', { roundId: 'new-round' }), 0, 0), []);
+});
+
+test('every participant receives future cues independently', () => {
+  const registry = new SharePlayRoundCueRegistry();
+  const baseline = view('countdown');
+  assert.deepEqual(registry.next('host', baseline, 3, 75000), []);
+  assert.deepEqual(registry.next('guest', baseline, 3, 75000), []);
+  assert.equal(registry.next('host', baseline, 2, 75000)[0].sound, 'count-2');
+  assert.equal(registry.next('guest', baseline, 2, 75000)[0].sound, 'count-2');
+});
+
+test('screen remounts reuse session history and role changes do not replay cues', () => {
+  const registry = new SharePlayRoundCueRegistry();
+  const baseline = view('countdown');
+  registry.next('player', baseline, 3, 75000);
+  assert.equal(registry.next('player', baseline, 2, 75000)[0].sound, 'count-2');
+  assert.deepEqual(registry.next('player', view('countdown', {
+    revision: 2, hostId: 'new-host', guesserId: 'player',
+  }), 2, 75000), []);
+});
+
+test('late joiners baseline running rounds and play only later transitions', () => {
+  const registry = new SharePlayRoundCueRegistry();
+  assert.deepEqual(registry.next('late', view('feedback', { feedback: 'correct' }), 0, 70000), []);
+  assert.deepEqual(registry.next('late', view('playing', { revision: 2 }), 0, 69000),
+    [{ sound: 'flip', haptic: 'card-flip' }]);
 });
