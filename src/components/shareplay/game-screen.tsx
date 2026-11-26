@@ -71,7 +71,11 @@ export function SharePlayGameScreen() {
   const passNPlay = view?.mode === 'pass-n-play';
   const isGuesser = !!view && (passNPlay ? !isTurnOwner : isTurnOwner);
   const isClueGiver = !!view && !isGuesser;
-  const reactionBar = view && sharedView?.phase === view.phase && canReactInPhase(view.phase) ?
+  const viewingResults = !!view && view.phase === 'results' && !!localId &&
+    (sharedView?.resultsViewingIds ?? view.resultsViewingIds ?? []).includes(localId) &&
+    sharedView?.roundId === view.roundId;
+  const reactionBar = view && ((sharedView?.phase === view.phase && canReactInPhase(view.phase)) ||
+    viewingResults) ?
     <SharePlayReactionBar set={view.phase === 'results' ? 'results' : 'round'}
       onReact={sharePlay.gameActions.react}
       onColumnLayout={measureReactionColumn} /> : null;

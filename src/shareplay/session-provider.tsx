@@ -268,8 +268,13 @@ export function SharePlayProvider({ children }: PropsWithChildren) {
         setHeldResultsView(null);
       }
       setReactions((current) => {
-        if (!view || !canReactInPhase(view.phase)) return current.length ? [] : current;
-        const matching = current.filter((reaction) => reaction.roundId === view.roundId);
+        const reactionView = heldResultsRef.current ?? view;
+        const localId = sessionRef.current.localParticipantId;
+        const canViewResults = reactionView?.phase === 'results' && !!localId &&
+          (view?.resultsViewingIds ?? reactionView.resultsViewingIds ?? []).includes(localId);
+        if (!reactionView || (!canReactInPhase(reactionView.phase) && !canViewResults))
+          return current.length ? [] : current;
+        const matching = current.filter((reaction) => reaction.roundId === reactionView.roundId);
         return matching.length === current.length ? current : matching;
       });
       if (view?.phase === 'lobby' && !heldResultsRef.current && sessionRef.current.status === 'joined') {

@@ -593,7 +593,7 @@ export class LiveGame {
     }
     if (wire.kind === 'reaction') {
       if (!this.foreground || !this.view || wire.roundId !== this.view.roundId ||
-        !canReactInPhase(this.view.phase) ||
+        !this.canReceiveReaction(wire.roundId, message.senderId, wire.set) ||
         !this.reactionGate.accept(wire.roundId, message.senderId, wire.reactionId, now)) return;
       this.callbacks.onReaction?.({ id: `${message.senderId}:${wire.reactionId}`,
         roundId: wire.roundId, participantId: message.senderId, emoji: wire.emoji, set: wire.set });
@@ -847,14 +847,32 @@ export class LiveGame {
     const session = this.session;
     const view = this.view;
     if (!session || session.status !== 'joined' || !session.localParticipantId || !view ||
-      !this.foreground || !canReactInPhase(view.phase) || ![0, 1, 2, 3].includes(emoji)) return;
+      !this.foreground || ![0, 1, 2, 3].includes(emoji)) return;
+    const resultsViewer = this.isResultsViewer(view.roundId, session.localParticipantId);
+    if (!resultsViewer && !canReactInPhase(view.phase)) return;
     const reactionId = this.callbacks.uuid();
-    const set = view.phase === 'results' ? 'results' : 'round';
+    const set = resultsViewer ? 'results' : 'round';
     if (!this.reactionGate.accept(view.roundId, session.localParticipantId, reactionId, performance.now())) return;
     this.callbacks.onReaction?.({ id: `${session.localParticipantId}:${reactionId}`,
       roundId: view.roundId, participantId: session.localParticipantId, emoji, set });
-    this.send({ version: 3, kind: 'reaction', roundId: view.roundId, reactionId, emoji, set },
-      session.participantIds.filter((id) => id !== session.localParticipantId));
+    const recipients = set === 'results'
+      ? (view.resultsViewingIds ?? []).filter((id) => id !== session.localParticipantId)
+      : session.participantIds.filter((id) => id !== session.localParticipantId);
+    this.send({ version: 3, kind: 'reaction', roundId: view.roundId, reactionId, emoji, set }, recipients);
+  }
+
+  private isResultsViewer(roundId: string, participantId: string) {
+    return this.view?.roundId === roundId &&
+      (this.view.resultsViewingIds ?? []).includes(participantId);
+  }
+
+  private canReceiveReaction(roundId: string, senderId: string, set: 'round' | 'results') {
+    const localId = this.session?.localParticipantId;
+    if (!localId || !this.view || this.view.roundId !== roundId) return false;
+    if (set === 'results') {
+      return this.isResultsViewer(roundId, localId) && this.isResultsViewer(roundId, senderId);
+    }
+    return this.view.phase !== 'results' && canReactInPhase(this.view.phase);
   }
 
   selectGuesser(guesserId: string) {
