@@ -20,7 +20,7 @@ export function PassNPlayReadyScreen() {
   const focused = useIsFocused();
   const { round, roundDeck, resetRound, prepareRecording, startRecording,
     cancelRecording, disableRecordingForRound, recordOverlayEvent, pauseRecording,
-    resumeRecording, isRecording } = useRound();
+    recoverCameraPermission, resumeRecording, isRecording } = useRound();
   // Keep the outgoing card visible while the native back transition runs.
   const [deck] = useState(roundDeck);
   const { play, prepareForRound, stopAll, stopIntro } = useRoundSounds();
@@ -29,6 +29,7 @@ export function PassNPlayReadyScreen() {
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const [recordingPreparation, setRecordingPreparation] =
     useState<RecordingPreparation | 'preparing'>('preparing');
+  const [cameraRecoveryMessage, setCameraRecoveryMessage] = useState<string | null>(null);
   const mounted = useRef(false);
   const leaving = useRef(false);
   const launched = useRef(false);
@@ -99,6 +100,21 @@ export function PassNPlayReadyScreen() {
     const retryGeneration = ++generation.current;
     await cancelRecording();
     if (!canContinue() || retryGeneration !== generation.current) return;
+    setCameraRecoveryMessage(null);
+    const recovery = await recoverCameraPermission();
+    if (!canContinue() || retryGeneration !== generation.current) return;
+    if (recovery === 'settings-opened') {
+      setCameraRecoveryMessage('Turn on Camera access in Settings, then return to WHATZ IT.');
+      return;
+    }
+    if (recovery === 'settings-error') {
+      setCameraRecoveryMessage('Settings could not be opened. Open this app in device Settings and turn on Camera access.');
+      return;
+    }
+    if (recovery === 'denied') {
+      setRecordingPreparation('permission-denied');
+      return;
+    }
     setRecordingPreparation('preparing');
     const preparation = await prepareRecording();
     if (!canContinue() || retryGeneration !== generation.current) return;
@@ -117,7 +133,7 @@ export function PassNPlayReadyScreen() {
       void play('get-ready', () => canContinue() && retryGeneration === generation.current);
     }
   }, [canContinue, cancelRecording, play, prepareForRound, prepareRecording,
-    recordOverlayEvent, send, startRecording]);
+    recordOverlayEvent, recoverCameraPermission, send, startRecording]);
 
   const playWithoutVideo = useCallback(async () => {
     if (leaving.current || current.current.phase !== 'waiting') return;
@@ -228,10 +244,12 @@ export function PassNPlayReadyScreen() {
           <Text style={styles.deckTitle}>{deck.title}</Text>
         </View>
         <ScrollView contentContainerStyle={styles.content}>
-          {recordingPreparation === 'error' || recordingPreparation === 'permission-denied' ? (
+          {recordingPreparation === 'error' || recordingPreparation.startsWith('permission-') ? (
             <>
               <Text accessibilityRole="header" style={styles.title}>CAMERA NOT READY</Text>
-              <Text style={styles.cameraMessage}>The round will wait so your full video is not missed.</Text>
+              <Text style={styles.cameraMessage}>
+                {cameraRecoveryMessage ?? 'The round will wait so your full video is not missed.'}
+              </Text>
               <Pressable accessibilityRole="button" onPress={() => void retryCamera()} style={styles.retryButton}>
                 <Text style={styles.retryButtonText}>RETRY CAMERA</Text>
               </Pressable>

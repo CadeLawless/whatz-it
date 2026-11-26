@@ -39,7 +39,9 @@ function findButton(node: TestNode, label: string): TestElement {
 
 // Exercise the real X handler with a navigation stack, without native rendering.
 function mountReady(hasPreviousDeck: boolean, prepare = () => Promise.resolve(true), recordVideo = false,
-  cameraPreparation: 'ready' | 'permission-denied' | 'error' = 'ready', startSucceeds = true) {
+  cameraPreparation: 'ready' | 'permission-requestable' | 'permission-denied' | 'permission-restricted' | 'error' = 'ready',
+  startSucceeds = true,
+  recoverCameraPermission = () => Promise.resolve<'granted' | 'denied' | 'settings-opened' | 'settings-error'>('granted')) {
   const stack = hasPreviousDeck ? ['/', '/deck/animals', '/ready'] : ['/ready'];
   const events: string[] = [];
   let timeline = readyTimeline.initialPassNPlayReadyState;
@@ -111,6 +113,7 @@ function mountReady(hasPreviousDeck: boolean, prepare = () => Promise.resolve(tr
           round: { status: 'ready', deckId: 'animals', durationSeconds: 60 },
           roundDeck: { title: 'Animals' }, resetRound: () => { events.push('reset'); },
           prepareRecording: async () => recordVideo ? cameraPreparation : 'unavailable',
+          recoverCameraPermission,
           startRecording: async () => { events.push('recording'); return startSucceeds; },
           cancelRecording: async () => {},
           disableRecordingForRound: async () => { events.push('disable-recording'); },
@@ -242,4 +245,32 @@ it('recovers from camera failure by disabling video for only this round', async 
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(ready.phase(), 'intro');
   assert.deepEqual(ready.events, ['disable-recording', 'get-ready']);
+});
+
+it('keeps Camera Not Ready visible with understandable feedback when settings cannot open', async () => {
+  const ready = mountReady(true, () => Promise.resolve(true), true, 'permission-denied', true,
+    () => Promise.resolve('settings-error'));
+  ready.effects[0]();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  findButton(ready.render(), 'RETRY CAMERA').props.onPress?.();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const screen = ready.render();
+  assert.equal(containsText(screen, 'CAMERA NOT READY'), true);
+  assert.equal(containsText(screen,
+    'Settings could not be opened. Open this app in device Settings and turn on Camera access.'), true);
+});
+
+it('ignores a stale permission recovery callback after cancellation', async () => {
+  let finishRecovery!: (result: 'granted') => void;
+  const recovery = new Promise<'granted'>((resolve) => { finishRecovery = resolve; });
+  const ready = mountReady(true, () => Promise.resolve(true), true, 'permission-denied', true,
+    () => recovery);
+  ready.effects[0]();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  findButton(ready.render(), 'RETRY CAMERA').props.onPress?.();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  ready.cancel();
+  finishRecovery('granted');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(ready.events, ['reset', 'back']);
 });
