@@ -32,7 +32,8 @@ import { rememberDeckPlayed } from '@/storage/deck-library-preferences';
 import { attachRoundVideo, saveRoundResult } from '@/storage/round-history';
 import { loadVideoPreferences } from '@/storage/video-preferences';
 import {
-  requestRoundCameraPermissions,
+  prepareRoundCameraPermissions,
+  recoverRoundCameraPermission,
   RoundCamera,
   type RoundCapture,
   type RoundCameraRef,
@@ -48,7 +49,13 @@ import {
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
 import { traceAndroidGameplay } from '@/utils/android-gameplay-trace';
 
-export type RecordingPreparation = 'ready' | 'permission-denied' | 'unavailable' | 'error';
+export type RecordingPreparation =
+  | 'ready'
+  | 'permission-requestable'
+  | 'permission-denied'
+  | 'permission-restricted'
+  | 'unavailable'
+  | 'error';
 
 const CAMERA_CAPTURE_STOP_TIMEOUT_MS = 4_000;
 
@@ -71,6 +78,7 @@ type RoundContextValue = {
   deleteCurrentVideo: () => Promise<void>;
   retryCurrentVideoExport: () => Promise<RoundVideo | null>;
   prepareRecording: () => Promise<RecordingPreparation>;
+  recoverCameraPermission: () => ReturnType<typeof recoverRoundCameraPermission>;
   startRecording: () => Promise<boolean>;
   recordOverlayEvent: (event: Omit<RoundVideoEvent, 'atMs'>) => void;
   stopRecording: () => Promise<RoundVideo | null>;
@@ -207,14 +215,18 @@ export function RoundProvider({ children }: PropsWithChildren) {
     }
 
     preparationPromise.current = (async () => {
-      const permissions = await requestRoundCameraPermissions({ microphone: roundMicrophoneEnabled.current });
+      const permissions = await prepareRoundCameraPermissions({ microphone: roundMicrophoneEnabled.current });
       logVideoDiagnostic('recording permissions returned to round context', permissions);
       if (recordingCancelled.current) {
         logVideoDiagnostic('recording preparation abandoned because round was cancelled');
         return 'unavailable' as const;
       }
       if (!permissions.cameraGranted) {
-        logVideoDiagnostic('recording preparation stopped because camera permission was denied');
+        logVideoDiagnostic('recording preparation stopped because camera permission is unavailable', {
+          cameraState: permissions.cameraState,
+        });
+        if (permissions.cameraState === 'requestable') return 'permission-requestable' as const;
+        if (permissions.cameraState === 'restricted') return 'permission-restricted' as const;
         return 'permission-denied' as const;
       }
 
@@ -743,6 +755,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       deleteCurrentVideo,
       retryCurrentVideoExport,
       prepareRecording,
+      recoverCameraPermission: recoverRoundCameraPermission,
       startRecording,
       recordOverlayEvent,
       stopRecording,

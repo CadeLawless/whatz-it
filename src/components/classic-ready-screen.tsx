@@ -36,6 +36,7 @@ export default function ClassicReadyScreen() {
     isRecording,
     pauseRecording,
     prepareRecording,
+    recoverCameraPermission,
     recordOverlayEvent,
     round,
     resetRound,
@@ -54,6 +55,7 @@ export default function ClassicReadyScreen() {
   const [audioStartupGraceElapsed, setAudioStartupGraceComplete] = useState(false);
   const [recordingPreparation, setRecordingPreparation] =
     useState<RecordingPreparation | 'preparing'>('preparing');
+  const [cameraRecoveryMessage, setCameraRecoveryMessage] = useState<string | null>(null);
   const [isLeaving, setIsLeaving] = useState(false);
   const launched = useRef(false);
   const mounted = useRef(true);
@@ -206,7 +208,8 @@ export default function ClassicReadyScreen() {
         }
         if (introStarted.current) {
           void resumeRecording();
-        } else if (recordingPreparation === 'ready') {
+        } else {
+          setCameraRecoveryMessage(null);
           setRecordingPreparation('preparing');
           void prepareRecording().then((result) => {
             if (mounted.current && !leaving.current) setRecordingPreparation(result);
@@ -391,6 +394,21 @@ export default function ClassicReadyScreen() {
     logRoundDiagnostic('manual camera retry requested');
     await cancelRecording();
     if (!mounted.current || leaving.current || currentOperation !== operation.current) return;
+    setCameraRecoveryMessage(null);
+    const recovery = await recoverCameraPermission();
+    if (!mounted.current || leaving.current || currentOperation !== operation.current) return;
+    if (recovery === 'settings-opened') {
+      setCameraRecoveryMessage('Turn on Camera access in Settings, then return to WHATZ IT.');
+      return;
+    }
+    if (recovery === 'settings-error') {
+      setCameraRecoveryMessage('Settings could not be opened. Open this app in device Settings and turn on Camera access.');
+      return;
+    }
+    if (recovery === 'denied') {
+      setRecordingPreparation('permission-denied');
+      return;
+    }
     setRecordingPreparation('preparing');
     const preparation = await prepareRecording();
     if (mounted.current && !leaving.current && currentOperation === operation.current) {
@@ -439,11 +457,11 @@ export default function ClassicReadyScreen() {
             onClose={handleCancel}
             recordingIndicatorPosition={motionControlsUnavailable ? 'top-left' : 'bottom-left'}
           >
-              {recordingPreparation === 'error' || recordingPreparation === 'permission-denied' ? (
+              {recordingPreparation === 'error' || recordingPreparation.startsWith('permission-') ? (
                 <>
                   <Text style={styles.positionTitle}>CAMERA NOT READY</Text>
                   <Text style={styles.instructions}>
-                    The round will wait so your full video is not missed.
+                    {cameraRecoveryMessage ?? 'The round will wait so your full video is not missed.'}
                   </Text>
                   <Pressable
                     accessibilityRole="button"

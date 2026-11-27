@@ -59,7 +59,10 @@ type RoundCameraProps = {
   onReady: () => void;
 };
 
-export { requestRoundCameraPermissions } from '@/video/round-capture-permissions';
+export {
+  prepareRoundCameraPermissions,
+  recoverRoundCameraPermission,
+} from '@/video/round-capture-permissions';
 
 async function prepareRoundRecordingAudio(microphone: boolean) {
   logVideoDiagnostic('recording audio session configuration started', {
