@@ -12,13 +12,17 @@ import * as theme from '../theme';
 
 const require = createRequire(import.meta.url);
 
-function mountGame(status: ActiveRoundStatus | 'finished') {
+function mountGame(status: ActiveRoundStatus | 'finished' | 'paused', options: {
+  captureIssue?: string | null;
+  resumeSucceeds?: boolean;
+} = {}) {
   const round: RoundState = {
     ...initialRoundState, mode: 'pass-n-play', status, deckId: 'animals',
     cardOrder: ['one', 'two'], durationSeconds: 60,
     startedAt: 1000, endsAt: 61_000,
     results: [{ cardId: 'one', outcome: 'correct', answeredAt: 3000 }],
     latestOutcome: status === 'feedback' ? 'correct' : null,
+    ...(status === 'paused' ? { pausedStatus: 'playing' as const, remainingMs: 48_000 } : {}),
   };
   const deck = { id: 'animals', title: 'Animals', order: 1, description: 'Animal cards', version: 1,
     access: 'free' as const, tags: [], cardCount: 2, cardContentVersion: 1,
@@ -65,6 +69,7 @@ function mountGame(status: ActiveRoundStatus | 'finished') {
         StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
       };
       if (name.endsWith('/pass-n-play-round-panel')) return { PassNPlayRoundPanel: 'panel' };
+      if (name.endsWith('/capture-recovery-overlay')) return { CaptureRecoveryOverlay: 'recovery' };
       if (name.endsWith('/round-context')) return { useRound: () => ({
         round, roundDeck: deck, pauseRound: noop, startRound: noop,
         advanceCard: () => {
@@ -74,7 +79,13 @@ function mountGame(status: ActiveRoundStatus | 'finished') {
         expireRound: (endsAt: number) => {
           Object.assign(round, roundReducer(round, { type: 'EXPIRE', endsAt, now: endsAt }));
         },
-        pauseRecording: async () => {}, resumeRecording: async () => false,
+        captureIssue: options.captureIssue ?? null,
+        pauseRecording: async () => {},
+        resumeRecording: async () => options.resumeSucceeds ?? false,
+        retryCapture: async () => { calls.push('retry-capture'); return options.resumeSucceeds ?? false; },
+        continueWithoutVideo: async () => { calls.push('continue-without-video'); },
+        cancelRecording: async () => { calls.push('cancel-recording'); },
+        resumeRound: () => calls.push('resume-round'), finishRound: () => calls.push('finish-round'),
         recordOverlayEvent: (event: Omit<RoundVideoEvent, 'atMs'>) => events.push({ ...event }),
         stopRecording: async () => {
           saved = captureRoundResultSnapshot(round, deck);
@@ -85,7 +96,7 @@ function mountGame(status: ActiveRoundStatus | 'finished') {
       if (name.endsWith('/use-round-timer')) return { useRoundTimer: (options: typeof timerOptions) => {
         timerOptions = options;
         return 0;
-      } };
+      }, getRemainingSecondsFromMs: (remainingMs: number | null) => Math.ceil((remainingMs ?? 0) / 1000) };
       if (name.endsWith('/round-duration')) return { formatRoundClock: () => '0:00' };
       if (name.endsWith('/theme')) return theme;
       if (name.endsWith('/round-haptics')) return { triggerRoundHaptic: (kind: string) => haptics.push(kind) };
@@ -95,13 +106,26 @@ function mountGame(status: ActiveRoundStatus | 'finished') {
       return require(name);
     },
   });
-  exports.PassNPlayGameScreen!();
+  const output = exports.PassNPlayGameScreen!();
   effects.forEach((effect) => {
     const cleanup = effect();
     if (typeof cleanup === 'function') cleanups.push(cleanup as () => void);
   });
-  return { timers, events, calls, round, haptics, saved: () => saved,
+  return { timers, events, calls, round, haptics, output, saved: () => saved,
     timer: () => timerOptions, dispose: () => cleanups.forEach((cleanup) => cleanup()) };
+}
+
+function findElement(node: unknown, type: string): { props: Record<string, () => unknown> } | null {
+  if (!node || typeof node !== 'object') return null;
+  const element = node as { type?: unknown; props?: { children?: unknown } };
+  if (element.type === type) return element as { props: Record<string, () => unknown> };
+  const children = element.props?.children;
+  const values = Array.isArray(children) ? children : [children];
+  for (const child of values) {
+    const found = findElement(child, type);
+    if (found) return found;
+  }
+  return null;
 }
 
 it('finalizes the video with Pass n\' Play results before opening results', () => {
@@ -157,4 +181,34 @@ it('ignores a pending success callback after expiry or effect cleanup', () => {
   // Simulate a callback already queued even though clearTimeout ran.
   unmounted.timers[0]();
   assert.deepEqual(unmounted.calls, []);
+});
+
+it('freezes a failed-capture round and resumes only after confirmed recovery', async () => {
+  const failed = mountGame('paused', { captureIssue: 'resume-failed', resumeSucceeds: false });
+  assert.equal(failed.timer().active, false);
+  assert.equal(failed.round.currentCardIndex, 0);
+  const failedPanel = findElement(failed.output, 'panel');
+  failedPanel!.props.onResume();
+  await Promise.resolve();
+  assert.equal(failed.calls.includes('resume-round'), false);
+  assert.ok(findElement(failed.output, 'recovery'));
+
+  const recovered = mountGame('paused', { captureIssue: 'resume-failed', resumeSucceeds: true });
+  findElement(recovered.output, 'panel')!.props.onResume();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(recovered.calls.includes('resume-round'), true);
+});
+
+it('offers retry, explicit video fallback, and cleanup from capture recovery', async () => {
+  const game = mountGame('paused', { captureIssue: 'camera-session-failed' });
+  const recovery = findElement(game.output, 'recovery')!;
+  recovery.props.onRetry();
+  recovery.props.onContinueWithoutVideo();
+  recovery.props.onBack();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.ok(game.calls.includes('retry-capture'));
+  assert.ok(game.calls.includes('continue-without-video'));
+  assert.ok(game.calls.includes('cancel-recording'));
+  assert.ok(game.calls.includes('finish-round'));
 });

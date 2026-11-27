@@ -57,6 +57,12 @@ export type RecordingPreparation =
   | 'unavailable'
   | 'error';
 
+export type CaptureIssue =
+  | 'start-failed'
+  | 'resume-failed'
+  | 'camera-session-failed'
+  | 'segment-failed';
+
 const CAMERA_CAPTURE_STOP_TIMEOUT_MS = 4_000;
 
 type RoundContextValue = {
@@ -74,6 +80,7 @@ type RoundContextValue = {
   resetRound: () => void;
   currentVideo: RoundVideo | null;
   isRecording: boolean;
+  captureIssue: CaptureIssue | null;
   isVideoFinalizing: boolean;
   deleteCurrentVideo: () => Promise<void>;
   retryCurrentVideoExport: () => Promise<RoundVideo | null>;
@@ -86,6 +93,8 @@ type RoundContextValue = {
   resumeRecording: (options?: { restoreOverlay?: boolean }) => Promise<boolean>;
   cancelRecording: () => Promise<void>;
   disableRecordingForRound: () => Promise<void>;
+  retryCapture: () => Promise<boolean>;
+  continueWithoutVideo: () => Promise<void>;
 };
 
 type CapturedRoundSegment = {
@@ -125,6 +134,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [captureIssue, setCaptureIssue] = useState<CaptureIssue | null>(null);
   const [isVideoFinalizing, setIsVideoFinalizing] = useState(false);
   const [currentVideo, setCurrentVideo] = useState<RoundVideo | null>(null);
   const cameraRef = useRef<RoundCameraRef>(null);
@@ -168,6 +178,17 @@ export function RoundProvider({ children }: PropsWithChildren) {
       }
     }
   }, [getDeckById, rememberCard]);
+
+  const latchCaptureIssue = useCallback((issue: CaptureIssue) => {
+    const current = actionRound.current;
+    if (!roundRecordingEnabled.current || current.status === 'idle' ||
+        current.status === 'ready' || current.status === 'finished') return;
+    recordingActive.current = false;
+    recordingStartedAt.current = null;
+    setIsRecording(false);
+    setCaptureIssue((existing) => existing ?? issue);
+    if (current.status !== 'paused') dispatch({ type: 'PAUSE', now: Date.now() });
+  }, [dispatch]);
 
   const recordOverlayEvent = useCallback((event: Omit<RoundVideoEvent, 'atMs'>) => {
     if (recordingStartedAt.current === null || !recordingActive.current) return;
@@ -295,6 +316,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       }
       if (startedAt === null) {
         warnVideoDiagnostic('native round recording returned no start time', new Error('Recording failed to start'));
+        latchCaptureIssue(round.status === 'paused' ? 'resume-failed' : 'start-failed');
         return false;
       }
       recordingEvents.current = [];
@@ -305,10 +327,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
       return true;
     })().catch((error) => {
       warnVideoDiagnostic('round recording startup failed', error);
+      latchCaptureIssue(round.status === 'paused' ? 'resume-failed' : 'start-failed');
       return false;
     }).finally(() => { startingPromise.current = null; });
     return startingPromise.current;
-  }, [round.durationSeconds]);
+  }, [latchCaptureIssue, round.durationSeconds, round.status]);
 
   const startRecording = useCallback(async () => {
     recordingSegments.current = [];
@@ -366,6 +389,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     })()
       .catch((error) => {
         warnVideoDiagnostic('round recording segment pause failed', error);
+        latchCaptureIssue('segment-failed');
         return null;
       })
       .then(() => undefined)
@@ -374,10 +398,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
         suspendCameraSession();
       });
     return segmentStoppingPromise.current;
-  }, [captureActiveSegment, suspendCameraSession]);
+  }, [captureActiveSegment, latchCaptureIssue, suspendCameraSession]);
 
   const resumeRecording = useCallback(async (options?: { restoreOverlay?: boolean }) => {
     if (segmentStoppingPromise.current) await segmentStoppingPromise.current;
+    if (!roundRecordingEnabled.current) return true;
     if (
       recordingCancelled.current ||
       round.status === 'idle'
@@ -723,6 +748,27 @@ export function RoundProvider({ children }: PropsWithChildren) {
     await cancelRecording();
   }, [cancelRecording]);
 
+  const retryCapture = useCallback(async () => {
+    const started = await resumeRecording();
+    if (!started) return false;
+    setCaptureIssue(null);
+    if (actionRound.current.status === 'paused') {
+      dispatch({ type: 'RESUME', now: Date.now() });
+    }
+    return true;
+  }, [dispatch, resumeRecording]);
+
+  const continueWithoutVideo = useCallback(async () => {
+    roundRecordingEnabled.current = false;
+    await segmentStoppingPromise.current;
+    if (recordingActive.current) await captureActiveSegment().catch(() => null);
+    suspendCameraSession();
+    setCaptureIssue(null);
+    if (actionRound.current.status === 'paused') {
+      dispatch({ type: 'RESUME', now: Date.now() });
+    }
+  }, [captureActiveSegment, dispatch, suspendCameraSession]);
+
   const deleteCurrentVideo = useCallback(async () => {
     const video = currentVideo;
     if (!video) return;
@@ -751,6 +797,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       roundDeck,
       currentVideo,
       isRecording,
+      captureIssue,
       isVideoFinalizing,
       deleteCurrentVideo,
       retryCurrentVideoExport,
@@ -763,6 +810,8 @@ export function RoundProvider({ children }: PropsWithChildren) {
       resumeRecording,
       cancelRecording,
       disableRecordingForRound,
+      retryCapture,
+      continueWithoutVideo,
       configureRound: async (deckId, durationSeconds, mode = 'classic') => {
         if (cancellingPromise.current) await cancellingPromise.current;
         if (stoppingPromise.current) await stoppingPromise.current;
@@ -790,6 +839,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
         recordingSegments.current = [];
         recordingStartedAt.current = null;
         setIsRecording(false);
+        setCaptureIssue(null);
         setCurrentVideo(null);
         dispatch({
           type: 'CONFIGURE',
@@ -926,11 +976,14 @@ export function RoundProvider({ children }: PropsWithChildren) {
         roundDeckRef.current = null;
         setRoundDeck(null);
         setIsRecording(false);
+        setCaptureIssue(null);
         dispatch({ type: 'RESET' });
       },
     }),
     [
       cancelRecording,
+      captureIssue,
+      continueWithoutVideo,
       currentVideo,
       deleteCurrentVideo,
       disableRecordingForRound,
@@ -944,6 +997,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       recordOverlayEvent,
       rememberCard,
       resumeRecording,
+      retryCapture,
       retryCurrentVideoExport,
       round,
       roundDeck,
@@ -965,10 +1019,18 @@ export function RoundProvider({ children }: PropsWithChildren) {
         }}
         onError={(error) => {
             warnVideoDiagnostic('camera session failed', error);
+            if (recordingActive.current) {
+              // The interrupted segment is not valid, but completed segments remain
+              // available for export if the player retries or continues without video.
+              void cameraRef.current?.cancelRecording().catch((cancelError) =>
+                warnVideoDiagnostic('failed camera segment could not be cancelled', cancelError));
+              recordingEvents.current = [];
+            }
             cameraReady.current = false;
             cameraReadyResolver.current?.(false);
             cameraReadyResolver.current = null;
             setCameraEnabled(false);
+            latchCaptureIssue('camera-session-failed');
         }}
         ref={cameraRef}
       />
