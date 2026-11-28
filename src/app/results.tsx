@@ -25,6 +25,7 @@ import {
   type RoundVideo,
 } from '@/video/round-videos';
 import { logVideoDiagnostic } from '@/video/video-diagnostics';
+import { recordingCompletenessLabel, resolveRecordingCompleteness } from '@/video/recording-completeness';
 
 export default function ResultsScreen() {
   const router = useRouter();
@@ -33,6 +34,7 @@ export default function ResultsScreen() {
   const { catalog } = useCatalog();
   const {
     currentVideo,
+    recordingCompleteness,
     isVideoFinalizing,
     round,
     roundDeck,
@@ -71,6 +73,10 @@ export default function ResultsScreen() {
       : null;
   const archivedRound = isArchivedRound && archivedVideoState?.roundId === roundId ? archivedVideoState.round : null;
   const displayedVideo = isArchivedRound ? archivedVideo : currentVideo;
+  const displayedRecordingCompleteness = isArchivedRound
+    ? resolveRecordingCompleteness(archivedRound ?? {}, !!archivedVideo)
+    : displayedVideo?.recordingCompleteness ?? recordingCompleteness;
+  const recordingStatusLabel = recordingCompletenessLabel(displayedRecordingCompleteness);
   const archivedResults = archivedRound?.resultSnapshot;
   const displayedResults = isArchivedRound ? archivedResults?.results ?? [] : round.results;
   const displayedMode = parseGameMode(isArchivedRound ? archivedResults?.mode : round.mode);
@@ -417,6 +423,9 @@ export default function ResultsScreen() {
             </Text>
             <Text style={styles.title}>Nice guessing!</Text>
             <Text style={styles.deckName}>{displayedDeckTitle}</Text>
+            {recordingStatusLabel && (
+              <Text accessibilityRole="text" style={styles.recordingStatus}>{recordingStatusLabel}</Text>
+            )}
             {((!isArchivedRound && isVideoFinalizing) || displayedVideo) && (
               <View style={styles.videoSection}>
                 {displayedVideo && !videoPlaybackBlocked ? (
@@ -637,6 +646,18 @@ const styles = StyleSheet.create({
   eyebrow: { color: colors.muted, fontSize: 12, fontFamily: 'Inter_900Black', fontWeight: '900', letterSpacing: 1.8 },
   title: { ...typography.hero, color: colors.ink, marginTop: spacing.sm },
   deckName: { color: colors.muted, fontSize: 16, fontFamily: 'Inter_700Bold', fontWeight: '700', marginTop: spacing.sm },
+  recordingStatus: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    color: colors.ink,
+    backgroundColor: colors.surface,
+    fontSize: 12,
+    fontFamily: 'Inter_800ExtraBold',
+    fontWeight: '800',
+  },
   videoSection: { alignItems: 'center', marginTop: spacing.lg },
   video: { width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg },
   // (9/16)^2 of the available width gives a 9:16 portrait the same height

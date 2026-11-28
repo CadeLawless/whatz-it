@@ -102,6 +102,24 @@ it('joins a recording to its saved result even if migration runs before video li
   assert.equal((await history.loadRoundHistory([video('capture', 'round')])).length, 1);
 });
 
+it('patches late recording completeness and video identity without restoring deleted rounds', async () => {
+  const history = library();
+  await history.saveRoundResult({
+    id: 'round', deckId: 'animals', createdAt: 500, resultSnapshot: snapshot,
+    recordingCompleteness: 'complete',
+  });
+  await history.patchRoundRecordingCompleteness('round', 'incomplete', 'capture');
+  const [patched] = await history.loadRoundHistory([
+    { ...video('capture', 'round'), recordingCompleteness: 'incomplete' },
+  ]);
+  assert.equal(patched.recordingCompleteness, 'incomplete');
+  assert.equal(patched.videoId, 'capture');
+
+  await history.deleteSavedRound('round');
+  await history.patchRoundRecordingCompleteness('round', 'no-recording');
+  assert.equal((await history.loadRoundHistory()).length, 0);
+});
+
 it('does not duplicate repeated finish or SharePlay result updates', async () => {
   const history = library();
   const round = { id: 'shareplay:session:round', deckId: 'animals', createdAt: 1000, resultSnapshot: snapshot, sharePlay: true };

@@ -2,12 +2,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { RoundResultSnapshot } from '@/game/round-result-snapshot';
 import { pruneRoundVideos, readRoundVideoMetadata, type RoundVideo } from '@/video/round-videos';
+import type { RecordingCompleteness } from '@/video/recording-completeness';
 
 export type SavedRound = {
   id: string;
   deckId: string;
   createdAt: number;
   resultSnapshot?: RoundResultSnapshot;
+  recordingCompleteness?: RecordingCompleteness;
   videoId?: string;
   sharePlay?: boolean;
   deleted?: boolean;
@@ -42,7 +44,8 @@ async function read(): Promise<StoredHistory & { legacy?: boolean }> {
     for (const video of await readRoundVideoMetadata()) {
       if (!rounds.some((round) => round.id === (video.roundId ?? video.id) || round.videoId === video.id)) {
         rounds.push({ id: video.roundId ?? video.id, deckId: video.deckId, createdAt: video.createdAt,
-          videoId: video.id, resultSnapshot: video.resultSnapshot });
+          videoId: video.id, resultSnapshot: video.resultSnapshot,
+          recordingCompleteness: video.recordingCompleteness });
       }
     }
   }
@@ -87,11 +90,13 @@ export function loadRoundHistory(videos: RoundVideo[] = []): Promise<SavedRound[
       !rounds.some((round) => round.id === (video.roundId ?? video.id))).map((video): SavedRound => ({
         id: video.roundId ?? video.id, deckId: video.deckId, createdAt: video.createdAt,
         videoId: video.id, resultSnapshot: video.resultSnapshot,
+        recordingCompleteness: video.recordingCompleteness,
       }));
     const next = [...rounds.map((round) => {
       const video = videos.find((candidate) => candidate.roundId === round.id);
-      if (!video || round.videoId === video.id) return round;
-      return { ...round, videoId: video.id };
+      if (!video) return round;
+      return { ...round, videoId: video.id,
+        recordingCompleteness: video.recordingCompleteness ?? round.recordingCompleteness };
     }), ...imported].sort((a, b) => b.createdAt - a.createdAt);
     const retained = await write({ ...state, rounds: next });
     return retained.filter((round) => !round.deleted && (round.resultSnapshot || videos.some((video) => video.id === round.videoId)));
@@ -115,6 +120,20 @@ export function attachRoundVideo(roundId: string, videoId: string) {
     // Deleting results while video processing finishes must not restore them.
     if (!rounds.some((round) => round.id === roundId && !round.deleted)) return write(state);
     return write({ ...state, rounds: rounds.map((round) => round.id === roundId ? { ...round, videoId } : round) });
+  });
+}
+
+export function patchRoundRecordingCompleteness(
+  roundId: string,
+  recordingCompleteness: RecordingCompleteness,
+  videoId?: string,
+) {
+  return serialize(async () => {
+    const state = await read();
+    if (!state.rounds.some((round) => round.id === roundId && !round.deleted)) return write(state);
+    return write({ ...state, rounds: state.rounds.map((round) => round.id === roundId
+      ? { ...round, recordingCompleteness, ...(videoId ? { videoId } : {}) }
+      : round) });
   });
 }
 

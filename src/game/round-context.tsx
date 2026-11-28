@@ -29,7 +29,7 @@ import {
   replenishRoundCardIds,
 } from '@/storage/daily-card-memory';
 import { rememberDeckPlayed } from '@/storage/deck-library-preferences';
-import { attachRoundVideo, saveRoundResult } from '@/storage/round-history';
+import { patchRoundRecordingCompleteness, saveRoundResult } from '@/storage/round-history';
 import { loadVideoPreferences } from '@/storage/video-preferences';
 import {
   prepareRoundCameraPermissions,
@@ -47,6 +47,7 @@ import {
   type RoundVideoEvent,
 } from '@/video/round-videos';
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
+import type { RecordingCompleteness } from '@/video/recording-completeness';
 import { traceAndroidGameplay } from '@/utils/android-gameplay-trace';
 
 export type RecordingPreparation =
@@ -79,6 +80,7 @@ type RoundContextValue = {
   resumeRound: () => void;
   resetRound: () => void;
   currentVideo: RoundVideo | null;
+  recordingCompleteness: RecordingCompleteness;
   isRecording: boolean;
   captureIssue: CaptureIssue | null;
   isVideoFinalizing: boolean;
@@ -137,6 +139,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
   const [captureIssue, setCaptureIssue] = useState<CaptureIssue | null>(null);
   const [isVideoFinalizing, setIsVideoFinalizing] = useState(false);
   const [currentVideo, setCurrentVideo] = useState<RoundVideo | null>(null);
+  const [recordingCompleteness, setRecordingCompleteness] = useState<RecordingCompleteness>('no-recording');
   const cameraRef = useRef<RoundCameraRef>(null);
   const cameraReady = useRef(false);
   const cameraReadyResolver = useRef<((ready: boolean) => void) | null>(null);
@@ -150,6 +153,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
   const recordingStartedAt = useRef<number | null>(null);
   const recordingEvents = useRef<RoundVideoEvent[]>([]);
   const recordingSegments = useRef<CapturedRoundSegment[]>([]);
+  const recordingDegraded = useRef(false);
 
   const rememberCard = useCallback((deckId: string | null, cardId: string | undefined) => {
     if (!deckId || !cardId) return;
@@ -166,9 +170,15 @@ export function RoundProvider({ children }: PropsWithChildren) {
         transition.round.startedAt !== null) {
       const resultSnapshot = captureRoundResultSnapshot(transition.round,
         getDeckById(transition.round.deckId ?? undefined) ?? null);
+      const savedCompleteness: RecordingCompleteness = !roundRecordingEnabled.current
+        ? 'no-recording'
+        : recordingDegraded.current
+          ? (recordingSegments.current.length > 0 || recordingActive.current ? 'incomplete' : 'no-recording')
+          : 'complete';
       if (resultSnapshot) void saveRoundResult({
         id: savedRoundId.current, deckId: resultSnapshot.deckId,
         createdAt: transition.round.startedAt, resultSnapshot,
+        recordingCompleteness: savedCompleteness,
       }).catch((error) => warnVideoDiagnostic('round results could not be saved', error));
     }
     if (transition.round.mode === 'pass-n-play' && transition.revealedCardId) {
@@ -184,6 +194,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
     if (!roundRecordingEnabled.current || current.status === 'idle' ||
         current.status === 'ready' || current.status === 'finished') return;
     recordingActive.current = false;
+    recordingDegraded.current = true;
     recordingStartedAt.current = null;
     setIsRecording(false);
     setCaptureIssue((existing) => existing ?? issue);
@@ -481,6 +492,13 @@ export function RoundProvider({ children }: PropsWithChildren) {
     }
     if (!recordingActive.current && recordingSegments.current.length === 0) {
       setIsVideoFinalizing(false);
+      const emptyCompleteness: RecordingCompleteness = recordingDegraded.current ||
+        !roundRecordingEnabled.current ? 'no-recording' : 'complete';
+      setRecordingCompleteness(emptyCompleteness);
+      if (savedRoundId.current) {
+        await patchRoundRecordingCompleteness(savedRoundId.current, emptyCompleteness).catch((error) =>
+          warnVideoDiagnostic('empty round recording status could not patch saved results', error));
+      }
       await finishCameraSession();
       return currentVideo;
     }
@@ -492,6 +510,9 @@ export function RoundProvider({ children }: PropsWithChildren) {
     const deckId = round.deckId;
     const roundId = savedRoundId.current;
     const resultSnapshot = captureRoundResultSnapshot(round, roundDeck);
+    const completeness: RecordingCompleteness = recordingDegraded.current
+      ? (recordingSegments.current.length > 0 || recordingActive.current ? 'incomplete' : 'no-recording')
+      : (roundRecordingEnabled.current ? 'complete' : 'no-recording');
     const finalizationId = `finalize-${Date.now().toString(36)}`;
     const finalizationStartedAt = Date.now();
     logVideoDiagnostic('round video finalization started', {
@@ -522,7 +543,11 @@ export function RoundProvider({ children }: PropsWithChildren) {
           });
         }
         const segments = [...recordingSegments.current];
-        if (segments.length === 0) return null;
+        if (segments.length === 0) {
+          setRecordingCompleteness('no-recording');
+          await patchRoundRecordingCompleteness(roundId, 'no-recording');
+          return null;
+        }
 
         logVideoDiagnostic('round video segments ready for persistence', {
           finalizationId,
@@ -553,47 +578,63 @@ export function RoundProvider({ children }: PropsWithChildren) {
 
         let videoUri = preparedSegments[0].videoUri;
         let audioUri = preparedSegments[0].audioUri ?? undefined;
+        let finalCompleteness = completeness;
+        let stitchFallbackUsed = false;
         const allSegmentsHaveLiveOverlays = segments.every(
           ({ capture }) => !!capture.liveOverlay,
         );
         if (preparedSegments.length > 1) {
-          const { muxLiveOverlayVideo, stitchRoundVideoSegments, supportsLiveOverlayMux } =
-            await import('whatz-it-video-export');
           const stitchStartedAt = Date.now();
-          logVideoDiagnostic('round recording segment stitch started', {
-            finalizationId,
-            segmentCount: preparedSegments.length,
-          });
-          let cleanSegments = preparedSegments;
-          if (allSegmentsHaveLiveOverlays && preparedSegments.some((segment) => !!segment.audioUri)) {
-            if (!supportsLiveOverlayMux()) {
-              throw new Error('The installed native exporter does not support live-overlay muxing.');
+          try {
+            const { muxLiveOverlayVideo, stitchRoundVideoSegments, supportsLiveOverlayMux } =
+              await import('whatz-it-video-export');
+            logVideoDiagnostic('round recording segment stitch started', {
+              finalizationId,
+              segmentCount: preparedSegments.length,
+            });
+            let cleanSegments = preparedSegments;
+            if (allSegmentsHaveLiveOverlays && preparedSegments.some((segment) => !!segment.audioUri)) {
+              if (!supportsLiveOverlayMux()) {
+                throw new Error('The installed native exporter does not support live-overlay muxing.');
+              }
+              cleanSegments = await Promise.all(
+                segments.map(async ({ capture }) => {
+                  if (!capture.microphoneUri) {
+                    return { videoUri: capture.videoUri, audioUri: null };
+                  }
+                  const muxedUri = await muxLiveOverlayVideo(
+                    capture.videoUri,
+                    capture.microphoneUri,
+                    capture.microphoneOffsetMs,
+                  );
+                  temporaryUris.push(muxedUri);
+                  return { videoUri: muxedUri, audioUri: null };
+                }),
+              );
             }
-            cleanSegments = await Promise.all(
-              segments.map(async ({ capture }) => {
-                if (!capture.microphoneUri) {
-                  return { videoUri: capture.videoUri, audioUri: null };
-                }
-                const muxedUri = await muxLiveOverlayVideo(
-                  capture.videoUri,
-                  capture.microphoneUri,
-                  capture.microphoneOffsetMs,
-                );
-                temporaryUris.push(muxedUri);
-                return { videoUri: muxedUri, audioUri: null };
-              }),
-            );
+            videoUri = await stitchRoundVideoSegments(cleanSegments);
+            temporaryUris.push(videoUri);
+            // The stitched MP4 contains the selected audio track for every segment.
+            audioUri = undefined;
+            logVideoDiagnostic('round recording segments stitched', {
+              segmentCount: preparedSegments.length,
+              elapsedMs: Date.now() - stitchStartedAt,
+              finalizationId,
+              videoUri,
+            });
+          } catch (error) {
+            // A valid completed segment is still useful. Persist it unchanged
+            // and make the degraded outcome explicit instead of losing all media.
+            finalCompleteness = 'incomplete';
+            stitchFallbackUsed = true;
+            videoUri = preparedSegments[0].videoUri;
+            audioUri = preparedSegments[0].audioUri ?? undefined;
+            warnVideoDiagnostic('round recording stitch failed; preserving first segment', error, {
+              elapsedMs: Date.now() - stitchStartedAt,
+              finalizationId,
+              segmentCount: preparedSegments.length,
+            });
           }
-          videoUri = await stitchRoundVideoSegments(cleanSegments);
-          temporaryUris.push(videoUri);
-          // The stitched MP4 contains the selected audio track for every segment.
-          audioUri = undefined;
-          logVideoDiagnostic('round recording segments stitched', {
-            segmentCount: preparedSegments.length,
-            elapsedMs: Date.now() - stitchStartedAt,
-            finalizationId,
-            videoUri,
-          });
         } else if (segments[0].capture.liveOverlay) {
           const liveOverlay = segments[0].capture.liveOverlay;
           logVideoDiagnostic('live overlay capture completed', {
@@ -627,16 +668,18 @@ export function RoundProvider({ children }: PropsWithChildren) {
           videoUri,
           audioUri,
           deckId,
-          events,
+          stitchFallbackUsed ? [] : events,
           finalizationId,
           undefined,
           false,
-          allSegmentsHaveLiveOverlays,
+          !stitchFallbackUsed && allSegmentsHaveLiveOverlays,
           resultSnapshot,
           roundId,
+          finalCompleteness,
         );
-        await attachRoundVideo(roundId, video.id).catch((error) =>
+        await patchRoundRecordingCompleteness(roundId, finalCompleteness, video.id).catch((error) =>
           warnVideoDiagnostic('round video could not be linked to saved results', error));
+        setRecordingCompleteness(finalCompleteness);
         setCurrentVideo(video);
         setIsVideoFinalizing(false);
         logVideoDiagnostic('round video published to results screen', {
@@ -645,7 +688,12 @@ export function RoundProvider({ children }: PropsWithChildren) {
           totalElapsedMs: Date.now() - finalizationStartedAt,
           videoId: video.id,
         });
-        if (allSegmentsHaveLiveOverlays) {
+        if (stitchFallbackUsed) {
+          logVideoDiagnostic('incomplete raw segment ready for playback and export', {
+            finalizationId,
+            videoId: video.id,
+          });
+        } else if (allSegmentsHaveLiveOverlays) {
           logVideoDiagnostic('round video live branded export dispatched', {
             finalizationId,
             videoId: video.id,
@@ -694,6 +742,10 @@ export function RoundProvider({ children }: PropsWithChildren) {
           totalElapsedMs: Date.now() - finalizationStartedAt,
         });
         setIsVideoFinalizing(false);
+        const failedCompleteness = recordingSegments.current.length > 0 ? 'incomplete' : 'no-recording';
+        setRecordingCompleteness(failedCompleteness);
+        await patchRoundRecordingCompleteness(roundId, failedCompleteness).catch((patchError) =>
+          warnVideoDiagnostic('round recording failure could not patch saved results', patchError));
         return null;
       } finally {
         const cleanupStartedAt = Date.now();
@@ -796,6 +848,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       round,
       roundDeck,
       currentVideo,
+      recordingCompleteness,
       isRecording,
       captureIssue,
       isVideoFinalizing,
@@ -837,10 +890,12 @@ export function RoundProvider({ children }: PropsWithChildren) {
         recordingCancelled.current = false;
         recordingEvents.current = [];
         recordingSegments.current = [];
+        recordingDegraded.current = false;
         recordingStartedAt.current = null;
         setIsRecording(false);
         setCaptureIssue(null);
         setCurrentVideo(null);
+        setRecordingCompleteness(roundRecordingEnabled.current ? 'complete' : 'no-recording');
         dispatch({
           type: 'CONFIGURE',
           mode,
@@ -995,6 +1050,7 @@ export function RoundProvider({ children }: PropsWithChildren) {
       prepareRecording,
       pauseRecording,
       recordOverlayEvent,
+      recordingCompleteness,
       rememberCard,
       resumeRecording,
       retryCapture,

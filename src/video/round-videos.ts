@@ -5,6 +5,7 @@ import type { RoundResultSnapshot } from '@/game/round-result-snapshot';
 import { loadRoundHistory } from '@/storage/round-history';
 import type { SavedRound } from '@/storage/round-history';
 import { logVideoDiagnostic, warnVideoDiagnostic } from '@/video/video-diagnostics';
+import type { RecordingCompleteness } from '@/video/recording-completeness';
 
 const STORAGE_KEY = 'whatz-it:round-videos:v1';
 const MAX_STORED_VIDEOS = 10;
@@ -26,6 +27,7 @@ export type RoundVideo = {
   createdAt: number;
   events?: RoundVideoEvent[];
   resultSnapshot?: RoundResultSnapshot;
+  recordingCompleteness?: RecordingCompleteness;
 };
 
 export type RoundVideoEvent = {
@@ -187,6 +189,7 @@ export async function storeRoundVideo(
   requiresBrandedExport = false,
   resultSnapshot?: RoundResultSnapshot,
   roundId?: string,
+  recordingCompleteness: RecordingCompleteness = 'complete',
 ) {
   const persistenceStartedAt = Date.now();
   if (Platform.OS === 'web') throw new Error('Round recording is only available on a device.');
@@ -283,6 +286,7 @@ export async function storeRoundVideo(
     createdAt,
     events,
     resultSnapshot,
+    recordingCompleteness,
   };
   const storedVideo = compactCompletedExport(video);
   const libraryLoadStartedAt = Date.now();

@@ -47,6 +47,7 @@ import { ConfirmationPrompt } from '@/components/confirmation-prompt';
 import { DeckCard } from '@/components/deck-card';
 import { PortraitTransition } from '@/components/orientation-transition';
 import { RoundVideoPlayer, type VideoSaveNotice } from '@/components/round-video-player';
+import { recordingCompletenessLabel, resolveRecordingCompleteness } from '@/video/recording-completeness';
 import { useScreenshotTransition } from '@/components/screenshot-transition-provider';
 import {
   StorefrontExplore,
@@ -805,6 +806,9 @@ export default function DeckLibraryScreen() {
             const passedCount = savedRound.resultSnapshot?.results.filter(
               (result) => result.outcome === 'passed',
             ).length;
+            const recordingStatus = recordingCompletenessLabel(
+              resolveRecordingCompleteness(savedRound, !!video),
+            );
             return (
               <View key={savedRound.id} style={[styles.videoCard, { width: videoWidth }]}>
                 {video ? <View style={styles.videoFrame}>
@@ -930,6 +934,9 @@ export default function DeckLibraryScreen() {
                         ? `${correctCount} correct · ${passedCount} passed`
                         : 'Video only · Results unavailable'}
                     </Text>
+                    {recordingStatus && (
+                      <Text style={styles.videoRecordingStatus}>{recordingStatus}</Text>
+                    )}
                     <Text style={styles.videoDate}>
                       {new Date(savedRound.createdAt).toLocaleString(undefined, {
                         month: 'short',
@@ -2050,6 +2057,14 @@ const styles = StyleSheet.create({
   videoDeckName: { color: '#111111', fontSize: 14, lineHeight: 18, fontFamily: 'Inter_900Black', fontWeight: '900' },
   videoDate: { color: '#64748B', fontSize: 11, lineHeight: 15, marginTop: 3 },
   videoScore: { color: '#459EFE', fontSize: 11, lineHeight: 15, fontFamily: 'Inter_800ExtraBold', fontWeight: '800', marginTop: 6 },
+  videoRecordingStatus: {
+    color: '#334155',
+    fontSize: 10,
+    lineHeight: 14,
+    fontFamily: 'Inter_800ExtraBold',
+    fontWeight: '800',
+    marginTop: 3,
+  },
   videoDetails: { flex: 1, marginTop: 4, marginHorizontal: 10 },
   videoResultLink: {
     minHeight: 72,
