@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
 import { CloseButton } from '@/components/close-button';
+import { CaptureRecoveryOverlay } from '@/components/capture-recovery-overlay';
 import { PortraitTimesUpPanel } from '@/components/portrait-times-up-panel';
 import { LandscapeViewport, useLandscapeDimensions } from '@/components/landscape-viewport';
 import { RecordingIndicator } from '@/components/recording-indicator';
@@ -52,6 +53,7 @@ export default function ClassicGameScreen() {
   useKeepAwake();
   const { width, height } = useLandscapeDimensions();
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
+  const [captureRecoveryBusy, setCaptureRecoveryBusy] = useState(false);
   const [portraitPausePhase, setPortraitPausePhase] = useState<PortraitPausePhase | null>(null);
   const [resumeAcknowledgementEndsAt, setResumeAcknowledgementEndsAt] = useState<number | null>(null);
   const roundStarted = useRef(false);
@@ -85,6 +87,9 @@ export default function ClassicGameScreen() {
     startRound,
     stopRecording,
     cancelRecording,
+    captureIssue,
+    retryCapture,
+    continueWithoutVideo,
   } = useRound();
   const finishedRef = useRef(false);
   const committedCueState = useRef({ status: round.status, card: round.currentCardIndex });
@@ -100,6 +105,7 @@ export default function ClassicGameScreen() {
   }, [cancelRecording, stopAll]));
   const stopRecordingRef = useRef(stopRecording);
   const resumeRecordingRef = useRef(resumeRecording);
+  const resumeRoundRef = useRef(resumeRound);
   const deck = roundDeck;
   const currentCardId = round.cardOrder[round.currentCardIndex];
   const currentCard = deck?.cards.find((card) => card.id === currentCardId);
@@ -118,7 +124,8 @@ export default function ClassicGameScreen() {
   }, [stopRecording]);
   useEffect(() => {
     resumeRecordingRef.current = resumeRecording;
-  }, [resumeRecording]);
+    resumeRoundRef.current = resumeRound;
+  }, [resumeRecording, resumeRound]);
   const remainingSeconds = useRoundTimer({
     endsAt: round.endsAt,
     active: focused && appActive && (round.status === 'playing' || round.status === 'feedback'),
@@ -495,7 +502,6 @@ export default function ClassicGameScreen() {
         setAppActive(true);
         if (timerPausedForBackground.current) {
           timerPausedForBackground.current = false;
-          resumeRound();
         }
         if (pausedResumeAcknowledgementRemaining.current !== null) {
           setResumeAcknowledgementEndsAt(Date.now() + pausedResumeAcknowledgementRemaining.current);
@@ -514,7 +520,9 @@ export default function ClassicGameScreen() {
     if (foregroundResumeGeneration === 0) return;
     // This runs after the resume reducer has committed, so the new camera
     // segment starts against the exact card and clock now on screen.
-    void resumeRecordingRef.current();
+    void resumeRecordingRef.current().then((recovered) => {
+      if (recovered) resumeRoundRef.current();
+    });
   }, [foregroundResumeGeneration]);
 
   if (!deck || !currentCard) return null;
@@ -551,6 +559,21 @@ export default function ClassicGameScreen() {
   const manualControlHeight = Math.round(Math.max(52, Math.min(70, height * 0.16)));
   const manualControlMaxWidth = Math.round(Math.min(720, width * 0.82));
   const manualControlFontSize = Math.round(Math.max(12, Math.min(16, height * 0.034)));
+  const captureRecoveryOverlay = captureIssue && round.status !== 'finished' ? (
+    <CaptureRecoveryOverlay busy={captureRecoveryBusy}
+      onBack={() => {
+        setCaptureRecoveryBusy(true);
+        void cancelRecording().finally(() => { finishRound(); setCaptureRecoveryBusy(false); });
+      }}
+      onContinueWithoutVideo={() => {
+        setCaptureRecoveryBusy(true);
+        void continueWithoutVideo().finally(() => setCaptureRecoveryBusy(false));
+      }}
+      onRetry={() => {
+        setCaptureRecoveryBusy(true);
+        void retryCapture().finally(() => setCaptureRecoveryBusy(false));
+      }} />
+  ) : null;
 
   if (portraitPausePhase === 'prompt') {
     return (
@@ -602,6 +625,7 @@ export default function ClassicGameScreen() {
   if (portraitPausePhase === 'positioning') {
     return (
       <View style={styles.readyCaptureRoot}>
+        {captureRecoveryOverlay}
         <LandscapeViewport>
           <SafeAreaView edges={[]} style={styles.readySafeArea}>
             <StatusBar hidden animated={false} />
@@ -633,6 +657,7 @@ export default function ClassicGameScreen() {
   if (portraitPausePhase === 'welcome-back' || portraitPausePhase === 'restarting') {
     return (
       <View style={styles.captureRoot}>
+        {captureRecoveryOverlay}
         <LandscapeViewport>
           <SafeAreaView edges={[]} style={styles.readySafeArea}>
             <StatusBar hidden animated={false} />
@@ -661,6 +686,7 @@ export default function ClassicGameScreen() {
           ]}
         >
           <StatusBar hidden animated={false} />
+          {captureRecoveryOverlay}
           <View
             style={[
               styles.panel,

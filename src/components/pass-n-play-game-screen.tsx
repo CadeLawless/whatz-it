@@ -6,6 +6,7 @@ import { AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PassNPlayRoundPanel } from '@/components/pass-n-play-round-panel';
+import { CaptureRecoveryOverlay } from '@/components/capture-recovery-overlay';
 import { useRound } from '@/game/round-context';
 import { formatRoundClock } from '@/game/round-duration';
 import { getRemainingSecondsFromMs, useRoundTimer } from '@/hooks/use-round-timer';
@@ -22,10 +23,12 @@ export function PassNPlayGameScreen() {
   const router = useRouter();
   const { round, roundDeck: deck, startRound, answerCard, advanceCard, revealCard,
     expireRound, pauseRound, resumeRound, finishRound, pauseRecording, resumeRecording,
-    stopRecording, recordOverlayEvent, isRecording } = useRound();
+    stopRecording, recordOverlayEvent, isRecording, captureIssue, retryCapture,
+    continueWithoutVideo, cancelRecording } = useRound();
   const { play, stopAll } = useRoundSounds();
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const [finishPromptVisible, setFinishPromptVisible] = useState(false);
+  const [captureRecoveryBusy, setCaptureRecoveryBusy] = useState(false);
   const mounted = useRef(false);
   const latest = useRef(round);
   const pause = useRef(pauseRound);
@@ -177,8 +180,8 @@ export function PassNPlayGameScreen() {
         onClose={() => { if (canInteract()) setFinishPromptVisible(true); }}
         onResume={() => {
           if (!canInteract()) return;
-          void resumeRecording({ restoreOverlay: false }).catch(() => false).then(() => {
-            if (canInteract() && latest.current.status === 'paused') resumeRound();
+          void resumeRecording({ restoreOverlay: false }).catch(() => false).then((recovered) => {
+            if (recovered && canInteract() && latest.current.status === 'paused') resumeRound();
           });
         }}
         onFinish={() => { if (canInteract()) finishRound(); }} />
@@ -204,6 +207,21 @@ export function PassNPlayGameScreen() {
             </View>
           </View>
         </View>
+      )}
+      {captureIssue && status !== 'finished' && (
+        <CaptureRecoveryOverlay busy={captureRecoveryBusy}
+          onBack={() => {
+            setCaptureRecoveryBusy(true);
+            void cancelRecording().finally(() => { finishRound(); setCaptureRecoveryBusy(false); });
+          }}
+          onContinueWithoutVideo={() => {
+            setCaptureRecoveryBusy(true);
+            void continueWithoutVideo().finally(() => setCaptureRecoveryBusy(false));
+          }}
+          onRetry={() => {
+            setCaptureRecoveryBusy(true);
+            void retryCapture().finally(() => setCaptureRecoveryBusy(false));
+          }} />
       )}
     </SafeAreaView>
   );
